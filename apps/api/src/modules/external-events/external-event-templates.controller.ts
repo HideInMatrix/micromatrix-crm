@@ -66,10 +66,4 @@ export class ExternalEventTemplatesController {
   ) {
     return this.templates.preview(user, id, body.data)
   }
-
-  @Get(':id/logs')
-  @RequirePermissions('system:setting')
-  logs(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.templates.logs(user, id)
-  }
 }

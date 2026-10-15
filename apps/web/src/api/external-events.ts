@@ -1,8 +1,4 @@
-import type {
-  ExternalEventLogVO,
-  ExternalEventTemplateInput,
-  ExternalEventTemplateVO,
-} from '@micromatrix/shared'
+import type { ExternalEventTemplateInput, ExternalEventTemplateVO } from '@micromatrix/shared'
 import { http } from '@/api/http'
 
 export interface ExternalEventPreviewVO {
@@ -24,5 +20,4 @@ export const externalEventTemplateApi = {
   remove: (id: string) => http.delete(`/external-event-templates/${id}`),
   preview: (id: string, data: Record<string, unknown>) =>
     http.post<ExternalEventPreviewVO>(`/external-event-templates/${id}/preview`, { data }),
-  logs: (id: string) => http.get<ExternalEventLogVO[]>(`/external-event-templates/${id}/logs`),
 }

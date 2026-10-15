@@ -8,6 +8,7 @@ import { externalEventTemplateApi } from '@/api/external-events'
 import { extractErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import ExternalEventEditorDrawer from './ExternalEventEditorDrawer.vue'
+import LegacyExternalEventEditorDrawer from './LegacyExternalEventEditorDrawer.vue'
 import ExternalEventApiDrawer from './ExternalEventApiDrawer.vue'
 
 const auth = useAuthStore()
@@ -95,7 +96,7 @@ onMounted(async () => {
       <div>
         <h2 class="m-0 text-[18px] font-semibold">外部事件</h2>
         <p class="mt-1 mb-0 text-[13px] text-[var(--el-text-color-secondary)]">
-          通过 API Key 调用已启用的业务事件，单次请求完成资源定位、线索转客户及字段同步。
+          通过现有 API Key 接收外部数据，选择线索或客户，定位资源并执行预先配置的业务动作。
         </p>
       </div>
       <el-button v-if="canUpdate" type="primary" @click="create"
@@ -121,11 +122,28 @@ onMounted(async () => {
         <el-table-column prop="source" label="调用来源" min-width="130" />
         <el-table-column label="业务动作" min-width="220">
           <template #default="{ row }">
-            <span>定位资源 · {{ row.config.actions.convertLead ? '线索转客户' : '跳过线索' }}</span>
-            <div class="text-[12px] text-[var(--el-text-color-secondary)]">
-              {{ row.config.owner ? '指定客户负责人 · ' : '' }}映射
-              {{ row.config.fields.length }} 个客户字段
-            </div>
+            <template v-if="row.config.flow">
+              <span
+                >{{ row.config.flow.target === 'lead' ? '线索' : '客户' }} ·
+                {{
+                  { update: '更新字段', create: '创建记录', convert: '转客户', stage: '更新状态' }[
+                    row.config.flow.action as 'update' | 'create' | 'convert' | 'stage'
+                  ]
+                }}</span
+              >
+              <div class="text-[12px] text-[var(--el-text-color-secondary)]">
+                映射 {{ row.config.flow.fields.length }} 个字段 · 通用动作
+              </div>
+            </template>
+            <template v-else>
+              <span
+                >兼容事件 · {{ row.config.actions.convertLead ? '线索转客户' : '跳过线索' }}</span
+              >
+              <div class="text-[12px] text-[var(--el-text-color-secondary)]">
+                {{ row.config.owner ? '指定客户负责人 · ' : '' }}映射
+                {{ row.config.fields.length }} 个客户字段
+              </div>
+            </template>
           </template>
         </el-table-column>
         <el-table-column label="配置版本" width="100"
@@ -167,7 +185,15 @@ onMounted(async () => {
         >
       </el-table>
     </el-card>
+    <LegacyExternalEventEditorDrawer
+      v-if="editing && !editing.config.flow"
+      v-model="editorVisible"
+      :existing="editing"
+      :initial-step="Number(route.query.step ?? 0)"
+      @saved="saved"
+    />
     <ExternalEventEditorDrawer
+      v-else
       v-model="editorVisible"
       :existing="editing"
       :initial-step="Number(route.query.step ?? 0)"

@@ -234,6 +234,19 @@ const router = createRouter({
           },
         },
         {
+          path: 'system/logs/external-events',
+          name: 'system-external-event-logs',
+          component: () => import('@/views/system/LogsView.vue'),
+          meta: {
+            title: '事件日志',
+            perm: 'system:log',
+            activeMenu: '/system/logs',
+            topMenuGroup: 'system-logs',
+            topMenuLabel: '事件日志',
+            topMenuOrder: 30,
+          },
+        },
+        {
           path: 'system/settings',
           name: 'enterprise-ui-settings',
           component: () => import('@/views/system/enterprise-settings/SettingsView.vue'),

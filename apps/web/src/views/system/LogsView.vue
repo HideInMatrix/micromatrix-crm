@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  LogCategory,
   LoginLogVO,
   OperationLogDetailVO,
   OperationLogSettingVO,
@@ -22,6 +23,17 @@ const auth = useAuthStore()
 const canManagePolicy = computed(() => auth.hasPerm('system:log:update'))
 const route = useRoute()
 const showOperations = computed(() => route.path !== '/system/logs/login')
+const showExternalEvents = computed(() => route.path === '/system/logs/external-events')
+const policyCategory = computed<LogCategory>(() =>
+  route.path === '/system/logs/login' ? 'login' : showExternalEvents.value ? 'event' : 'operation',
+)
+const policyLabel = computed(() =>
+  policyCategory.value === 'login'
+    ? '登录日志'
+    : policyCategory.value === 'event'
+      ? '事件日志'
+      : '操作日志',
+)
 
 const opLoading = ref(false)
 const opItems = ref<OperationLogVO[]>([])
@@ -59,6 +71,21 @@ const detailChanges = computed<ChangeRow[]>(() => {
 })
 
 const detailJson = computed(() => JSON.stringify(operationDetail.value?.detail ?? null, null, 2))
+const externalAuditDetail = computed<Record<string, unknown> | null>(() => {
+  if (operationDetail.value?.module !== 'externalEvent') return null
+  const data = operationDetail.value.detail
+  return data && typeof data === 'object' && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : null
+})
+const externalAuditRequest = computed(() =>
+  JSON.stringify(externalAuditDetail.value?.request ?? '该历史日志没有保存调用参数', null, 2),
+)
+const externalAuditResult = computed(() => {
+  if (!externalAuditDetail.value) return null
+  const { request: _request, ...other } = externalAuditDetail.value
+  return JSON.stringify(other, null, 2)
+})
 
 async function loadOperations() {
   opLoading.value = true
@@ -67,6 +94,8 @@ async function loadOperations() {
       page: opQuery.page,
       pageSize: opQuery.pageSize,
       keyword: opQuery.keyword.trim() || undefined,
+      module: showExternalEvents.value ? 'externalEvent' : undefined,
+      excludeModule: showExternalEvents.value ? undefined : 'externalEvent',
     })
     opItems.value = data.items
     opTotal.value = data.total
@@ -118,7 +147,7 @@ function applyPolicy(data: OperationLogSettingVO) {
 async function loadPolicy() {
   policyLoading.value = true
   try {
-    const { data } = await logApi.settings()
+    const { data } = await logApi.settings(policyCategory.value)
     applyPolicy(data)
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -135,9 +164,12 @@ async function openPolicy() {
 async function savePolicy() {
   policySaving.value = true
   try {
-    const { data } = await logApi.updateSettings({
-      retentionDays: policyForm.permanent ? null : policyForm.retentionDays,
-    })
+    const { data } = await logApi.updateSettings(
+      {
+        retentionDays: policyForm.permanent ? null : policyForm.retentionDays,
+      },
+      policyCategory.value,
+    )
     applyPolicy(data)
     ElMessage.success('日志保留策略已更新')
   } catch (error) {
@@ -151,7 +183,7 @@ async function runCleanup() {
   if (policy.value?.permanent) return
   try {
     await ElMessageBox.confirm(
-      `将立即删除当前组织超过 ${policy.value?.retentionDays ?? policyForm.retentionDays} 天的操作日志，单次清理仍受系统批次上限保护。是否继续？`,
+      `将只清理当前组织超过 ${policy.value?.retentionDays ?? policyForm.retentionDays} 天的${policyLabel.value}，其他日志不会受到影响。是否继续？`,
       '清理过期日志',
       { confirmButtonText: '开始清理', cancelButtonText: '取消', type: 'warning' },
     )
@@ -161,13 +193,14 @@ async function runCleanup() {
 
   cleanupRunning.value = true
   try {
-    const { data } = await logApi.cleanup()
+    const { data } = await logApi.cleanup(policyCategory.value)
     applyPolicy(data.setting)
     ElMessage.success(
       data.skipped ? '当前策略为永久保留，未执行删除' : `已清理 ${data.deleted} 条过期日志`,
     )
     opQuery.page = 1
-    await loadOperations()
+    loginQuery.page = 1
+    await Promise.all([loadOperations(), loadLogins()])
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -178,8 +211,8 @@ async function runCleanup() {
 async function clearAllOperations() {
   try {
     await ElMessageBox.prompt(
-      `将永久删除当前组织全部操作日志。当前查询结果显示 ${opTotal.value} 条，但实际会删除当前组织全部操作日志，最终数量以服务端返回为准。此操作不可恢复，也不会影响登录日志。请输入“清空”确认。`,
-      '清空全部操作日志',
+      `将永久删除当前组织全部${policyLabel.value}。当前查询结果显示 ${opTotal.value} 条，实际数量以服务端为准。其他类别日志不受影响。此操作不可恢复。请输入“清空”确认。`,
+      '清空全部日志',
       {
         confirmButtonText: '确认清空',
         cancelButtonText: '取消',
@@ -195,8 +228,8 @@ async function clearAllOperations() {
 
   clearAllRunning.value = true
   try {
-    const { data } = await logApi.clearAll()
-    ElMessage.success(`已清空 ${data.deleted} 条操作日志`)
+    const { data } = await logApi.clearAll(policyCategory.value === 'event' ? 'event' : 'operation')
+    ElMessage.success(`已清空 ${data.deleted} 条${policyLabel.value}`)
     opQuery.page = 1
     detailVisible.value = false
     operationDetail.value = null
@@ -209,6 +242,10 @@ async function clearAllOperations() {
 }
 
 function loadCurrentLogPage() {
+  opQuery.page = 1
+  opItems.value = []
+  policyVisible.value = false
+  policy.value = null
   if (showOperations.value) void loadOperations()
   else void loadLogins()
 }
@@ -239,7 +276,7 @@ watch(() => route.path, loadCurrentLogPage)
       <div class="mb-3 flex items-center justify-between gap-3">
         <el-input
           v-model="opQuery.keyword"
-          placeholder="搜索操作人 / 对象名称"
+          :placeholder="showExternalEvents ? '搜索调用账号 / 事件标识' : '搜索操作人 / 对象名称'"
           clearable
           class="!w-64"
           @keyup.enter="((opQuery.page = 1), loadOperations())"
@@ -248,10 +285,10 @@ watch(() => route.path, loadCurrentLogPage)
         <el-button @click="openPolicy">日志策略</el-button>
       </div>
       <el-table v-loading="opLoading" :data="opItems" stripe>
-        <el-table-column label="操作人" width="120">
+        <el-table-column :label="showExternalEvents ? '调用账号' : '操作人'" width="120">
           <template #default="{ row }">{{ row.userName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="模块" width="140">
+        <el-table-column v-if="!showExternalEvents" label="模块" width="140">
           <template #default="{ row }">
             <span :title="row.module">{{ operationModuleLabel(row.module) }}</span>
           </template>
@@ -261,7 +298,11 @@ watch(() => route.path, loadCurrentLogPage)
             <span :title="row.action">{{ operationActionLabel(row.action) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作对象" min-width="200" show-overflow-tooltip>
+        <el-table-column
+          :label="showExternalEvents ? '事件 / 来源' : '操作对象'"
+          min-width="200"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.targetName || '-' }}</template>
         </el-table-column>
         <el-table-column label="IP" width="150">
@@ -288,7 +329,7 @@ watch(() => route.path, loadCurrentLogPage)
     </template>
 
     <template v-else>
-      <div class="mb-3 flex">
+      <div class="mb-3 flex items-center justify-between gap-3">
         <el-input
           v-model="loginQuery.keyword"
           placeholder="搜索邮箱"
@@ -297,6 +338,7 @@ watch(() => route.path, loadCurrentLogPage)
           @keyup.enter="((loginQuery.page = 1), loadLogins())"
           @clear="((loginQuery.page = 1), loadLogins())"
         />
+        <el-button @click="openPolicy">日志策略</el-button>
       </div>
       <el-table v-loading="loginLoading" :data="loginItems" stripe>
         <el-table-column prop="email" label="账号" min-width="200" />
@@ -345,7 +387,11 @@ watch(() => route.path, loadCurrentLogPage)
     </template>
   </el-card>
 
-  <el-drawer v-model="detailVisible" title="操作日志详情" size="640px">
+  <el-drawer
+    v-model="detailVisible"
+    :title="operationDetail?.module === 'externalEvent' ? '事件日志详情' : '操作日志详情'"
+    size="640px"
+  >
     <div v-loading="detailLoading" class="min-h-40">
       <template v-if="operationDetail">
         <el-descriptions :column="1" border class="mb-5">
@@ -369,7 +415,17 @@ watch(() => route.path, loadCurrentLogPage)
           }}</el-descriptions-item>
         </el-descriptions>
 
-        <template v-if="detailChanges.length">
+        <template v-if="operationDetail.module === 'externalEvent'">
+          <div class="mb-2 text-sm font-600">接口调用参数（已脱敏）</div>
+          <pre
+            class="mb-5 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-[var(--el-fill-color-light)] p-3 text-xs leading-5"
+            >{{ externalAuditRequest }}</pre>
+          <div class="mb-2 text-sm font-600">执行结果</div>
+          <pre
+            class="m-0 overflow-auto whitespace-pre-wrap break-all rounded bg-[var(--el-fill-color-light)] p-3 text-xs leading-5"
+            >{{ externalAuditResult }}</pre>
+        </template>
+        <template v-else-if="detailChanges.length">
           <div class="mb-2 text-sm font-600">字段变化</div>
           <el-table :data="detailChanges" border>
             <el-table-column prop="field" label="字段" min-width="150" />
@@ -392,7 +448,7 @@ watch(() => route.path, loadCurrentLogPage)
     </div>
   </el-drawer>
 
-  <el-drawer v-model="policyVisible" title="操作日志策略" size="520px">
+  <el-drawer v-model="policyVisible" :title="policyLabel + '保留策略'" size="520px">
     <div v-loading="policyLoading" class="min-h-56">
       <template v-if="policy">
         <el-descriptions :column="1" border class="mb-5">
@@ -416,7 +472,11 @@ watch(() => route.path, loadCurrentLogPage)
         </el-descriptions>
 
         <el-alert
-          title="系统每天 04:15（服务端时区）自动检查过期操作日志。单批数量和单轮批次数由部署环境控制，网页端不可修改。"
+          :title="
+            '当前只设置' +
+            policyLabel +
+            '的保留期限，其他日志类型可以分别配置。每天 04:15（服务端时区）自动检查过期记录；无法关联组织的登录记录按照部署默认保留期清理。'
+          "
           type="info"
           :closable="false"
           class="mb-5"
@@ -462,13 +522,14 @@ watch(() => route.path, loadCurrentLogPage)
                 清理过期日志
               </el-button>
               <el-button
+                v-if="showOperations"
                 type="danger"
                 plain
                 :disabled="cleanupRunning"
                 :loading="clearAllRunning"
                 @click="clearAllOperations"
               >
-                清空全部操作日志
+                清空全部{{ policyLabel }}
               </el-button>
             </div>
             <el-button

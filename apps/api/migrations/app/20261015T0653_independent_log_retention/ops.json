@@ -1,0 +1,338 @@
+[
+  {
+    "id": "column.public.operation_log_settings.eventLastCleanupAt",
+    "label": "Add column \"eventLastCleanupAt\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "eventLastCleanupAt",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"eventLastCleanupAt\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventLastCleanupAt"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"eventLastCleanupAt\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"eventLastCleanupAt\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"eventLastCleanupAt\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventLastCleanupAt"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.eventLastCleanupDeleted",
+    "label": "Add column \"eventLastCleanupDeleted\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "eventLastCleanupDeleted",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"eventLastCleanupDeleted\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventLastCleanupDeleted"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"eventLastCleanupDeleted\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"eventLastCleanupDeleted\" int4 DEFAULT 0 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"eventLastCleanupDeleted\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventLastCleanupDeleted"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.eventLastCleanupSource",
+    "label": "Add column \"eventLastCleanupSource\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "eventLastCleanupSource",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"eventLastCleanupSource\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventLastCleanupSource"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"eventLastCleanupSource\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"eventLastCleanupSource\" \"OperationLogCleanupSource\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"eventLastCleanupSource\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventLastCleanupSource"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.eventRetentionDays",
+    "label": "Add column \"eventRetentionDays\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "eventRetentionDays",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"eventRetentionDays\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventRetentionDays"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"eventRetentionDays\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"eventRetentionDays\" int4"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"eventRetentionDays\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "eventRetentionDays"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.loginLastCleanupAt",
+    "label": "Add column \"loginLastCleanupAt\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "loginLastCleanupAt",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"loginLastCleanupAt\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginLastCleanupAt"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"loginLastCleanupAt\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"loginLastCleanupAt\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"loginLastCleanupAt\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginLastCleanupAt"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.loginLastCleanupDeleted",
+    "label": "Add column \"loginLastCleanupDeleted\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "loginLastCleanupDeleted",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"loginLastCleanupDeleted\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginLastCleanupDeleted"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"loginLastCleanupDeleted\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"loginLastCleanupDeleted\" int4 DEFAULT 0 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"loginLastCleanupDeleted\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginLastCleanupDeleted"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.loginLastCleanupSource",
+    "label": "Add column \"loginLastCleanupSource\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "loginLastCleanupSource",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"loginLastCleanupSource\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginLastCleanupSource"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"loginLastCleanupSource\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"loginLastCleanupSource\" \"OperationLogCleanupSource\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"loginLastCleanupSource\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginLastCleanupSource"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.operation_log_settings.loginRetentionDays",
+    "label": "Add column \"loginRetentionDays\" to \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "loginRetentionDays",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"loginRetentionDays\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginRetentionDays"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"loginRetentionDays\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD COLUMN \"loginRetentionDays\" int4"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"loginRetentionDays\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "operation_log_settings",
+          "loginRetentionDays"
+        ]
+      }
+    ]
+  }
+]

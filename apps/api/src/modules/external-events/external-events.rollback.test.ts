@@ -46,10 +46,8 @@ test(
           ({ kind: 'LEAD', leadId: 'lead-rollback', ownerId: 'owner-1' }) as const,
       } as unknown as ExternalResourceResolverService
       const customers = {
-        normalizeWritableDynamicFields: async (
-          _user: AuthUser,
-          set: Record<string, unknown>,
-        ) => set,
+        normalizeWritableDynamicFields: async (_user: AuthUser, set: Record<string, unknown>) =>
+          set,
       } as unknown as CustomersService
       const leads = {
         prepareResolvedLeadConversion: async () => ({ lead: { id: 'lead-rollback' } }),
@@ -98,6 +96,10 @@ test(
     } finally {
       await db.client.orm.public.ExternalEventInbox.where({
         organizationId: user.tenantId,
+      }).deleteAll()
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
       }).deleteAll()
       await db.close()
     }

@@ -9,7 +9,7 @@ Operation Log 是当前系统的审计基础能力，负责请求级操作摘要
 - `@LogOperation` 记录 tenant、操作者、module、action、target、IP、时间等摘要。
 - 字段级 before/after、错误详情等大 JSON 写入一对一 Blob，不放回主表分页读取。
 - `BusinessChangeLogService` 统一生成字段 diff；普通无详情操作不创建空 Blob。
-- 登录日志和操作日志是两个独立生命周期，不因为操作日志清理而删除 LoginLog。
+- 操作日志、事件日志（均使用 OperationLogs）和登录日志（LoginLogs）分别设置保留策略、永久选项及清理状态；清理或清空其中一类，不影响其他分类。
 
 ## 3. 客户端 IP
 
@@ -28,27 +28,28 @@ Operation Log 是当前系统的审计基础能力，负责请求级操作摘要
 
 ## 5. Retention
 
-- 默认操作日志保留天数来自 `OPERATION_LOG_RETENTION_DAYS`，缺省 180 天。
-- 租户可配置 30～3650 天或永久保留。
+- 默认系统日志保留天数来自 `OPERATION_LOG_RETENTION_DAYS`，缺省 180 天。
+- 三种日志分别可配置 30～3650 天或永久保留。新配置继承部署默认天数；已有租户迁移时，登录与事件策略先复制原操作日志策略，之后独立修改。
 - 未显式配置时继续继承环境默认值；永久保留必须有明确状态，不用歧义空值。
 - batchSize/maxBatches/Cron 时间仍属于运维安全参数，不开放给租户 UI。
 
 ## 6. 自动清理
 
 - 每日自动清理由 `DistributedCoordinatorService.runScheduledOnce(...,'DAILY')` 去重。
-- 按租户计算 effective retention，永久保留租户跳过。
-- 每批先按 createdAt 选择有界 ID，再 deleteMany；禁止无界全表 DELETE。
+- 每个租户按 operation、event、login 三类分别计算有效 retention；永久保留只跳过该类别。
+- 未解析出租户的登录失败记录按部署默认保留期在每日任务中清理，不适用任何单个租户的手动清理。
+- 按各类 createdAt 分别执行有界批量删除，操作和事件按 module 隔离；三类各有批次限制。
 - Blob 依赖 FK cascade 随主日志删除。
 - 一个租户清理失败只记录错误并继续其它租户。
 
 ## 7. 手工管理
 
-- “清理过期日志”只执行当前租户 retention。
-- “清空全部操作日志”删除当前租户全部 OperationLog，与 retention 无关。
+- “清理过期日志”只清理当前租户当前分类下超过有效保留期的记录。
+- 操作日志与事件日志分别支持单独清空；登录日志暂不开放全量清空，过期清理由当前分类策略完成。
 - 两个动作使用不同 API、按钮和确认文案。
 - 全量清空要求 `system:log:update`，前端必须危险级二次确认并要求输入 `清空`。
 - 全量清空接口本身不写新的 OperationLog，否则会破坏“清空全部”语义。
-- 清理接口返回真实 deleted 数量，并更新最近清理时间/数量/来源。
+- 清理接口只返回当前分类删除数量，并更新该分类专属清理状态。
 
 ## 8. Docker 运行日志
 

@@ -98,6 +98,17 @@ test(
         false,
       )
 
+      const category = await service.operationLogs(tenant.id, {
+        page: 1,
+        pageSize: 10,
+        excludeModule: 'CUSTOMER',
+      })
+      assert.equal(category.total, 2)
+      assert.equal(
+        category.items.some((item) => item.module === 'CUSTOMER'),
+        false,
+      )
+
       const detail = await service.operationLogDetail(tenant.id, second.id)
       assert.deepEqual(detail.detail, {
         changes: [{ field: 'name', before: 'A', after: 'B' }],

@@ -6,23 +6,20 @@ import {
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
 } from '@micromatrix/shared'
-import { Columns3, Download, Upload } from 'lucide-vue-next'
+import { Columns3, Download, Upload, UserRoundCog, UserRoundPlus } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   customerTransferApi,
   listCustomers,
   poolBatchAssignCustomers,
-  poolBatchDeleteCustomers,
   poolBatchPickCustomers,
-  poolBatchUpdateCustomers,
   poolDeleteCustomer,
 } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import type { ImportType } from '@/api/import-export'
 import { metadataApi } from '@/api/metadata'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
-import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmResourceImportDialog from '@/components/resource-import/CrmResourceImportDialog.vue'
 import CrmListPagination from '@/components/CrmListPagination.vue'
@@ -57,7 +54,7 @@ const showSavedViews = computed(() => quickSearch.value?.showSavedViews !== fals
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<CustomerVO[]>([])
-const batchEditVisible = ref(false)
+const customerPoolTableRef = ref<{ clearSelection: () => void } | null>(null)
 const importVisible = ref(false)
 
 function downloadPoolImportTemplate(type: ImportType) {
@@ -239,37 +236,9 @@ function handleSelectionChange(rows: CustomerVO[]) {
   selectedRows.value = rows
 }
 
-async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }) {
-  if (!selectedPoolId.value || selectedRows.value.length === 0) return
-  try {
-    await poolBatchUpdateCustomers({
-      poolId: selectedPoolId.value,
-      ids: selectedRows.value.map((row) => row.id),
-      ...payload,
-    })
-    ElMessage.success(`已修改 ${selectedRows.value.length} 个公海客户`)
-    batchEditVisible.value = false
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleBatchDelete() {
-  if (!selectedPoolId.value || selectedRows.value.length === 0) return
-  const confirmed = await ElMessageBox.confirm(
-    `确定删除已选择的 ${selectedRows.value.length} 个公海客户？已关联联系人时会拒绝删除。`,
-    '批量删除客户',
-    { type: 'warning', confirmButtonText: '删除' },
-  ).catch(() => false)
-  if (!confirmed) return
-  try {
-    await poolBatchDeleteCustomers(selectedRows.value.map((row) => row.id))
-    ElMessage.success('批量删除成功')
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
+function clearSelection() {
+  customerPoolTableRef.value?.clearSelection()
+  selectedRows.value = []
 }
 
 async function handleBatchClaim() {
@@ -481,7 +450,7 @@ onMounted(async () => {
       </div>
 
       <div class="crm-data-list-toolbar" data-testid="crm-table-primary-toolbar">
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex min-w-0 flex-wrap items-center gap-4">
           <el-select
             v-model="selectedPoolId"
             class="!w-[200px]"
@@ -490,11 +459,43 @@ onMounted(async () => {
           >
             <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
           </el-select>
-          <span class="text-[14px] text-[#000000]">共{{ total }}条客户</span>
+          <span class="shrink-0 text-[14px] text-[#000000]">
+            {{ selectedRows.length ? `已选${selectedRows.length}条客户` : `共${total}条客户` }}
+          </span>
+          <template v-if="selectedRows.length">
+            <el-button
+              v-if="auth.hasPerm('customerPool:pick')"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="handleBatchClaim"
+            >
+              <UserRoundPlus :size="14" :stroke-width="1.8" aria-hidden="true" />批量领取
+            </el-button>
+            <el-button
+              v-if="auth.hasPerm('customerPool:assign')"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="batchAssignVisible = true"
+            >
+              <UserRoundCog :size="14" :stroke-width="1.8" aria-hidden="true" />批量分配
+            </el-button>
+            <el-button
+              v-if="canExport"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="openExport('selected')"
+            >
+              <Download :size="14" :stroke-width="1.8" aria-hidden="true" />批量导出
+            </el-button>
+            <button
+              type="button"
+              class="h-[36px] cursor-pointer border-0 bg-transparent px-1 py-0 text-[14px] leading-5 text-[#606266] hover:text-[var(--el-color-primary)]"
+              @click="clearSelection"
+            >
+              取消选择
+            </button>
+          </template>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex shrink-0 flex-wrap items-center gap-3">
           <el-button
-            v-if="canExport"
+            v-if="canExport && !selectedRows.length"
             :disabled="items.length === 0 || !selectedPoolId"
             class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
             @click="openExport('all')"
@@ -518,31 +519,9 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-if="selectedRows.length > 0" class="mb-4 flex flex-wrap items-center gap-2">
-        <el-button v-if="canExport" @click="openExport('selected')">
-          导出选中（{{ selectedRows.length }}）
-        </el-button>
-        <el-button v-if="auth.hasPerm('customerPool:pick')" @click="handleBatchClaim">
-          批量领取
-        </el-button>
-        <el-button v-if="auth.hasPerm('customerPool:assign')" @click="batchAssignVisible = true">
-          批量分配
-        </el-button>
-        <el-button v-if="auth.hasPerm('customerPool:update')" @click="batchEditVisible = true">
-          批量修改（{{ selectedRows.length }}）
-        </el-button>
-        <el-button
-          v-if="auth.hasPerm('customerPool:delete')"
-          type="danger"
-          plain
-          @click="handleBatchDelete"
-        >
-          批量删除
-        </el-button>
-      </div>
-
       <div class="crm-data-list-table">
         <el-table
+          ref="customerPoolTableRef"
           v-loading="loading"
           :data="items"
           row-key="id"
@@ -552,11 +531,7 @@ onMounted(async () => {
         >
           <el-table-column
             v-if="
-              auth.hasPerm('customerPool:pick') ||
-              auth.hasPerm('customerPool:assign') ||
-              auth.hasPerm('customerPool:update') ||
-              auth.hasPerm('customerPool:delete') ||
-              canExport
+              auth.hasPerm('customerPool:pick') || auth.hasPerm('customerPool:assign') || canExport
             "
             type="selection"
             width="46"
@@ -677,16 +652,6 @@ onMounted(async () => {
         :selected-count="selectedRows.length"
         :loading="exportLoading"
         @confirm="handleExportConfirm"
-      />
-
-      <BatchFieldEditDialog
-        v-model="batchEditVisible"
-        title="批量修改客户公海"
-        :fields="fields"
-        :members="fieldRefs.members.value"
-        :dept-tree="fieldRefs.deptTree.value"
-        :selected-count="selectedRows.length"
-        @confirm="handleBatchEdit"
       />
     </el-card>
   </div>

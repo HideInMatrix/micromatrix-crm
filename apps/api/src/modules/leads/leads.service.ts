@@ -801,6 +801,183 @@ export class LeadsService {
     return this.toSingleVO(user, lead)
   }
 
+  /** API integration: prepare a strictly-scoped dynamic-field update for the caller's transaction. */
+  async prepareExternalDynamicFieldUpdate(
+    user: AuthUser,
+    id: string,
+    input: Record<string, unknown>,
+  ) {
+    const existing = await this.ensureInScope(user, id, 'lead:update')
+    if (existing.transitionId) throw new BadRequestException('已转换线索不可修改')
+    if (!Object.keys(input).length) throw new BadRequestException('至少指定一个线索字段')
+    const fields = await this.metadata.listFields(user.tenantId, 'lead')
+    const writable = new Map(
+      fields
+        .filter((f) => !f.hidden && !f.system && !['formula', 'sub_product'].includes(f.type))
+        .flatMap((f) => [[f.id, f] as const, [f.key, f] as const]),
+    )
+    const values: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(input)) {
+      const field = writable.get(key)
+      if (!field) throw new BadRequestException(`线索字段不可写：${key}`)
+      if (Object.hasOwn(values, field.key)) throw new BadRequestException('线索字段重复映射')
+      this.metadata.validateBatchFieldValue(field, value)
+      values[field.key] = value
+    }
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, existing.poolId)
+    await this.fieldValues.validate(user.tenantId, 'clue', values, {
+      mode: 'update',
+      resourceId: existing.id,
+      uniqueScope,
+    })
+    return { existing, values, uniqueScope }
+  }
+
+  async applyPreparedExternalDynamicFieldUpdateInTransaction(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<LeadsService['prepareExternalDynamicFieldUpdate']>>,
+    tx: PrismaTransaction,
+  ) {
+    const current = await tx.orm.public.Clue.where({
+      id: prepared.existing.id,
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    }).first()
+    if (!current) throw new NotFoundException('线索不在可修改范围')
+    if (
+      current.owner !== prepared.existing.owner ||
+      current.updateTime !== prepared.existing.updateTime ||
+      current.transitionId
+    )
+      throw new ConflictException({ code: 'LEAD_CHANGED_RETRY', message: '线索已发生变化，请重试' })
+    const updated = await tx.orm.public.Clue.where({ id: current.id }).update({
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
+    })
+    if (!updated) throw new NotFoundException('线索不存在')
+    await this.fieldValues.save(
+      user.tenantId,
+      'clue',
+      current.id,
+      prepared.values,
+      'update',
+      tx,
+      user.id,
+      prepared.uniqueScope,
+    )
+    return updated
+  }
+
+  /** Prepare and execute lead creation under the same transaction as the external event inbox. */
+  async prepareExternalLeadCreation(user: AuthUser, dto: LeadCreateInput) {
+    this.assertFunctionalPermission(user, 'lead:create', '缺少新建线索权限')
+    if (!dto.name || typeof dto.name !== 'string' || !dto.name.trim() || dto.name.length > 100)
+      throw new BadRequestException('线索名称不合法')
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId)
+    await this.assertLeadSystemUniqueRules(user.tenantId, { name: dto.name }, uniqueScope)
+    await this.fieldValues.validate(user.tenantId, 'clue', dto.customData ?? {}, {
+      mode: 'create',
+      uniqueScope,
+    })
+    const owner = await this.resolveOwner(user, dto.ownerId)
+    await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
+    const initialStage = await this.resolveInitialLeadStage(user.tenantId)
+    return { dto, uniqueScope, owner, initialStage }
+  }
+
+  async createPreparedExternalLeadInTransaction(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<LeadsService['prepareExternalLeadCreation']>>,
+    tx: PrismaTransaction,
+  ) {
+    const { dto, owner, initialStage, uniqueScope } = prepared
+    const now = BigInt(Date.now())
+    const lead = await tx.orm.public.Clue.create({
+      id: createLegacyId32(),
+      name: dto.name.trim(),
+      contact: null,
+      phone: null,
+      stage: initialStage.key,
+      organizationId: user.tenantId,
+      inSharedPool: false,
+      poolId: null,
+      owner: owner.id,
+      collectionTime: now,
+      createTime: now,
+      updateTime: now,
+      createUser: user.id,
+      updateUser: user.id,
+    })
+    await this.fieldValues.save(
+      user.tenantId,
+      'clue',
+      lead.id,
+      dto.customData ?? {},
+      'create',
+      tx,
+      user.id,
+      uniqueScope,
+    )
+    await recordLeadStageEvent(tx, {
+      organizationId: user.tenantId,
+      leadId: lead.id,
+      fromStageKey: null,
+      toStageKey: initialStage.key,
+      occurredAt: now,
+      operatorId: user.id,
+      ownerId: owner.id,
+      source: 'MANUAL',
+    })
+    return lead
+  }
+
+  async prepareExternalStageUpdate(user: AuthUser, id: string, stageKey: string) {
+    const existing = await this.ensureInScope(user, id, 'lead:update')
+    if (existing.transitionId) throw new BadRequestException('已转换线索不能修改状态')
+    const stage = await this.resolveLeadStage(user.tenantId, stageKey, true)
+    return { existing, stage }
+  }
+
+  async applyPreparedExternalStageUpdateInTransaction(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<LeadsService['prepareExternalStageUpdate']>>,
+    tx: PrismaTransaction,
+  ) {
+    const { existing, stage } = prepared
+    const current = await tx.orm.public.Clue.where({
+      id: existing.id,
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    }).first()
+    if (!current) throw new NotFoundException('线索不存在')
+    if (
+      current.updateTime !== existing.updateTime ||
+      current.owner !== existing.owner ||
+      current.transitionId
+    )
+      throw new ConflictException({ code: 'LEAD_CHANGED_RETRY', message: '线索已发生变化，请重试' })
+    if (current.stage === stage.key) return current
+    const now = BigInt(Date.now())
+    const updated = await tx.orm.public.Clue.where({ id: current.id }).update({
+      lastStage: current.stage,
+      stage: stage.key,
+      updateTime: now,
+      updateUser: user.id,
+    })
+    if (!updated) throw new NotFoundException('线索不存在')
+    await recordLeadStageEvent(tx, {
+      organizationId: user.tenantId,
+      leadId: current.id,
+      fromStageKey: current.stage,
+      toStageKey: stage.key,
+      occurredAt: now,
+      operatorId: user.id,
+      ownerId: current.owner,
+      source: 'MANUAL',
+    })
+    return updated
+  }
+
   async update(user: AuthUser, id: string, dto: LeadUpdateInput): Promise<LeadVO> {
     const existing = await this.ensureInScope(user, id, 'lead:update')
     return this.updateExisting(user, existing, dto)

@@ -116,53 +116,50 @@ test(
       await db.client.orm.public.ExternalEventInbox.where({
         organizationId: user.tenantId,
       }).deleteAll()
-      await db.close()
-    }
-  },
-)
-
-test(
-  'External Event 禁止同一幂等键复用不同 payload',
-  { skip: !databaseUrl },
-  async () => {
-    assert.ok(databaseUrl)
-    const db = await openPrismaTestDatabase(databaseUrl)
-    try {
-      const resolver = {
-        resolve: async () => ({ kind: 'CUSTOMER', customerId: 'customer-1' }) as const,
-      } as unknown as ExternalResourceResolverService
-      const deps = customerServices({ resolver })
-      const service = new ExternalEventsService(
-        { client: db.client } as PrismaService,
-        resolver,
-        deps.customers,
-        deps.leads,
-      )
-      await service.applyCustomerEvent(user, dto('evt-reuse-1'))
-
-      await assert.rejects(
-        () =>
-          service.applyCustomerEvent(
-            user,
-            dto('evt-reuse-1', { set: { status: '已退款' } }),
-          ),
-        (error: unknown) => {
-          assert.ok(error instanceof ConflictException)
-          assert.equal(
-            (error.getResponse() as { code?: string }).code,
-            'IDEMPOTENCY_KEY_REUSED',
-          )
-          return true
-        },
-      )
-    } finally {
-      await db.client.orm.public.ExternalEventInbox.where({
-        organizationId: user.tenantId,
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
       }).deleteAll()
       await db.close()
     }
   },
 )
+
+test('External Event 禁止同一幂等键复用不同 payload', { skip: !databaseUrl }, async () => {
+  assert.ok(databaseUrl)
+  const db = await openPrismaTestDatabase(databaseUrl)
+  try {
+    const resolver = {
+      resolve: async () => ({ kind: 'CUSTOMER', customerId: 'customer-1' }) as const,
+    } as unknown as ExternalResourceResolverService
+    const deps = customerServices({ resolver })
+    const service = new ExternalEventsService(
+      { client: db.client } as PrismaService,
+      resolver,
+      deps.customers,
+      deps.leads,
+    )
+    await service.applyCustomerEvent(user, dto('evt-reuse-1'))
+
+    await assert.rejects(
+      () => service.applyCustomerEvent(user, dto('evt-reuse-1', { set: { status: '已退款' } })),
+      (error: unknown) => {
+        assert.ok(error instanceof ConflictException)
+        assert.equal((error.getResponse() as { code?: string }).code, 'IDEMPOTENCY_KEY_REUSED')
+        return true
+      },
+    )
+  } finally {
+    await db.client.orm.public.ExternalEventInbox.where({
+      organizationId: user.tenantId,
+    }).deleteAll()
+    await db.client.orm.public.OperationLogs.where({
+      tenantId: user.tenantId,
+      module: 'externalEvent',
+    }).deleteAll()
+    await db.close()
+  }
+})
 
 test(
   'External Event FAILED 可用相同 payload 重试并递增 attempts',
@@ -196,6 +193,20 @@ test(
       assert.equal(row?.status, 'FAILED')
       assert.equal(row?.attempts, 1)
       assert.equal(row?.errorCode, 'TEMP_FAIL')
+      const failedLogs = await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
+        action: 'executeFailed',
+      }).all()
+      assert.equal(failedLogs.length, 1)
+      assert.equal(failedLogs[0]?.userId, user.id)
+      const failedDetail = await db.client.orm.public.OperationLogBlobs.where({
+        operationLogId: failedLogs[0]!.id,
+      }).first()
+      assert.equal((failedDetail?.detail as { status?: string })?.status, 'FAILED')
+      const request = (failedDetail?.detail as { request?: unknown })?.request
+      assert.deepEqual(request, dto('evt-retry-1'))
+      assert.equal(JSON.stringify(failedDetail?.detail).includes('attempts'), false)
 
       fail = false
       const retried = await service.applyCustomerEvent(user, dto('evt-retry-1'))
@@ -207,9 +218,23 @@ test(
       }).first()
       assert.equal(row?.status, 'SUCCESS')
       assert.equal(row?.attempts, 2)
+      assert.equal(
+        (
+          await db.client.orm.public.OperationLogs.where({
+            tenantId: user.tenantId,
+            module: 'externalEvent',
+            action: 'execute',
+          }).all()
+        ).length,
+        1,
+      )
     } finally {
       await db.client.orm.public.ExternalEventInbox.where({
         organizationId: user.tenantId,
+      }).deleteAll()
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
       }).deleteAll()
       await db.close()
     }
@@ -263,6 +288,10 @@ test(
       await db.client.orm.public.ExternalEventInbox.where({
         organizationId: user.tenantId,
       }).deleteAll()
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
+      }).deleteAll()
       await db.close()
     }
   },
@@ -279,14 +308,10 @@ test(
     let notified = 0
     try {
       const resolver = {
-        resolve: async () =>
-          ({ kind: 'LEAD', leadId: 'lead-1', ownerId: 'owner-1' }) as const,
+        resolve: async () => ({ kind: 'LEAD', leadId: 'lead-1', ownerId: 'owner-1' }) as const,
       } as unknown as ExternalResourceResolverService
       const customers = {
-        normalizeWritableDynamicFields: async (
-          _user: AuthUser,
-          set: Record<string, unknown>,
-        ) => {
+        normalizeWritableDynamicFields: async (_user: AuthUser, set: Record<string, unknown>) => {
           normalizedSet = { cf_status: set['status'] }
           return normalizedSet
         },
@@ -327,6 +352,10 @@ test(
     } finally {
       await db.client.orm.public.ExternalEventInbox.where({
         organizationId: user.tenantId,
+      }).deleteAll()
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
       }).deleteAll()
       await db.close()
     }

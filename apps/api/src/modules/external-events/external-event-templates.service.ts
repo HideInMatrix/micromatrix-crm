@@ -118,6 +118,10 @@ export class ExternalEventTemplatesService {
     const config = input.config
     if (!config || typeof config !== 'object' || Array.isArray(config))
       throw new BadRequestException('事件配置无效')
+    if (config.flow) {
+      await this.validateFlow(user, config)
+      return
+    }
     if (
       !config.actions ||
       typeof config.actions.convertLead !== 'boolean' ||
@@ -190,6 +194,155 @@ export class ExternalEventTemplatesService {
     }
   }
 
+  private async validateFlow(user: AuthUser, config: ExternalEventTemplateConfig) {
+    const flow = config.flow!
+    if (!['lead', 'customer'].includes(flow.target))
+      throw new BadRequestException('目标模块必须是线索或客户')
+    if (!['update', 'create', 'convert', 'stage'].includes(flow.action))
+      throw new BadRequestException('不支持的业务动作')
+    if (flow.action === 'convert' && flow.target !== 'lead')
+      throw new BadRequestException('只有线索支持转换为客户')
+    if (flow.action === 'stage' && flow.target !== 'lead')
+      throw new BadRequestException('只有线索支持状态变更')
+    if (flow.action === 'stage') requireKey(flow.stageExternalKey, '状态参数')
+    if (flow.action === 'create') requireKey(flow.nameExternalKey, '名称参数')
+    if (
+      !Array.isArray(config.matches) ||
+      config.matches.length > 10 ||
+      (flow.action !== 'create' && config.matches.length === 0)
+    )
+      throw new BadRequestException('资源定位需要 1～10 个字段，创建动作不需要定位')
+    const target = flow.action === 'convert' ? 'customer' : flow.target
+    const [lookupFields, targetFields] = await Promise.all([
+      this.metadata.listFields(user.tenantId, flow.target),
+      this.metadata.listFields(user.tenantId, target),
+    ])
+    const knownMatch = new Set([
+      'id',
+      ...lookupFields
+        .filter((f) => !f.hidden && filterOpsForType(f.type).includes('eq'))
+        .flatMap((f) => [f.id, f.key]),
+    ])
+    const matchKeys = new Set<string>()
+    const matchTargets = new Set<string>()
+    for (const item of config.matches) {
+      requireKey(item?.externalKey, '定位来源字段')
+      if (!knownMatch.has(item.crmFieldKey)) throw new BadRequestException('定位字段不属于目标模块')
+      if (matchKeys.has(item.externalKey) || matchTargets.has(item.crmFieldKey))
+        throw new BadRequestException('资源定位条件不能重复')
+      matchKeys.add(item.externalKey)
+      matchTargets.add(item.crmFieldKey)
+    }
+    if (!Array.isArray(flow.fields) || flow.fields.length > 30)
+      throw new BadRequestException('字段映射不能超过 30 个')
+    if (flow.action === 'stage' && flow.fields.length)
+      throw new BadRequestException('状态变更不接受额外字段映射')
+    if (flow.action === 'update' && !flow.fields.length)
+      throw new BadRequestException('字段更新至少需要一个映射')
+    const writable = new Map(
+      targetFields
+        .filter((f) => !f.hidden && !f.system && !['formula', 'sub_product'].includes(f.type))
+        .flatMap((f) => [[f.id, f] as const, [f.key, f] as const]),
+    )
+    const targets = new Set<string>()
+    for (const item of flow.fields) {
+      if (item.source !== 'event' && item.source !== 'leadOwner')
+        throw new BadRequestException('映射来源无效')
+      if (item.source === 'event') requireKey(item.externalKey, '映射来源字段')
+      if (item.source === 'leadOwner' && flow.action !== 'convert')
+        throw new BadRequestException('原线索负责人只能用于转换动作')
+      const field = writable.get(item.fieldKey)
+      if (!field) throw new BadRequestException('字段映射目标必须为可写的自定义字段')
+      if (targets.has(field.key)) throw new BadRequestException('目标字段重复映射')
+      if (item.source === 'leadOwner' && field.type !== 'member')
+        throw new BadRequestException('原线索负责人只能写入成员字段')
+      if (
+        item.provider &&
+        (!PROVIDERS.includes(item.provider) || field.type !== 'member' || item.source !== 'event')
+      )
+        throw new BadRequestException('只有外部成员字段支持身份来源选择')
+      targets.add(field.key)
+    }
+    if (flow.owner) {
+      if (!['convert', 'create'].includes(flow.action))
+        throw new BadRequestException('当前动作不允许指定新负责人')
+      requireKey(flow.owner.externalKey, '负责人来源字段')
+      if (!PROVIDERS.includes(flow.owner.provider))
+        throw new BadRequestException('负责人身份类型无效')
+    }
+  }
+
+  async prepareFlow(
+    user: AuthUser,
+    template: ExternalEventTemplateVO,
+    data: Record<string, unknown>,
+  ) {
+    const flow = template.config.flow
+    if (!flow) throw new BadRequestException('不是通用事件配置')
+    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length > 80)
+      throw new BadRequestException('外部事件 data 必须是至多 80 个属性的对象')
+    const requireData = (key: string) => {
+      if (
+        !Object.prototype.hasOwnProperty.call(data, key) ||
+        data[key] === undefined ||
+        data[key] === null ||
+        data[key] === ''
+      )
+        throw new BadRequestException(`缺少外部事件参数：${key}`)
+      return data[key]
+    }
+    const resolved =
+      flow.action === 'create'
+        ? null
+        : await this.resolver.resolveTarget(
+            user,
+            flow.target,
+            this.mappedWhere(template.config, data),
+          )
+    const target = flow.action === 'convert' ? 'customer' : flow.target
+    const memberTargets = new Set(
+      (await this.metadata.listFields(user.tenantId, target))
+        .filter((f) => f.type === 'member')
+        .flatMap((f) => [f.id, f.key]),
+    )
+    const set: Record<string, unknown> = {}
+    for (const mapping of flow.fields) {
+      if (mapping.source === 'leadOwner') {
+        if (!resolved || resolved.kind !== 'LEAD' || !resolved.ownerId)
+          throw new BadRequestException('原线索负责人不存在')
+        set[mapping.fieldKey] = resolved.ownerId
+      } else {
+        const value = requireData(mapping.externalKey)
+        const provider =
+          mapping.provider ??
+          (mapping.externalKey === flow.owner?.externalKey ? flow.owner.provider : 'CRM')
+        set[mapping.fieldKey] = memberTargets.has(mapping.fieldKey)
+          ? await this.resolveMember(user, value, provider)
+          : value
+      }
+    }
+    const ownerId = flow.owner
+      ? await this.resolveMember(user, requireData(flow.owner.externalKey), flow.owner.provider)
+      : null
+    const rawName = flow.action === 'create' ? requireData(flow.nameExternalKey!) : null
+    if (
+      rawName !== null &&
+      (typeof rawName !== 'string' || !rawName.trim() || rawName.length > 100)
+    )
+      throw new BadRequestException('创建记录名称必须是长度 1～100 的字符串')
+    const rawStage = flow.action === 'stage' ? requireData(flow.stageExternalKey!) : null
+    if (rawStage !== null && (typeof rawStage !== 'string' || !rawStage.trim()))
+      throw new BadRequestException('线索状态标识必须为字符串')
+    return {
+      flow,
+      resolved,
+      set,
+      ownerId,
+      name: rawName as string | null,
+      stage: rawStage as string | null,
+    }
+  }
+
   async create(user: AuthUser, input: ExternalEventTemplateInput) {
     await this.validate(user, input)
     const existing = await this.table()
@@ -244,31 +397,6 @@ export class ExternalEventTemplatesService {
     if (before.enabled) throw new BadRequestException('请先停用事件，再删除配置')
     await this.table().where({ id, tenantId: user.tenantId }).delete()
     return { id }
-  }
-
-  async logs(user: AuthUser, id: string) {
-    const template = await this.get(user, id)
-    const rows = await this.prisma.client.orm.public.ExternalEventInbox.where({
-      organizationId: user.tenantId,
-      eventType: template.eventType,
-      source: template.source,
-    })
-      .orderBy((row) => row.receivedAt.desc())
-      .limit(50)
-      .all()
-    return rows.map((row) => ({
-      id: row.id,
-      externalEventId: row.externalEventId,
-      status: row.status,
-      resolvedType: row.resolvedType,
-      resolvedId: row.resolvedId,
-      customerId: row.customerId,
-      attempts: row.attempts,
-      receivedAt: instantToISOString(row.receivedAt),
-      completedAt: row.completedAt ? instantToISOString(row.completedAt) : null,
-      errorCode: row.errorCode,
-      errorMessage: row.errorMessage,
-    }))
   }
 
   private mappedWhere(config: ExternalEventTemplateConfig, data: Record<string, unknown>) {
@@ -357,6 +485,57 @@ export class ExternalEventTemplatesService {
 
   async preview(user: AuthUser, id: string, data: Record<string, unknown>) {
     const template = await this.get(user, id)
+    if (template.config.flow) {
+      const plan = await this.prepareFlow(user, template, data)
+      const { flow, resolved, set, ownerId } = plan
+      if (flow.action === 'update') {
+        if (!resolved) throw new BadRequestException('没有定位结果')
+        if (resolved.kind === 'CUSTOMER')
+          await this.customers.prepareDynamicFieldUpdate(user, resolved.customerId, set)
+        else await this.leads.prepareExternalDynamicFieldUpdate(user, resolved.leadId, set)
+      } else if (flow.action === 'convert') {
+        if (!resolved || resolved.kind !== 'LEAD') throw new BadRequestException('转换目标不是线索')
+        if (!hasPermission(user.permissions, 'lead:convert'))
+          throw new ForbiddenException('缺少线索转化权限')
+        const values = Object.keys(set).length
+          ? await this.customers.normalizeWritableDynamicFields(user, set)
+          : {}
+        await this.leads.prepareResolvedLeadConversion(
+          user,
+          resolved.leadId,
+          values,
+          ownerId ?? undefined,
+        )
+      } else if (flow.action === 'create') {
+        if (!hasPermission(user.permissions, `${flow.target}:create`))
+          throw new ForbiddenException('缺少创建目标模块的权限')
+        if (flow.target === 'customer')
+          await this.customers.prepareCreateForTransaction(user, {
+            name: plan.name!,
+            customData: set,
+            ownerId: ownerId ?? undefined,
+          })
+        else
+          await this.leads.prepareExternalLeadCreation(user, {
+            name: plan.name!,
+            customData: set,
+            ownerId: ownerId ?? undefined,
+          })
+      } else if (flow.action === 'stage') {
+        if (!resolved || resolved.kind !== 'LEAD')
+          throw new BadRequestException('状态变更目标不是线索')
+        await this.leads.prepareExternalStageUpdate(user, resolved.leadId, plan.stage!)
+      }
+      return {
+        dryRun: true,
+        resolvedType: (resolved?.kind ?? flow.target.toUpperCase()) as 'LEAD' | 'CUSTOMER',
+        resolvedId: resolved?.kind === 'LEAD' ? resolved.leadId : (resolved?.customerId ?? ''),
+        action: flow.action.toUpperCase(),
+        customerOwnerId: ownerId,
+        fieldUpdates: set,
+        note: '模拟验证通过；未写入数据。正式执行还会重新检查权限及并发状态',
+      }
+    }
     const prepared = await this.prepare(user, template, data)
     // Dry-run the same permission, field and customer-capacity validations as real execution.
     if (prepared.resolved.kind === 'LEAD' && template.config.actions.convertLead) {

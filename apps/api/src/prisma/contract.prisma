@@ -1635,13 +1635,23 @@ namespace public {
 
   model OperationLogSettings {
     tenantId           String                              @id(map: "operation_log_settings_pkey")
-    retentionDays      Int?
+    retentionDays        Int?
+    loginRetentionDays   Int?
+    eventRetentionDays   Int?
+    loginLastCleanupAt      Timestamptz(3)?
+    loginLastCleanupDeleted Int             @default(0)
+    loginLastCleanupSource  pg.enum(OperationLogCleanupSource)?
+    eventLastCleanupAt      Timestamptz(3)?
+    eventLastCleanupDeleted Int             @default(0)
+    eventLastCleanupSource  pg.enum(OperationLogCleanupSource)?
     lastCleanupAt      Timestamptz(3)?
     lastCleanupDeleted Int                                 @default(0)
     lastCleanupSource  pg.enum(OperationLogCleanupSource)?
     updatedAt          Timestamptz(3)
     tenant             Tenants                             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "operation_log_settings_tenantId_fkey")
 
+    @@check(expression: "\"loginRetentionDays\" IS NULL OR \"loginRetentionDays\" = 0 OR \"loginRetentionDays\" BETWEEN 30 AND 3650", name: "operation_log_settings_login_retention_rule")
+    @@check(expression: "\"eventRetentionDays\" IS NULL OR \"eventRetentionDays\" = 0 OR \"eventRetentionDays\" BETWEEN 30 AND 3650", name: "operation_log_settings_event_retention_rule")
     @@map("operation_log_settings")
   }
 

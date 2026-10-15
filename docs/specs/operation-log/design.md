@@ -50,9 +50,10 @@ client
 runScheduledOnce('operation-log-cleanup','DAILY')
   -> tenants
   -> effective retention
-  -> bounded id scan
-  -> deleteMany(ids)
-  -> update cleanup metadata
+  -> three category-specific retention policies
+  -> bounded operation, event and login log cleanup
+  -> update cleanup metadata separately for each category
+  -> null-tenant login logs cleanup (deployment default)
 ```
 
 Redis unavailable 时使用 PostgreSQL advisory fallback。`operation_logs(createdAt)` 独立索引用于跨租户时间扫描，tenant+createdAt 索引继续服务列表。
@@ -65,7 +66,7 @@ Redis unavailable 时使用 PostgreSQL advisory fallback。`operation_logs(creat
 
 ## 7. Web
 
-`/system/logs` 保留操作日志/登录日志视图。操作日志支持详情 Drawer 和日志策略入口；策略 UI 显示保留模式、有效天数、最近清理时间/数量/来源。
+`/system/logs` 保留操作日志/登录日志视图。系统日志视图现有操作日志、登录日志及事件日志分类，但各自拥有独立保留策略；策略 UI 显示保留模式、有效天数、最近清理时间/删除总数/来源。
 
 清理过期与清空全部必须有视觉和文案区分，永久保留模式必须显示容量增长风险。
 
@@ -75,7 +76,7 @@ Compose 使用 logging anchor 给 PostgreSQL、Redis、API、worker、web 配置
 
 ## 9. 维护规则
 
-- 不把 LoginLog 混入 OperationLog retention。
+- OperationLogs 与 LoginLogs 不合并数据表；操作日志与事件日志通过 module 进行清理和清空隔离。三个保留期限独立配置，清空其中一类不会影响其他日志。
 - 不做无 tenantId 的 clear-all。
 - 不把详情重新塞回分页 VO。
 - 如果未来接入 Loki/ELK/OTel，它们只能作为外部可观测补充，不替代 PostgreSQL 审计事实。

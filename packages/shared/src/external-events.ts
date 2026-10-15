@@ -1,7 +1,31 @@
 /** External integrations expose a fixed set of CRM business actions; no user-supplied scripts. */
 export type ExternalEventUserProvider = 'CRM' | 'WECOM' | 'DINGTALK' | 'LARK'
 
+/** Module-aware action plan. The outer template still owns authentication and idempotency.
+ * Omitted flow means the original customer-sync/conversion behavior (v1).
+ */
+export type ExternalEventTarget = 'lead' | 'customer'
+export type ExternalEventAction = 'update' | 'convert' | 'create' | 'stage'
+export interface ExternalEventFlow {
+  target: ExternalEventTarget
+  action: ExternalEventAction
+  fields: Array<{
+    source: 'event' | 'leadOwner'
+    externalKey: string
+    fieldKey: string
+    provider?: ExternalEventUserProvider
+  }>
+  /** Required by create; maps an external data property to the record name. */
+  nameExternalKey?: string
+  /** Optional source identity for new owner (create/convert). */
+  owner?: { externalKey: string; provider: ExternalEventUserProvider } | null
+  /** Required by lead stage changes. */
+  stageExternalKey?: string
+}
+
 export interface ExternalEventTemplateConfig {
+  /** Configured v2 flow. Absence keeps existing events working without migration. */
+  flow?: ExternalEventFlow
   actions: { convertLead: boolean; updateCustomer: boolean }
   /** AND / exact lookup using the existing strict external resource resolver. */
   matches: Array<{ externalKey: string; crmFieldKey: string }>
@@ -38,18 +62,4 @@ export interface ExternalEventExecuteInput {
   eventType: string
   externalEventId: string
   data: Record<string, unknown>
-}
-
-export interface ExternalEventLogVO {
-  id: string
-  externalEventId: string
-  status: string
-  resolvedType: string | null
-  resolvedId: string | null
-  customerId: string | null
-  attempts: number
-  receivedAt: string
-  completedAt: string | null
-  errorCode: string | null
-  errorMessage: string | null
 }

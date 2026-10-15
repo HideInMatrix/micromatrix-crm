@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { LogOperation } from '../../common/decorators/log-operation.decorator'
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator'
 import { QueryLoginLogsDto, QueryOperationLogsDto } from './dto/query-logs.dto'
+import { QueryLogCategoryDto, QueryClearLogCategoryDto } from './dto/query-log-category.dto'
 import { UpdateOperationLogSettingDto } from './dto/update-operation-log-setting.dto'
 import { OperationLogCleanupService } from './operation-log-cleanup.service'
 import { OperationLogSettingsService } from './operation-log-settings.service'
@@ -34,32 +35,36 @@ export class LogsController {
   }
 
   @Get('settings')
-  @ApiOperation({ summary: '操作日志保留策略' })
-  settings(@CurrentUser() user: AuthUser) {
-    return this.logSettings.get(user.tenantId)
+  @ApiOperation({ summary: '按日志分类查询独立保留策略' })
+  settings(@CurrentUser() user: AuthUser, @Query() query: QueryLogCategoryDto) {
+    return this.logSettings.get(user.tenantId, query.category)
   }
 
   @Put('settings')
   @RequirePermissions('system:log:update')
   @LogOperation('systemLog', 'updateRetention')
   @ApiOperation({ summary: '更新操作日志保留策略' })
-  updateSettings(@CurrentUser() user: AuthUser, @Body() body: UpdateOperationLogSettingDto) {
-    return this.logSettings.update(user.tenantId, body.retentionDays)
+  updateSettings(
+    @CurrentUser() user: AuthUser,
+    @Body() body: UpdateOperationLogSettingDto,
+    @Query() query: QueryLogCategoryDto,
+  ) {
+    return this.logSettings.update(user.tenantId, body.retentionDays, query.category)
   }
 
   @Post('cleanup')
   @RequirePermissions('system:log:update')
   @LogOperation('systemLog', 'cleanup')
-  @ApiOperation({ summary: '立即清理当前租户过期操作日志' })
-  cleanup(@CurrentUser() user: AuthUser) {
-    return this.logCleanup.cleanupTenant(user.tenantId)
+  @ApiOperation({ summary: '按日志分类清理当前租户过期记录' })
+  cleanup(@CurrentUser() user: AuthUser, @Query() query: QueryLogCategoryDto) {
+    return this.logCleanup.cleanupTenant(user.tenantId, new Date(), 'MANUAL', query.category)
   }
 
   @Post('clear-all')
   @RequirePermissions('system:log:update')
   @ApiOperation({ summary: '清空当前租户全部操作日志' })
-  clearAll(@CurrentUser() user: AuthUser) {
-    return this.logCleanup.clearTenant(user.tenantId)
+  clearAll(@CurrentUser() user: AuthUser, @Query() query: QueryClearLogCategoryDto) {
+    return this.logCleanup.clearTenant(user.tenantId, query.category)
   }
 
   @Get('logins')

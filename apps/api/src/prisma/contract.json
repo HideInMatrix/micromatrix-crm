@@ -9913,6 +9913,40 @@
           },
           "OperationLogSettings": {
             "fields": {
+              "eventLastCleanupAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "eventLastCleanupDeleted": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "eventLastCleanupSource": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "OperationLogCleanupSource"
+                  }
+                }
+              },
+              "eventRetentionDays": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
               "lastCleanupAt": {
                 "nullable": true,
                 "type": {
@@ -9938,6 +9972,40 @@
                   "typeParams": {
                     "typeName": "OperationLogCleanupSource"
                   }
+                }
+              },
+              "loginLastCleanupAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "loginLastCleanupDeleted": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "loginLastCleanupSource": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "OperationLogCleanupSource"
+                  }
+                }
+              },
+              "loginRetentionDays": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
                 }
               },
               "retentionDays": {
@@ -9985,6 +10053,18 @@
             },
             "storage": {
               "fields": {
+                "eventLastCleanupAt": {
+                  "column": "eventLastCleanupAt"
+                },
+                "eventLastCleanupDeleted": {
+                  "column": "eventLastCleanupDeleted"
+                },
+                "eventLastCleanupSource": {
+                  "column": "eventLastCleanupSource"
+                },
+                "eventRetentionDays": {
+                  "column": "eventRetentionDays"
+                },
                 "lastCleanupAt": {
                   "column": "lastCleanupAt"
                 },
@@ -9993,6 +10073,18 @@
                 },
                 "lastCleanupSource": {
                   "column": "lastCleanupSource"
+                },
+                "loginLastCleanupAt": {
+                  "column": "loginLastCleanupAt"
+                },
+                "loginLastCleanupDeleted": {
+                  "column": "loginLastCleanupDeleted"
+                },
+                "loginLastCleanupSource": {
+                  "column": "loginLastCleanupSource"
+                },
+                "loginRetentionDays": {
+                  "column": "loginRetentionDays"
                 },
                 "retentionDays": {
                   "column": "retentionDays"
@@ -22306,7 +22398,55 @@
               "uniques": []
             },
             "operation_log_settings": {
+              "checks": [
+                {
+                  "expression": "\"eventRetentionDays\" IS NULL OR \"eventRetentionDays\" = 0 OR \"eventRetentionDays\" BETWEEN 30 AND 3650",
+                  "name": "operation_log_settings_event_retention_rule_1680dd3c",
+                  "prefix": "operation_log_settings_event_retention_rule"
+                },
+                {
+                  "expression": "\"loginRetentionDays\" IS NULL OR \"loginRetentionDays\" = 0 OR \"loginRetentionDays\" BETWEEN 30 AND 3650",
+                  "name": "operation_log_settings_login_retention_rule_62c3223d",
+                  "prefix": "operation_log_settings_login_retention_rule"
+                }
+              ],
               "columns": {
+                "eventLastCleanupAt": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "eventLastCleanupDeleted": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                },
+                "eventLastCleanupSource": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "OperationLogCleanupSource",
+                  "nullable": true,
+                  "typeParams": {
+                    "typeName": "OperationLogCleanupSource"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "OperationLogCleanupSource",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "eventRetentionDays": {
+                  "codecId": "pg/int4@1",
+                  "nativeType": "int4",
+                  "nullable": true
+                },
                 "lastCleanupAt": {
                   "codecId": "pg/timestamptz-temporal@1",
                   "nativeType": "timestamptz",
@@ -22337,6 +22477,42 @@
                     "namespaceId": "public",
                     "plane": "storage"
                   }
+                },
+                "loginLastCleanupAt": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "loginLastCleanupDeleted": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                },
+                "loginLastCleanupSource": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "OperationLogCleanupSource",
+                  "nullable": true,
+                  "typeParams": {
+                    "typeName": "OperationLogCleanupSource"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "OperationLogCleanupSource",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "loginRetentionDays": {
+                  "codecId": "pg/int4@1",
+                  "nativeType": "int4",
+                  "nullable": true
                 },
                 "retentionDays": {
                   "codecId": "pg/int4@1",
@@ -25031,7 +25207,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "e7ff8583e9210f427e85001683c3508599467c5d9904b1c954cdd686b55379b1"
+    "storageHash": "82e73dd2065611c8a2ada7ed77659018c2bb89809a0a0ae9f224e2189fc8da79"
   },
   "execution": {
     "executionHash": "4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a",

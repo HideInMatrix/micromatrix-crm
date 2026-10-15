@@ -43,10 +43,7 @@ export class ExternalResourceResolverService {
     private readonly fieldValues: ResourceFieldValueService,
   ) {}
 
-  async resolve(
-    user: AuthUser,
-    where: Record<string, unknown>,
-  ): Promise<ExternalResolvedResource> {
+  async resolve(user: AuthUser, where: Record<string, unknown>): Promise<ExternalResolvedResource> {
     const entries = this.validateWhere(where)
     const [customerWhere, leadWhere] = await Promise.all([
       this.prepareWhere(user.tenantId, 'customer', entries),
@@ -100,6 +97,45 @@ export class ExternalResourceResolverService {
     this.notFound()
   }
 
+  /** Strict single-module lookup for v2 flows; never falls back to the other module. */
+  async resolveTarget(
+    user: AuthUser,
+    target: TargetResource,
+    where: Record<string, unknown>,
+    followConversion = false,
+  ): Promise<ExternalResolvedResource> {
+    const prepared = await this.prepareWhere(user.tenantId, target, this.validateWhere(where))
+    if (!prepared.supported) {
+      throw new BadRequestException({
+        code: 'INVALID_QUERY_FIELD',
+        message: '目标模块的定位字段无效',
+        details: prepared.issues,
+      })
+    }
+    if (target === 'customer') {
+      const ids = await this.findCustomerIds(user, prepared)
+      if (ids.length > 1) this.nonUnique('CUSTOMER')
+      if (!ids.length) this.notFound()
+      return { kind: 'CUSTOMER', customerId: ids[0]! }
+    }
+    const leads = await this.findLeads(user, prepared)
+    if (leads.length > 1) this.nonUnique('LEAD')
+    const lead = leads[0]
+    if (!lead) this.notFound()
+    if (lead.transitionId) {
+      if (followConversion && lead.transitionType === 'CUSTOMER') {
+        const customerIds = await this.findCustomerIdsById(user, String(lead.transitionId))
+        if (customerIds.length !== 1) this.notFound()
+        return { kind: 'CUSTOMER', customerId: customerIds[0]!, sourceLeadId: String(lead.id) }
+      }
+      throw new ConflictException({
+        code: 'LEAD_ALREADY_TRANSITIONED',
+        message: '目标线索已转化，不允许按原线索执行动作',
+      })
+    }
+    return { kind: 'LEAD', leadId: String(lead.id), ownerId: String(lead.owner ?? '') }
+  }
+
   private validateWhere(where: Record<string, unknown>) {
     if (!where || typeof where !== 'object' || Array.isArray(where)) {
       throw new BadRequestException({ code: 'INVALID_QUERY', message: 'where 必须是字段对象' })
@@ -113,9 +149,17 @@ export class ExternalResourceResolverService {
     }
     for (const [key, value] of entries) {
       if (!key.trim()) {
-        throw new BadRequestException({ code: 'INVALID_QUERY_FIELD', message: 'where 字段不能为空' })
+        throw new BadRequestException({
+          code: 'INVALID_QUERY_FIELD',
+          message: 'where 字段不能为空',
+        })
       }
-      if (value === null || value === undefined || Array.isArray(value) || typeof value === 'object') {
+      if (
+        value === null ||
+        value === undefined ||
+        Array.isArray(value) ||
+        typeof value === 'object'
+      ) {
         throw new BadRequestException({
           code: 'INVALID_QUERY_VALUE',
           message: `where.${key} 只支持非空标量精确值`,
@@ -138,10 +182,7 @@ export class ExternalResourceResolverService {
   ): Promise<PreparedWhere> {
     const fields = await this.metadata.listFields(organizationId, target)
     const fieldMap = new Map(
-      fields.flatMap((field) => [
-        [field.key, field] as const,
-        [field.id, field] as const,
-      ]),
+      fields.flatMap((field) => [[field.key, field] as const, [field.id, field] as const]),
     )
     const conditions: FilterCondition[] = []
     const system: Array<{ key: string; value: unknown }> = []
@@ -246,7 +287,10 @@ export class ExternalResourceResolverService {
       case 'owner':
         return query.where({ owner: value })
       default:
-        throw new BadRequestException({ code: 'INVALID_QUERY_FIELD', message: '不支持的 Customer 系统字段' })
+        throw new BadRequestException({
+          code: 'INVALID_QUERY_FIELD',
+          message: '不支持的 Customer 系统字段',
+        })
     }
   }
 
@@ -269,7 +313,10 @@ export class ExternalResourceResolverService {
       case 'stage':
         return query.where({ stage: value })
       default:
-        throw new BadRequestException({ code: 'INVALID_QUERY_FIELD', message: '不支持的 Lead 系统字段' })
+        throw new BadRequestException({
+          code: 'INVALID_QUERY_FIELD',
+          message: '不支持的 Lead 系统字段',
+        })
     }
   }
 
@@ -286,7 +333,10 @@ export class ExternalResourceResolverService {
   private async assertPermission(user: AuthUser, permission: string) {
     const scope = await this.dataScope.resolveScope(user, permission)
     if (!scope.hasPermission) {
-      throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: `缺少权限：${permission}` })
+      throw new ForbiddenException({
+        code: 'PERMISSION_DENIED',
+        message: `缺少权限：${permission}`,
+      })
     }
   }
 

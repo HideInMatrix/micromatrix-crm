@@ -51,7 +51,12 @@ function prismaFixture(
           return query
         },
       },
-      sql: { public: { operation_logs: { columns: { id: {} } } } },
+      sql: {
+        public: {
+          operation_logs: { columns: { id: {} } },
+          login_logs: { columns: { id: {} } },
+        },
+      },
       runtime: () => ({
         query: async function* (query: RawQueryHarness) {
           const rows = (await options.onQuery?.(query)) ?? []
@@ -123,47 +128,87 @@ test('操作日志清理配置使用安全默认值并拒绝危险批次', () =>
   )
 })
 
-test('租户清理只删除当前租户 cutoff 之前记录并保存执行状态', async () => {
+test('清理仅作用于指定分类及本租户，并独立记录清理状态', async () => {
   const queries: RawQueryHarness[] = []
   const prisma = prismaFixture({
     onQuery: (query) => {
       queries.push(query)
-      return [{ id: 'old-1' }, { id: 'old-2' }]
+      if (query.sql.includes('FROM login_logs')) return [{ id: 'login-1' }]
+      if (query.sql.includes('"module" =')) return [{ id: 'event-1' }]
+      return [{ id: 'op-1' }, { id: 'op-2' }]
     },
   })
   const { settings, records } = settingsMock(180)
   const service = new OperationLogCleanupService(prisma, settings)
   const now = new Date('2026-09-04T00:00:00.000Z')
 
-  const result = await service.cleanupTenant('tenant-a', now, OperationLogCleanupSources.MANUAL)
+  const operation = await service.cleanupTenant(
+    'tenant-a',
+    now,
+    OperationLogCleanupSources.MANUAL,
+    'operation',
+  )
+  const login = await service.cleanupTenant(
+    'tenant-a',
+    now,
+    OperationLogCleanupSources.MANUAL,
+    'login',
+  )
+  const event = await service.cleanupTenant(
+    'tenant-a',
+    now,
+    OperationLogCleanupSources.MANUAL,
+    'event',
+  )
 
-  assert.equal(result.deleted, 2)
-  assert.equal(result.skipped, false)
-  assert.equal(result.cutoff, '2026-03-08T00:00:00.000Z')
-  assert.equal(queries.length, 1)
-  assert.match(queries[0].sql, /WITH candidates/)
-  assert.deepEqual(queries[0].values, ['tenant-a', '2026-03-08T00:00:00.000Z', 1000])
+  assert.equal(operation.deleted, 2)
+  assert.equal(login.deleted, 1)
+  assert.equal(event.deleted, 1)
+  assert.equal(operation.cutoff, '2026-03-08T00:00:00.000Z')
+  assert.equal(queries.length, 3)
+  assert.match(queries[0].sql, /FROM operation_logs/)
+  assert.match(queries[0].sql, /"module" <> 'externalEvent'/)
+  assert.match(queries[1].sql, /FROM login_logs/)
+  assert.match(queries[2].sql, /"module" = 'externalEvent'/)
+  assert.ok(queries.every((q) => q.sql.includes('"tenantId" = ?')))
+  assert.ok(
+    queries.every(
+      (q) =>
+        JSON.stringify(q.values) === JSON.stringify(['tenant-a', '2026-03-08T00:00:00.000Z', 1000]),
+    ),
+  )
   assert.deepEqual(
-    records.map(({ tenantId, deleted, source }) => ({ tenantId, deleted, source })),
-    [{ tenantId: 'tenant-a', deleted: 2, source: 'MANUAL' }],
+    records.map(({ deleted }) => deleted),
+    [2, 1, 1],
   )
 })
 
-test('历史积压时单租户清理严格受 maxBatches 上限约束', async () => {
-  let queryCalls = 0
+test('每种日志都有独立的 maxBatches 限额', async () => {
+  let operationCalls = 0
+  let loginCalls = 0
+  let eventCalls = 0
   const prisma = prismaFixture({
-    onQuery: () => {
-      queryCalls += 1
-      return Array.from({ length: 1_000 }, (_, index) => ({ id: `${queryCalls}-${index}` }))
+    onQuery: (query) => {
+      if (query.sql.includes('FROM login_logs')) loginCalls++
+      else if (query.sql.includes('"module" =')) eventCalls++
+      else operationCalls++
+      return Array.from({ length: 1_000 }, (_, index) => ({ id: String(index) }))
     },
   })
   const { settings } = settingsMock(180)
   const service = new OperationLogCleanupService(prisma, settings)
-
-  const result = await service.cleanupTenant('tenant-a', new Date('2026-09-04T00:00:00.000Z'))
-
-  assert.equal(result.deleted, 20_000)
-  assert.equal(queryCalls, 20)
+  for (const category of ['operation', 'login', 'event'] as const) {
+    const result = await service.cleanupTenant(
+      'tenant-a',
+      new Date('2026-09-04T00:00:00.000Z'),
+      OperationLogCleanupSources.MANUAL,
+      category,
+    )
+    assert.equal(result.deleted, 20_000)
+  }
+  assert.equal(operationCalls, 20)
+  assert.equal(loginCalls, 20)
+  assert.equal(eventCalls, 20)
 })
 
 test('永久保留租户跳过删除但记录最近检查状态', async () => {
@@ -184,6 +229,39 @@ test('永久保留租户跳过删除但记录最近检查状态', async () => {
   assert.equal(result.cutoff, null)
   assert.equal(touchedOperationLog, false)
   assert.equal(records[0].tenantId, 'tenant-permanent')
+})
+
+test('租户永久保留时同时跳过操作和登录日志', async () => {
+  const queries: RawQueryHarness[] = []
+  const prisma = prismaFixture({
+    onQuery: (query) => {
+      queries.push(query)
+      return []
+    },
+  })
+  const { settings } = settingsMock(null)
+  const service = new OperationLogCleanupService(prisma, settings)
+  const result = await service.cleanupTenant('tenant-a')
+  assert.equal(result.skipped, true)
+  assert.equal(queries.length, 0)
+})
+
+test('无法关联租户的登录记录在定时任务中按部署默认保留期清理', async () => {
+  const queries: RawQueryHarness[] = []
+  const prisma = prismaFixture({
+    onQuery: (query) => {
+      queries.push(query)
+      return query.sql.includes('IS NULL') ? [{ id: 'orphan-login' }] : []
+    },
+  })
+  const { settings } = settingsMock(180)
+  const service = new OperationLogCleanupService(prisma, settings)
+  const deleted = await service.cleanupAllTenants(new Date('2026-09-04T00:00:00.000Z'))
+  assert.equal(deleted, 1)
+  assert.equal(queries.length, 1)
+  assert.match(queries[0].sql, /FROM login_logs/)
+  assert.match(queries[0].sql, /"tenantId" IS NULL/)
+  assert.deepEqual(queries[0].values, ['2026-03-08T00:00:00.000Z', 1000])
 })
 
 test('scheduled cleanup 复用 operation-log-cleanup DAILY coordination', async () => {

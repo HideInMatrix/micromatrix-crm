@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'e7ff8583e9210f427e85001683c3508599467c5d9904b1c954cdd686b55379b1'>;
+  StorageHashBase<'82e73dd2065611c8a2ada7ed77659018c2bb89809a0a0ae9f224e2189fc8da79'>;
 export type ExecutionHash =
   ExecutionHashBase<'4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a'>;
 export type ProfileHash =
@@ -1063,6 +1063,14 @@ export type FieldOutputTypes = {
     readonly OperationLogSettings: {
       readonly tenantId: CodecTypes['pg/text@1']['output'];
       readonly retentionDays: CodecTypes['pg/int4@1']['output'] | null;
+      readonly loginRetentionDays: CodecTypes['pg/int4@1']['output'] | null;
+      readonly eventRetentionDays: CodecTypes['pg/int4@1']['output'] | null;
+      readonly loginLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly loginLastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
+      readonly loginLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly eventLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly eventLastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
+      readonly eventLastCleanupSource: 'AUTO' | 'MANUAL' | null;
       readonly lastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly lastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
       readonly lastCleanupSource: 'AUTO' | 'MANUAL' | null;
@@ -2118,6 +2126,14 @@ export type FieldInputTypes = {
     readonly OperationLogSettings: {
       readonly tenantId: CodecTypes['pg/text@1']['input'];
       readonly retentionDays: CodecTypes['pg/int4@1']['input'] | null;
+      readonly loginRetentionDays: CodecTypes['pg/int4@1']['input'] | null;
+      readonly eventRetentionDays: CodecTypes['pg/int4@1']['input'] | null;
+      readonly loginLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly loginLastCleanupDeleted: CodecTypes['pg/int4@1']['input'];
+      readonly loginLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly eventLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly eventLastCleanupDeleted: CodecTypes['pg/int4@1']['input'];
+      readonly eventLastCleanupSource: 'AUTO' | 'MANUAL' | null;
       readonly lastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly lastCleanupDeleted: CodecTypes['pg/int4@1']['input'];
       readonly lastCleanupSource: 'AUTO' | 'MANUAL' | null;
@@ -3159,9 +3175,17 @@ export type StorageColumnTypes = {
       readonly operationLogId: CodecTypes['pg/text@1']['output'];
     };
     readonly operation_log_settings: {
+      readonly eventLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly eventLastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
+      readonly eventLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly eventRetentionDays: CodecTypes['pg/int4@1']['output'] | null;
       readonly lastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly lastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
       readonly lastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly loginLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly loginLastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
+      readonly loginLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly loginRetentionDays: CodecTypes['pg/int4@1']['output'] | null;
       readonly retentionDays: CodecTypes['pg/int4@1']['output'] | null;
       readonly tenantId: CodecTypes['pg/text@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
@@ -4214,9 +4238,17 @@ export type StorageColumnInputTypes = {
       readonly operationLogId: CodecTypes['pg/text@1']['input'];
     };
     readonly operation_log_settings: {
+      readonly eventLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly eventLastCleanupDeleted: CodecTypes['pg/int4@1']['input'];
+      readonly eventLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly eventRetentionDays: CodecTypes['pg/int4@1']['input'] | null;
       readonly lastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly lastCleanupDeleted: CodecTypes['pg/int4@1']['input'];
       readonly lastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly loginLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly loginLastCleanupDeleted: CodecTypes['pg/int4@1']['input'];
+      readonly loginLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+      readonly loginRetentionDays: CodecTypes['pg/int4@1']['input'] | null;
       readonly retentionDays: CodecTypes['pg/int4@1']['input'] | null;
       readonly tenantId: CodecTypes['pg/text@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
@@ -5594,6 +5626,14 @@ export namespace Models {
   export type public_OperationLogSettings = {
     tenantId: CodecTypes['pg/text@1']['output'];
     retentionDays: CodecTypes['pg/int4@1']['output'] | null;
+    loginRetentionDays: CodecTypes['pg/int4@1']['output'] | null;
+    eventRetentionDays: CodecTypes['pg/int4@1']['output'] | null;
+    loginLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    loginLastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
+    loginLastCleanupSource: 'AUTO' | 'MANUAL' | null;
+    eventLastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    eventLastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
+    eventLastCleanupSource: 'AUTO' | 'MANUAL' | null;
     lastCleanupAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     lastCleanupDeleted: CodecTypes['pg/int4@1']['output'];
     lastCleanupSource: 'AUTO' | 'MANUAL' | null;
@@ -12337,6 +12377,58 @@ type ContractBase = Omit<
                   readonly nativeType: 'int4';
                   readonly codecId: 'pg/int4@1';
                   readonly nullable: true;
+                };
+                readonly loginRetentionDays: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: true;
+                };
+                readonly eventRetentionDays: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: true;
+                };
+                readonly loginLastCleanupAt: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly loginLastCleanupDeleted: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly loginLastCleanupSource: {
+                  readonly nativeType: 'OperationLogCleanupSource';
+                  readonly codecId: 'pg/enum@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly typeName: 'OperationLogCleanupSource' };
+                };
+                readonly eventLastCleanupAt: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly eventLastCleanupDeleted: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly eventLastCleanupSource: {
+                  readonly nativeType: 'OperationLogCleanupSource';
+                  readonly codecId: 'pg/enum@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly typeName: 'OperationLogCleanupSource' };
                 };
                 readonly lastCleanupAt: {
                   readonly nativeType: 'timestamptz';
@@ -20541,6 +20633,54 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
+              readonly loginRetentionDays: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly eventRetentionDays: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly loginLastCleanupAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly loginLastCleanupDeleted: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly loginLastCleanupSource: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/enum@1';
+                  readonly typeParams: { readonly typeName: 'OperationLogCleanupSource' };
+                };
+              };
+              readonly eventLastCleanupAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly eventLastCleanupDeleted: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly eventLastCleanupSource: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/enum@1';
+                  readonly typeParams: { readonly typeName: 'OperationLogCleanupSource' };
+                };
+              };
               readonly lastCleanupAt: {
                 readonly nullable: true;
                 readonly type: {
@@ -20590,6 +20730,14 @@ type ContractBase = Omit<
               readonly fields: {
                 readonly tenantId: { readonly column: 'tenantId' };
                 readonly retentionDays: { readonly column: 'retentionDays' };
+                readonly loginRetentionDays: { readonly column: 'loginRetentionDays' };
+                readonly eventRetentionDays: { readonly column: 'eventRetentionDays' };
+                readonly loginLastCleanupAt: { readonly column: 'loginLastCleanupAt' };
+                readonly loginLastCleanupDeleted: { readonly column: 'loginLastCleanupDeleted' };
+                readonly loginLastCleanupSource: { readonly column: 'loginLastCleanupSource' };
+                readonly eventLastCleanupAt: { readonly column: 'eventLastCleanupAt' };
+                readonly eventLastCleanupDeleted: { readonly column: 'eventLastCleanupDeleted' };
+                readonly eventLastCleanupSource: { readonly column: 'eventLastCleanupSource' };
                 readonly lastCleanupAt: { readonly column: 'lastCleanupAt' };
                 readonly lastCleanupDeleted: { readonly column: 'lastCleanupDeleted' };
                 readonly lastCleanupSource: { readonly column: 'lastCleanupSource' };

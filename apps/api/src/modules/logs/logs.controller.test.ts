@@ -15,7 +15,7 @@ test('clear-all 只使用日志更新权限且不会清空后重新写操作日�
   }
   const controller = new LogsController({} as never, {} as never, cleanup as never)
 
-  const result = await controller.clearAll({ tenantId: 'tenant-a' } as never)
+  const result = await controller.clearAll({ tenantId: 'tenant-a' } as never, {})
 
   assert.deepEqual(result, { deleted: 12 })
   assert.deepEqual(calls, ['tenant-a'])

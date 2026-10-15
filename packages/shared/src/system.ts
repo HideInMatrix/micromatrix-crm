@@ -60,6 +60,8 @@ export interface OperationLogDetailVO extends OperationLogVO {
 
 export type OperationLogCleanupSource = 'AUTO' | 'MANUAL'
 
+export type LogCategory = 'operation' | 'login' | 'event'
+
 export interface OperationLogSettingVO {
   configured: boolean
   retentionDays: number | null

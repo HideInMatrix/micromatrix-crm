@@ -10,13 +10,19 @@ import {
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
 } from '@micromatrix/shared'
-import { Columns3, Download, Plus, Upload } from 'lucide-vue-next'
+import {
+  Columns3,
+  Download,
+  FolderInput,
+  GitMerge,
+  Plus,
+  Upload,
+  UserRoundCog,
+} from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  batchDeleteCustomers,
   batchTransferCustomers,
-  batchUpdateCustomers,
   checkDuplicate,
   createCustomer,
   customerTransferApi,
@@ -29,7 +35,6 @@ import {
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { customerExtraApi } from '@/api/sales'
-import BatchFieldEditDialog from '@/components/BatchFieldEditDialog.vue'
 import CrmExportDrawer from '@/components/CrmExportDrawer.vue'
 import CrmResourceImportDialog from '@/components/resource-import/CrmResourceImportDialog.vue'
 import CrmListPagination from '@/components/CrmListPagination.vue'
@@ -95,7 +100,7 @@ const moveToPoolIds = ref<string[]>([])
 const moveToPoolName = ref('')
 const mergeVisible = ref(false)
 const selectedRows = ref<CustomerVO[]>([])
-const batchEditVisible = ref(false)
+const customerTableRef = ref<{ clearSelection: () => void } | null>(null)
 const exportVisible = ref(false)
 const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
@@ -271,6 +276,11 @@ function handleSelectionChange(rows: CustomerVO[]) {
   selectedRows.value = rows
 }
 
+function clearSelection() {
+  customerTableRef.value?.clearSelection()
+  selectedRows.value = []
+}
+
 function openMerge() {
   if (selectedRows.value.length === 0) {
     ElMessage.warning('请先选择要合并的客户')
@@ -285,37 +295,6 @@ function handleMerged(targetId: string) {
   overviewCustomerId.value = targetId
   overviewVisible.value = true
   loadData()
-}
-
-async function handleBatchEdit(payload: { fieldId: string; fieldValue: unknown }) {
-  if (selectedRows.value.length === 0) return
-  try {
-    const ids = selectedRows.value.map((row) => row.id)
-    await batchUpdateCustomers({ ids, ...payload })
-    ElMessage.success(`已修改 ${selectedRows.value.length} 个客户`)
-    batchEditVisible.value = false
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleBatchDelete() {
-  if (selectedRows.value.length === 0) return
-  const confirmed = await ElMessageBox.confirm(
-    `确定删除已选择的 ${selectedRows.value.length} 个客户？已关联联系人的客户会阻止整批删除。`,
-    '批量删除客户',
-    { type: 'warning', confirmButtonText: '删除' },
-  ).catch(() => false)
-  if (!confirmed) return
-  try {
-    const ids = selectedRows.value.map((row) => row.id)
-    await batchDeleteCustomers(ids)
-    ElMessage.success('批量删除成功')
-    await loadData()
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
 }
 
 function openBatchTransfer() {
@@ -608,12 +587,51 @@ onMounted(async () => {
       </div>
 
       <div class="crm-data-list-toolbar" data-testid="crm-table-primary-toolbar">
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="text-[14px] text-[#000000]">共{{ total }}条客户</span>
+        <div class="flex min-w-0 flex-wrap items-center gap-4">
+          <span class="shrink-0 text-[14px] text-[#000000]">
+            {{ selectedRows.length ? `已选${selectedRows.length}条客户` : `共${total}条客户` }}
+          </span>
+          <template v-if="!isCollaborationView && selectedRows.length">
+            <el-button
+              v-if="auth.hasPerm('customer:transfer')"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="openBatchTransfer"
+            >
+              <UserRoundCog :size="14" :stroke-width="1.8" aria-hidden="true" />批量转移
+            </el-button>
+            <el-button
+              v-if="auth.hasPerm('customer:recycle')"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="openMoveToPool(selectedRows)"
+            >
+              <FolderInput :size="14" :stroke-width="1.8" aria-hidden="true" />批量移入公海
+            </el-button>
+            <el-button
+              v-if="auth.hasPerm('customer:merge')"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="openMerge"
+            >
+              <GitMerge :size="14" :stroke-width="1.8" aria-hidden="true" />合并客户
+            </el-button>
+            <el-button
+              v-if="canExport"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="openExport('selected')"
+            >
+              <Download :size="14" :stroke-width="1.8" aria-hidden="true" />批量导出
+            </el-button>
+            <button
+              type="button"
+              class="h-[36px] cursor-pointer border-0 bg-transparent px-1 py-0 text-[14px] leading-5 text-[#606266] hover:text-[var(--el-color-primary)]"
+              @click="clearSelection"
+            >
+              取消选择
+            </button>
+          </template>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex shrink-0 flex-wrap items-center gap-3">
           <el-button
-            v-if="canExport"
+            v-if="canExport && !selectedRows.length"
             :disabled="items.length === 0"
             class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
             @click="openExport('all')"
@@ -644,36 +662,9 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div
-        v-if="!isCollaborationView && selectedRows.length > 0"
-        class="mb-4 flex flex-wrap items-center gap-2"
-      >
-        <el-button v-if="canExport" @click="openExport('selected')"
-          >导出选中（{{ selectedRows.length }}）</el-button
-        >
-        <el-button v-if="auth.hasPerm('customer:transfer')" @click="openBatchTransfer"
-          >批量转移</el-button
-        >
-        <el-button v-if="auth.hasPerm('customer:recycle')" @click="openMoveToPool(selectedRows)"
-          >批量移入公海</el-button
-        >
-        <el-button v-if="auth.hasPerm('customer:update')" @click="batchEditVisible = true"
-          >批量修改（{{ selectedRows.length }}）</el-button
-        >
-        <el-button v-if="auth.hasPerm('customer:merge')" @click="openMerge"
-          >合并客户（{{ selectedRows.length }}）</el-button
-        >
-        <el-button
-          v-if="auth.hasPerm('customer:delete')"
-          type="danger"
-          plain
-          @click="handleBatchDelete"
-          >批量删除</el-button
-        >
-      </div>
-
       <div class="crm-data-list-table">
         <el-table
+          ref="customerTableRef"
           v-loading="loading"
           :data="items"
           row-key="id"
@@ -687,8 +678,6 @@ onMounted(async () => {
               (auth.hasPerm('customer:merge') ||
                 auth.hasPerm('customer:transfer') ||
                 auth.hasPerm('customer:recycle') ||
-                auth.hasPerm('customer:update') ||
-                auth.hasPerm('customer:delete') ||
                 canExport)
             "
             type="selection"
@@ -863,16 +852,6 @@ onMounted(async () => {
         v-model="mergeVisible"
         :selected-rows="selectedRows"
         @merged="handleMerged"
-      />
-
-      <BatchFieldEditDialog
-        v-model="batchEditVisible"
-        title="批量修改客户"
-        :fields="fields"
-        :members="fieldRefs.members.value"
-        :dept-tree="fieldRefs.deptTree.value"
-        :selected-count="selectedRows.length"
-        @confirm="handleBatchEdit"
       />
     </el-card>
   </div>

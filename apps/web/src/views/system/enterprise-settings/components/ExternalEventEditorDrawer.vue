@@ -2,8 +2,8 @@
 import type {
   ExternalEventTemplateInput,
   ExternalEventTemplateVO,
+  ExternalEventFlow,
   FieldVO,
-  ExternalEventTemplateConfig,
 } from '@micromatrix/shared'
 import type { MemberOption } from '@/api/system'
 import { computed, reactive, ref, watch } from 'vue'
@@ -17,15 +17,15 @@ import { extractErrorMessage } from '@/api/http'
 const visible = defineModel<boolean>({ required: true })
 const props = defineProps<{ existing: ExternalEventTemplateVO | null; initialStep?: number }>()
 const emit = defineEmits<{ saved: [] }>()
-const busy = ref(false)
+const steps = ['基本信息', '目标模块', '资源定位', '执行动作', '字段映射', '测试配置']
 const step = ref(0)
-const steps = ['基本信息', '资源定位', '执行动作', '字段映射', '测试配置']
+const busy = ref(false)
+const savedId = ref<string | null>(null)
 const leadFields = ref<FieldVO[]>([])
 const customerFields = ref<FieldVO[]>([])
 const members = ref<MemberOption[]>([])
 const exampleText = ref('{}')
 const previewResult = ref<ExternalEventPreviewVO | null>(null)
-const savedId = ref<string | null>(null)
 
 function newForm(): ExternalEventTemplateInput {
   return {
@@ -35,62 +35,83 @@ function newForm(): ExternalEventTemplateInput {
     apiKeyUserId: '',
     enabled: false,
     config: {
-      actions: { convertLead: true, updateCustomer: true },
+      actions: { convertLead: false, updateCustomer: false },
       matches: [{ externalKey: 'phone', crmFieldKey: 'phone' }],
       fields: [],
       owner: null,
+      flow: { target: 'lead', action: 'update', fields: [], owner: null },
     },
   }
 }
 const form = reactive<ExternalEventTemplateInput>(newForm())
-const externalOwner = computed({
-  get: () => form.config.owner !== null,
-  set: (value: boolean) => {
-    form.config.owner = value ? { externalKey: 'receptionistUserId', provider: 'WECOM' } : null
-  },
-})
-const matchFields = computed(() => {
-  const seen = new Set<string>()
-  return [...leadFields.value, ...customerFields.value]
-    .filter(
-      (f) =>
-        !f.hidden &&
-        (f.key === 'id' ||
-          ['text', 'phone', 'email', 'number', 'select', 'member', 'date', 'datetime'].includes(
-            f.type,
-          )),
-    )
-    .filter((f) => {
-      if (seen.has(f.key)) return false
-      seen.add(f.key)
-      return true
-    })
-})
-const customerWritable = computed(() =>
-  customerFields.value.filter(
+const flow = computed(() => form.config.flow!)
+const creating = computed(() => flow.value.action === 'create')
+const targetFields = computed(() =>
+  flow.value.target === 'lead' ? leadFields.value : customerFields.value,
+)
+const mappingFields = computed(() =>
+  flow.value.action === 'convert' ? customerFields.value : targetFields.value,
+)
+const lookupFields = computed(() =>
+  targetFields.value.filter(
+    (f) =>
+      !f.hidden &&
+      (f.key === 'id' ||
+        ['text', 'phone', 'email', 'number', 'select', 'member', 'date', 'datetime'].includes(
+          f.type,
+        )),
+  ),
+)
+const writable = computed(() =>
+  mappingFields.value.filter(
     (f) => !f.hidden && !f.system && !['formula', 'sub_product'].includes(f.type),
   ),
 )
-
+const ownerEnabled = computed({
+  get: () => Boolean(flow.value.owner),
+  set: (on: boolean) => {
+    flow.value.owner = on ? { externalKey: 'ownerId', provider: 'CRM' } : null
+  },
+})
+function changeTarget(target: 'lead' | 'customer') {
+  flow.value.target = target
+  flow.value.action = 'update'
+  flow.value.fields = []
+  flow.value.owner = null
+  form.config.matches = [{ externalKey: 'phone', crmFieldKey: '' }]
+}
+function changeAction(action: ExternalEventFlow['action']) {
+  flow.value.action = action
+  flow.value.fields = []
+  flow.value.owner = null
+}
+function addMatch() {
+  form.config.matches.push({ externalKey: '', crmFieldKey: '' })
+}
+function addField() {
+  flow.value.fields.push({ source: 'event', externalKey: '', fieldKey: '' })
+}
 function sample() {
   const data: Record<string, string> = {}
-  for (const item of form.config.matches)
-    if (item.externalKey)
-      data[item.externalKey] = item.externalKey.toLowerCase().includes('phone')
-        ? '13800000000'
-        : '张三'
-  for (const item of form.config.fields)
-    if (item.source === 'event' && item.externalKey) data[item.externalKey] = '示例值'
-  if (form.config.owner?.externalKey)
-    data[form.config.owner.externalKey] =
-      form.config.owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
+  if (!creating.value)
+    for (const m of form.config.matches)
+      if (m.externalKey)
+        data[m.externalKey] = /phone/i.test(m.externalKey) ? '13800000000' : 'EXAMPLE_VALUE'
+  for (const m of flow.value.fields)
+    if (m.source === 'event' && m.externalKey) data[m.externalKey] = 'EXAMPLE_VALUE'
+  if (creating.value && flow.value.nameExternalKey) data[flow.value.nameExternalKey] = '张三'
+  if (flow.value.action === 'stage' && flow.value.stageExternalKey)
+    data[flow.value.stageExternalKey] = 'STAGE_KEY'
+  if (flow.value.owner?.externalKey)
+    data[flow.value.owner.externalKey] =
+      flow.value.owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
   exampleText.value = JSON.stringify(data, null, 2)
 }
 watch(visible, async (open) => {
   if (!open) return
   step.value =
     props.existing && Number.isInteger(props.initialStep)
-      ? Math.min(4, Math.max(0, props.initialStep ?? 0))
+      ? Math.min(5, Math.max(0, props.initialStep ?? 0))
       : 0
   savedId.value = props.existing?.id ?? null
   Object.assign(
@@ -111,7 +132,6 @@ watch(visible, async (open) => {
     ),
   )
   previewResult.value = null
-  sample()
   try {
     const [lead, customer, people] = await Promise.all([
       metadataApi.fields('lead'),
@@ -121,81 +141,79 @@ watch(visible, async (open) => {
     leadFields.value = lead.data
     customerFields.value = customer.data
     members.value = people.data
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+  } catch (e) {
+    ElMessage.error(extractErrorMessage(e))
   }
+  sample()
 })
-
 async function save() {
   if (!form.name.trim() || !form.eventType.trim() || !form.source.trim() || !form.apiKeyUserId) {
-    ElMessage.warning('请完善事件名称、标识、来源和授权账号')
     step.value = 0
+    ElMessage.warning('请完善事件基本信息')
     return
   }
   if (
-    !form.config.matches.length ||
-    form.config.matches.some((x) => !x.externalKey || !x.crmFieldKey)
+    !creating.value &&
+    (!form.config.matches.length ||
+      form.config.matches.some((x) => !x.externalKey || !x.crmFieldKey))
   ) {
-    ElMessage.warning('请配置有效的资源定位字段')
-    step.value = 1
+    step.value = 2
+    ElMessage.warning('请配置有效的资源定位条件')
+    return
+  }
+  if (flow.value.action === 'update' && !flow.value.fields.length) {
+    step.value = 4
+    ElMessage.warning('字段更新至少需要一个映射')
+    return
+  }
+  if (flow.value.action === 'create' && !flow.value.nameExternalKey) {
+    step.value = 4
+    ElMessage.warning('请指定名称参数')
+    return
+  }
+  if (flow.value.action === 'stage' && !flow.value.stageExternalKey) {
+    step.value = 4
+    ElMessage.warning('请指定状态参数')
     return
   }
   busy.value = true
   try {
     const payload = JSON.parse(JSON.stringify(form)) as ExternalEventTemplateInput
+    if (creating.value) payload.config.matches = []
     const result = savedId.value
       ? await externalEventTemplateApi.update(savedId.value, payload)
       : await externalEventTemplateApi.create(payload)
     savedId.value = result.data.id
-    ElMessage.success('事件配置已保存')
+    ElMessage.success('外部事件已保存')
     emit('saved')
-    if (step.value !== 4) visible.value = false
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
+    if (step.value !== 5) visible.value = false
+  } catch (e) {
+    ElMessage.error(extractErrorMessage(e))
   } finally {
     busy.value = false
   }
 }
 async function preview() {
   if (!savedId.value) {
-    ElMessage.warning('请先保存配置，然后进行模拟测试')
+    ElMessage.warning('请先保存配置')
     return
   }
   let data: Record<string, unknown>
   try {
     data = JSON.parse(exampleText.value) as Record<string, unknown>
-    if (!data || Array.isArray(data) || typeof data !== 'object')
-      throw new Error('参数必须是 JSON 对象')
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error()
   } catch {
-    ElMessage.warning('请输入有效的 JSON 参数对象')
+    ElMessage.warning('参数必须是 JSON 对象')
     return
   }
   busy.value = true
   try {
     previewResult.value = (await externalEventTemplateApi.preview(savedId.value, data)).data
-  } catch (error) {
+  } catch (e) {
     previewResult.value = null
-    ElMessage.error(extractErrorMessage(error))
+    ElMessage.error(extractErrorMessage(e))
   } finally {
     busy.value = false
-  }
-}
-function addMatch() {
-  form.config.matches.push({ externalKey: '', crmFieldKey: '' })
-}
-function addField() {
-  form.config.fields.push({ source: 'event', externalKey: '', customerFieldKey: '' })
-}
-function removeMatch(i: number) {
-  form.config.matches.splice(i, 1)
-}
-function removeField(i: number) {
-  form.config.fields.splice(i, 1)
-}
-function changeSource(item: ExternalEventTemplateConfig['fields'][number]) {
-  if (item.source === 'leadOwner') {
-    item.externalKey = ''
-    delete item.provider
   }
 }
 </script>
@@ -220,224 +238,243 @@ function changeSource(item: ExternalEventTemplateConfig['fields'][number]) {
         >
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pr-2">
-        <div v-if="step === 0" class="max-w-[620px]">
+        <el-form v-if="step === 0" label-position="top" class="max-w-[620px]">
           <el-alert
-            title="API Key 仍使用现有个人中心创建的密钥；每条事件配置绑定一个 CRM 集成账号。"
-            type="info"
-            :closable="false"
             class="mb-4"
-          />
-          <el-form label-position="top">
-            <el-form-item label="事件名称"
-              ><el-input v-model="form.name" maxlength="100" placeholder="例如：接待完成"
-            /></el-form-item>
-            <el-form-item label="事件标识"
-              ><el-input
-                v-model="form.eventType"
-                :disabled="Boolean(props.existing)"
-                maxlength="80"
-                placeholder="RECEPTION_COMPLETED"
-              />
-              <div class="text-xs text-[var(--el-text-color-secondary)]">
-                唯一标识保存后不可修改，建议使用大写字母与下划线。
-              </div></el-form-item
-            >
-            <el-form-item label="调用来源"
-              ><el-input v-model="form.source" maxlength="80" placeholder="reception-system"
-            /></el-form-item>
-            <el-form-item label="API Key 所属账号"
-              ><el-select
-                v-model="form.apiKeyUserId"
-                filterable
-                placeholder="选择集成账号"
-                class="w-full"
-                ><el-option
-                  v-for="person in members"
-                  :key="person.id"
-                  :label="`${person.name} (${person.id})`"
-                  :value="person.id" /></el-select
-            ></el-form-item>
-            <el-form-item label="状态"
-              ><el-switch v-model="form.enabled" active-text="启用" inactive-text="停用"
-            /></el-form-item>
-          </el-form>
-        </div>
-        <div v-else-if="step === 1" class="flex flex-col gap-3">
-          <el-alert
-            title="定位采用 AND 精确匹配：必须唯一命中客户或线索，否则拒绝执行。默认优先匹配已有客户。"
+            title="沿用现有 API Key 和 /api/external-events/execute 接口"
             type="info"
             :closable="false"
           />
-          <div
-            v-for="(mapping, index) in form.config.matches"
-            :key="index"
-            class="flex items-center gap-3 rounded-md border border-[var(--el-border-color-lighter)] p-3"
-          >
-            <el-input
-              v-model="mapping.externalKey"
-              placeholder="外部参数名，如 phone"
-              class="!w-[240px]"
-            />
-            <span class="shrink-0 text-[var(--el-text-color-secondary)]">匹配</span>
+          <el-form-item label="事件名称"
+            ><el-input v-model="form.name" maxlength="100"
+          /></el-form-item>
+          <el-form-item label="事件标识"
+            ><el-input
+              v-model="form.eventType"
+              :disabled="Boolean(props.existing)"
+              maxlength="80"
+              placeholder="RECEPTION_COMPLETED"
+          /></el-form-item>
+          <el-form-item label="调用来源"
+            ><el-input v-model="form.source" placeholder="reception-system"
+          /></el-form-item>
+          <el-form-item label="API Key 所属账号">
             <el-select
-              v-model="mapping.crmFieldKey"
+              v-model="form.apiKeyUserId"
               filterable
-              class="flex-1"
-              placeholder="选择 CRM 线索/客户字段"
+              class="w-full"
+              placeholder="选择集成账号"
             >
-              <el-option
-                v-for="field in matchFields"
-                :key="field.key"
-                :label="`${field.label}（${field.key}）`"
-                :value="field.key"
-              />
+              <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
             </el-select>
-            <el-button
-              link
-              type="danger"
-              :disabled="form.config.matches.length <= 1"
-              @click="removeMatch(index)"
-              ><Trash2 :size="16"
-            /></el-button>
-          </div>
-          <el-button
-            class="self-start"
-            plain
-            :disabled="form.config.matches.length >= 10"
-            @click="addMatch"
-            ><Plus :size="14" class="mr-1" />增加定位条件</el-button
+          </el-form-item>
+          <el-form-item label="状态"
+            ><el-switch v-model="form.enabled" active-text="启用" inactive-text="停用"
+          /></el-form-item>
+        </el-form>
+        <div v-else-if="step === 1" class="flex max-w-[650px] flex-col gap-3">
+          <h3 class="m-0 text-base font-semibold">选择本次事件操作的 CRM 模块</h3>
+          <el-radio-group
+            :model-value="flow.target"
+            @change="changeTarget($event as 'lead' | 'customer')"
           >
+            <el-radio-button value="lead">线索</el-radio-button>
+            <el-radio-button value="customer">客户</el-radio-button>
+          </el-radio-group>
+          <el-alert
+            title="目标模块决定资源定位字段与可执行的业务动作，不再默认优先匹配客户。"
+            type="info"
+            :closable="false"
+          />
         </div>
-        <div v-else-if="step === 2" class="flex max-w-[680px] flex-col gap-4">
-          <h3 class="m-0 text-base font-semibold">系统预置业务动作</h3>
-          <div class="rounded-md border border-[var(--el-border-color-lighter)] p-4">
-            <el-checkbox
-              v-model="form.config.actions.convertLead"
-              label="匹配到线索时：转换为客户"
+        <div v-else-if="step === 2" class="flex flex-col gap-3">
+          <el-alert
+            v-if="creating"
+            title="创建记录不需要定位现有资源；可直接进入下一步。"
+            type="info"
+            :closable="false"
+          />
+          <template v-else>
+            <el-alert
+              title="仅在所选目标模块中执行 AND 精确匹配；必须唯一命中，否则拒绝执行。"
+              type="info"
+              :closable="false"
             />
-            <div class="pl-6 text-[12px] text-[var(--el-text-color-secondary)]">
-              复制关联跟进历史，并按客户表单映射创建客户；禁用则跳过该线索。
-            </div>
-          </div>
-          <div class="rounded-md border border-[var(--el-border-color-lighter)] p-4">
-            <el-checkbox
-              v-model="form.config.actions.updateCustomer"
-              label="匹配到已有客户时：更新客户字段"
-            />
-            <div class="pl-6 text-[12px] text-[var(--el-text-color-secondary)]">
-              不自动变更已有客户的系统负责人；需要负责人转移时请使用单独业务操作。
-            </div>
-          </div>
-          <div class="rounded-md border border-[var(--el-border-color-lighter)] p-4">
-            <el-switch
-              v-model="externalOwner"
-              :disabled="!form.config.actions.convertLead"
-              active-text="转换时指定客户负责人（Customer.owner）"
-            />
-            <div v-if="form.config.owner" class="mt-3 flex flex-wrap gap-3">
-              <el-input
-                v-model="form.config.owner.externalKey"
-                class="!w-[250px]"
-                placeholder="外部负责人参数，如 receptionistUserId"
-              />
-              <el-select v-model="form.config.owner.provider" class="!w-[190px]">
-                <el-option label="CRM 成员 ID" value="CRM" />
-                <el-option label="企业微信 UserID" value="WECOM" />
-                <el-option label="钉钉成员标识" value="DINGTALK" />
-                <el-option label="飞书成员标识" value="LARK" />
+            <div
+              v-for="(m, index) in form.config.matches"
+              :key="index"
+              class="flex items-center gap-3 rounded-md border border-[var(--el-border-color-lighter)] p-3"
+            >
+              <el-input v-model="m.externalKey" class="!w-[225px]" placeholder="外部参数名" />
+              <span>→</span>
+              <el-select
+                v-model="m.crmFieldKey"
+                filterable
+                class="flex-1"
+                placeholder="目标模块字段"
+              >
+                <el-option label="内部 ID（id）" value="id" />
+                <el-option
+                  v-for="field in lookupFields"
+                  :key="field.id"
+                  :value="field.key"
+                  :label="field.label + '（' + field.key + '）'"
+                />
               </el-select>
+              <el-button
+                link
+                type="danger"
+                :disabled="form.config.matches.length <= 1"
+                @click="form.config.matches.splice(index, 1)"
+                ><Trash2 :size="16"
+              /></el-button>
             </div>
-            <p class="mt-3 mb-0 text-[12px] text-[var(--el-text-color-secondary)]">
-              未启用时新客户继承线索负责人 A；启用后指定 B 为新客户负责人，原线索负责人仍保留。
-            </p>
-          </div>
+            <el-button
+              class="self-start"
+              plain
+              :disabled="form.config.matches.length >= 10"
+              @click="addMatch"
+            >
+              <Plus :size="14" class="mr-1" />新增定位条件
+            </el-button>
+          </template>
         </div>
         <div v-else-if="step === 3" class="flex flex-col gap-3">
+          <h3 class="m-0 text-base font-semibold">选择业务动作</h3>
+          <el-radio-group
+            :model-value="flow.action"
+            class="!flex flex-col !items-start gap-2"
+            @change="changeAction($event as ExternalEventFlow['action'])"
+          >
+            <el-radio value="update"
+              >更新当前{{ flow.target === 'lead' ? '线索' : '客户' }}的自定义字段</el-radio
+            >
+            <el-radio value="create">创建{{ flow.target === 'lead' ? '线索' : '客户' }}</el-radio>
+            <el-radio v-if="flow.target === 'lead'" value="convert">转换线索为客户</el-radio>
+            <el-radio v-if="flow.target === 'lead'" value="stage">更新线索状态</el-radio>
+          </el-radio-group>
           <el-alert
-            title="仅可映射可写客户自定义字段；系统客户负责人请在上一步配置。原线索负责人可作为邀请人写入成员型字段。"
             type="info"
             :closable="false"
+            title="每个事件使用一个主动作；转化时可同时映射新客户字段和负责人，保证写入与事件日志处于同一事务。"
           />
-          <div
-            v-for="(mapping, index) in form.config.fields"
-            :key="index"
-            class="flex flex-wrap items-center gap-2 rounded-md border border-[var(--el-border-color-lighter)] p-3"
+        </div>
+        <div v-else-if="step === 4" class="flex flex-col gap-3">
+          <el-alert
+            type="info"
+            :closable="false"
+            title="仅展示目标动作允许写入的字段；系统负责人使用单独的身份映射。"
+          />
+          <el-form
+            v-if="creating || flow.action === 'stage'"
+            label-position="top"
+            class="max-w-[440px]"
           >
-            <el-select v-model="mapping.source" class="!w-[150px]" @change="changeSource(mapping)"
-              ><el-option label="外部事件参数" value="event" /><el-option
-                label="原线索负责人"
-                value="leadOwner"
-            /></el-select>
-            <el-input
-              v-if="mapping.source === 'event'"
-              v-model="mapping.externalKey"
-              class="!w-[185px]"
-              placeholder="外部字段名"
-            />
-            <span v-else class="w-[185px] text-xs text-[var(--el-text-color-secondary)]"
-              >Clue.owner</span
+            <el-form-item v-if="creating" label="创建记录的名称来自哪个外部参数">
+              <el-input v-model="flow.nameExternalKey" placeholder="例如 studentName" />
+            </el-form-item>
+            <el-form-item v-if="flow.action === 'stage'" label="线索阶段 Key 来自哪个外部参数">
+              <el-input v-model="flow.stageExternalKey" placeholder="例如 stageKey" />
+            </el-form-item>
+          </el-form>
+          <template v-if="flow.action !== 'stage'">
+            <div
+              v-for="(m, index) in flow.fields"
+              :key="index"
+              class="flex flex-wrap items-center gap-2 rounded-md border border-[var(--el-border-color-lighter)] p-3"
             >
-            <span class="text-[var(--el-text-color-secondary)]">→</span>
-            <el-select
-              v-model="mapping.customerFieldKey"
-              class="!min-w-[195px] flex-1"
-              filterable
-              placeholder="选择客户自定义字段"
-            >
-              <el-option
-                v-for="field in customerWritable.filter(
-                  (f) => mapping.source !== 'leadOwner' || f.type === 'member',
-                )"
-                :key="field.id"
-                :label="`${field.label}（${field.key}）`"
-                :value="field.key"
+              <el-select v-model="m.source" class="!w-[148px]" @change="m.externalKey = ''">
+                <el-option label="外部事件参数" value="event" />
+                <el-option
+                  v-if="flow.action === 'convert'"
+                  label="原线索负责人"
+                  value="leadOwner"
+                />
+              </el-select>
+              <el-input
+                v-if="m.source === 'event'"
+                v-model="m.externalKey"
+                class="!w-[185px]"
+                placeholder="外部参数名"
               />
-            </el-select>
-            <el-select
-              v-if="
-                mapping.source === 'event' &&
-                customerWritable.find((field) => field.key === mapping.customerFieldKey)?.type ===
-                  'member'
-              "
-              v-model="mapping.provider"
-              clearable
-              class="!w-[170px]"
-              placeholder="自动识别成员来源"
+              <span v-else class="w-[185px] text-xs">Clue.owner</span>
+              <span>→</span>
+              <el-select
+                v-model="m.fieldKey"
+                filterable
+                class="!min-w-[190px] flex-1"
+                placeholder="目标自定义字段"
+              >
+                <el-option
+                  v-for="f in writable.filter(
+                    (x) => m.source !== 'leadOwner' || x.type === 'member',
+                  )"
+                  :key="f.id"
+                  :value="f.key"
+                  :label="f.label + '（' + f.key + '）'"
+                />
+              </el-select>
+              <el-select
+                v-if="
+                  m.source === 'event' &&
+                  writable.find((f) => f.key === m.fieldKey)?.type === 'member'
+                "
+                v-model="m.provider"
+                clearable
+                class="!w-[160px]"
+                placeholder="成员来源"
+              >
+                <el-option label="CRM" value="CRM" /><el-option label="企业微信" value="WECOM" />
+                <el-option label="钉钉" value="DINGTALK" /><el-option label="飞书" value="LARK" />
+              </el-select>
+              <el-button link type="danger" @click="flow.fields.splice(index, 1)"
+                ><Trash2 :size="16"
+              /></el-button>
+            </div>
+            <el-button
+              plain
+              class="self-start"
+              :disabled="flow.fields.length >= 30"
+              @click="addField"
             >
-              <el-option label="CRM 成员 ID" value="CRM" />
-              <el-option label="企业微信 UserID" value="WECOM" />
-              <el-option label="钉钉成员标识" value="DINGTALK" />
-              <el-option label="飞书成员标识" value="LARK" />
-            </el-select>
-            <el-button link type="danger" @click="removeField(index)"
-              ><Trash2 :size="16"
-            /></el-button>
-          </div>
-          <el-button
-            plain
-            class="self-start"
-            :disabled="form.config.fields.length >= 30"
-            @click="addField"
-            ><Plus :size="14" class="mr-1" />增加字段映射</el-button
+              <Plus :size="14" class="mr-1" />新增字段映射
+            </el-button>
+          </template>
+          <div
+            v-if="flow.action === 'convert' || creating"
+            class="rounded-md border border-[var(--el-border-color-lighter)] p-3"
           >
-          <el-empty
-            v-if="!form.config.fields.length"
-            description="没有额外字段映射。转换仍会自动保留原有线索的表单关联信息。"
-          />
+            <el-switch
+              v-model="ownerEnabled"
+              active-text="指定新记录的负责人（否则使用默认负责人）"
+            />
+            <div v-if="flow.owner" class="mt-3 flex flex-wrap gap-3">
+              <el-input
+                v-model="flow.owner.externalKey"
+                class="!w-[230px]"
+                placeholder="外部负责人参数名"
+              />
+              <el-select v-model="flow.owner.provider" class="!w-[180px]">
+                <el-option label="CRM 成员 ID" value="CRM" /><el-option
+                  label="企业微信 UserID"
+                  value="WECOM"
+                />
+                <el-option label="钉钉成员标识" value="DINGTALK" /><el-option
+                  label="飞书成员标识"
+                  value="LARK"
+                />
+              </el-select>
+            </div>
+          </div>
         </div>
         <div v-else class="flex max-w-[740px] flex-col gap-3">
           <el-alert
-            title="模拟执行仅读取数据并校验定位与映射，不会创建客户或修改负责人。保存配置后可进行模拟。"
+            title="保存后可模拟定位与业务校验；模拟过程不写入数据。"
             type="warning"
             :closable="false"
           />
           <el-button plain class="self-start" @click="sample">根据映射生成示例参数</el-button>
-          <el-input
-            v-model="exampleText"
-            type="textarea"
-            :rows="12"
-            placeholder="输入 JSON 事件参数"
-          />
+          <el-input v-model="exampleText" type="textarea" :rows="10" />
           <el-button
             type="primary"
             class="self-start"
@@ -446,17 +483,16 @@ function changeSource(item: ExternalEventTemplateConfig['fields'][number]) {
             @click="preview"
             >模拟执行（不写入数据）</el-button
           >
-          <el-empty v-if="!savedId" description="请先保存配置，然后使用模拟测试" :image-size="65" />
           <el-descriptions v-if="previewResult" title="模拟执行结果" border :column="1">
             <el-descriptions-item label="匹配类型">{{
               previewResult.resolvedType
             }}</el-descriptions-item>
-            <el-descriptions-item label="匹配资源 ID">{{
-              previewResult.resolvedId
+            <el-descriptions-item label="资源 ID">{{
+              previewResult.resolvedId || '新建时生成'
             }}</el-descriptions-item>
             <el-descriptions-item label="动作">{{ previewResult.action }}</el-descriptions-item>
-            <el-descriptions-item label="新客户负责人">{{
-              previewResult.customerOwnerId || '继承原线索负责人 / 保持不变'
+            <el-descriptions-item label="负责人">{{
+              previewResult.customerOwnerId || '默认负责人 / 不变'
             }}</el-descriptions-item>
             <el-descriptions-item label="字段映射">
               <pre class="m-0 whitespace-pre-wrap text-xs">{{
@@ -471,7 +507,7 @@ function changeSource(item: ExternalEventTemplateConfig['fields'][number]) {
       >
         <el-button @click="visible = false">取消</el-button>
         <el-button v-if="step > 0" @click="step--">上一步</el-button>
-        <el-button v-if="step < 4" @click="step++">下一步</el-button>
+        <el-button v-if="step < 5" @click="step++">下一步</el-button>
         <el-button type="primary" :loading="busy" @click="save">保存配置</el-button>
       </footer>
     </div>

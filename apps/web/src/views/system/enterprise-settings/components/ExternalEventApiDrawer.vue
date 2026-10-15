@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ExternalEventLogVO, ExternalEventTemplateVO } from '@micromatrix/shared'
+import type { ExternalEventTemplateVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Copy } from 'lucide-vue-next'
@@ -14,14 +14,14 @@ const activeTab = ref('docs')
 const language = ref<'curl' | 'javascript' | 'python'>('curl')
 const debugText = ref('{}')
 const preview = ref<ExternalEventPreviewVO | null>(null)
-const logs = ref<ExternalEventLogVO[]>([])
 const loading = ref(false)
 const canPreview = computed(() => auth.hasPerm('system:setting:update'))
 const baseUrl = computed(() => `${window.location.origin}/api/external-events/execute`)
 
 const sampleData = computed(() => {
   const data: Record<string, string> = {}
-  for (const mapping of props.template?.config.matches ?? []) {
+  const flow = props.template?.config.flow
+  for (const mapping of flow?.action === 'create' ? [] : (props.template?.config.matches ?? [])) {
     const key = mapping.externalKey
     if (key)
       data[key] = /phone|mobile/i.test(key)
@@ -30,11 +30,13 @@ const sampleData = computed(() => {
           ? '张三'
           : 'EXAMPLE_VALUE'
   }
-  for (const mapping of props.template?.config.fields ?? []) {
+  for (const mapping of flow?.fields ?? props.template?.config.fields ?? []) {
     if (mapping.source === 'event' && mapping.externalKey && !(mapping.externalKey in data))
       data[mapping.externalKey] = 'EXAMPLE_VALUE'
   }
-  const owner = props.template?.config.owner
+  if (flow?.action === 'create' && flow.nameExternalKey) data[flow.nameExternalKey] = '张三'
+  if (flow?.action === 'stage' && flow.stageExternalKey) data[flow.stageExternalKey] = 'STAGE_KEY'
+  const owner = flow ? flow.owner : props.template?.config.owner
   if (owner)
     data[owner.externalKey] = owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
   return data
@@ -68,11 +70,25 @@ const code = computed(() => {
 })
 const sortedFields = computed(() => [
   ...new Set([
-    ...(props.template?.config.matches.map((x) => x.externalKey) ?? []),
-    ...(props.template?.config.fields
+    ...(props.template?.config.flow?.action === 'create'
+      ? []
+      : (props.template?.config.matches.map((x) => x.externalKey) ?? [])),
+    ...(props.template?.config.flow?.fields ?? props.template?.config.fields ?? [])
       .filter((x) => x.source === 'event')
-      .map((x) => x.externalKey) ?? []),
-    ...(props.template?.config.owner ? [props.template.config.owner.externalKey] : []),
+      .map((x) => x.externalKey),
+    ...(props.template?.config.flow?.nameExternalKey
+      ? [props.template.config.flow.nameExternalKey]
+      : []),
+    ...(props.template?.config.flow?.stageExternalKey
+      ? [props.template.config.flow.stageExternalKey]
+      : []),
+    ...(props.template?.config.flow?.owner
+      ? [props.template.config.flow.owner.externalKey]
+      : props.template?.config.flow
+        ? []
+        : props.template?.config.owner
+          ? [props.template.config.owner.externalKey]
+          : []),
   ]),
 ])
 watch(visible, (open) => {
@@ -80,7 +96,6 @@ watch(visible, (open) => {
   activeTab.value = 'docs'
   debugText.value = JSON.stringify(sampleData.value, null, 2)
   preview.value = null
-  logs.value = []
 })
 async function copy(value: string) {
   try {
@@ -89,21 +104,6 @@ async function copy(value: string) {
   } catch {
     ElMessage.error('复制失败，请手动选择文本复制')
   }
-}
-async function loadLogs() {
-  if (!props.template) return
-  loading.value = true
-  try {
-    logs.value = (await externalEventTemplateApi.logs(props.template.id)).data
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    loading.value = false
-  }
-}
-function chooseTab(value: string) {
-  activeTab.value = value
-  if (value === 'logs') void loadLogs()
 }
 async function simulate() {
   if (!props.template) return
@@ -143,7 +143,7 @@ async function simulate() {
           >{{ template.eventType }} · 配置版本 v{{ template.version }}</span
         >
       </div>
-      <el-tabs :model-value="activeTab" @tab-change="chooseTab(String($event))">
+      <el-tabs v-model="activeTab">
         <el-tab-pane name="docs" label="调用说明">
           <div class="flex max-h-[calc(100dvh-210px)] flex-col gap-5 overflow-y-auto pr-2">
             <section>
@@ -172,20 +172,44 @@ async function simulate() {
             </section>
             <section>
               <h3 class="mb-2 text-sm font-semibold">业务规则</h3>
-              <p class="text-sm">
-                匹配字段按 AND 精确查询，唯一命中时：{{
-                  template.config.actions.convertLead ? '线索转客户' : '线索跳过'
-                }}；{{
-                  template.config.actions.updateCustomer ? '已有客户更新动态字段' : '已有客户跳过'
-                }}。
-              </p>
-              <p class="text-sm">
-                {{
-                  template.config.owner
-                    ? `新建客户负责人从 data.${template.config.owner.externalKey} 解析（${template.config.owner.provider}）`
-                    : '新建客户默认继承原线索负责人'
-                }}。已有客户负责人保持不变。
-              </p>
+              <template v-if="template.config.flow">
+                <p class="text-sm">
+                  目标模块：{{ template.config.flow.target === 'lead' ? '线索' : '客户' }}；
+                  业务动作：{{
+                    {
+                      update: '更新自定义字段',
+                      create: '创建记录',
+                      convert: '线索转客户',
+                      stage: '更新线索状态',
+                    }[template.config.flow.action]
+                  }}。
+                </p>
+                <p class="text-sm">
+                  {{
+                    template.config.flow.action === 'create'
+                      ? '本动作无需匹配现有资源'
+                      : '定位条件在目标模块内执行 AND 精确匹配，必须唯一命中'
+                  }}； 参数与动作均由管理员预先配置，调用方不能任意指定操作。
+                </p>
+              </template>
+              <template v-else>
+                <p class="text-sm">
+                  匹配字段按 AND 精确查询，唯一命中时：{{
+                    template.config.actions.convertLead ? '线索转客户' : '线索跳过'
+                  }}；{{
+                    template.config.actions.updateCustomer
+                      ? '已有客户更新动态字段'
+                      : '已有客户跳过'
+                  }}。
+                </p>
+                <p class="text-sm">
+                  {{
+                    template.config.owner
+                      ? `新建客户负责人从 data.${template.config.owner.externalKey} 解析（${template.config.owner.provider}）`
+                      : '新建客户默认继承原线索负责人'
+                  }}。已有客户负责人保持不变。
+                </p>
+              </template>
               <p class="text-xs text-[var(--el-text-color-secondary)]">
                 同一来源的 externalEventId
                 必须唯一；重复提交相同参数返回幂等结果，不执行第二次。匹配失败或权限不足时整体拒绝。
@@ -266,43 +290,6 @@ async function simulate() {
             :title="`匹配成功：${preview.resolvedType} / ${preview.resolvedId}`"
             :description="`${preview.action}；新客户负责人：${preview.customerOwnerId ?? '默认继承'}`"
           />
-        </el-tab-pane>
-        <el-tab-pane name="logs" label="执行记录">
-          <el-table v-loading="loading" :data="logs" size="small" border>
-            <el-table-column prop="externalEventId" label="事件编号" min-width="170" />
-            <el-table-column label="状态" width="85"
-              ><template #default="{ row }"
-                ><el-tag
-                  size="small"
-                  :type="
-                    row.status === 'SUCCESS'
-                      ? 'success'
-                      : row.status === 'FAILED'
-                        ? 'danger'
-                        : 'warning'
-                  "
-                  >{{ row.status }}</el-tag
-                ></template
-              ></el-table-column
-            >
-            <el-table-column prop="customerId" label="客户 ID" min-width="140" />
-            <el-table-column label="接收时间" width="170"
-              ><template #default="{ row }">{{
-                new Date(row.receivedAt).toLocaleString()
-              }}</template></el-table-column
-            >
-            <el-table-column prop="attempts" label="次数" width="65" />
-            <el-table-column
-              prop="errorMessage"
-              label="错误原因"
-              min-width="180"
-              show-overflow-tooltip
-            />
-            <template #empty><el-empty description="暂无执行记录" /></template>
-          </el-table>
-          <p class="text-xs text-[var(--el-text-color-secondary)]">
-            最多显示最近 50 条记录；失败可根据错误码定位原因。
-          </p>
         </el-tab-pane>
       </el-tabs>
     </template>

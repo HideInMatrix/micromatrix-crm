@@ -1,0 +1,107 @@
+[
+  {
+    "id": "log-policies.copy-legacy-retention",
+    "label": "Preserve existing log retention values during split",
+    "operationClass": "data",
+    "target": {
+      "id": "public.operation_log_settings",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "operation_log_settings"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Copy existing per-tenant retention and permanent mode to login and event",
+        "sql": "UPDATE \"public\".\"operation_log_settings\" SET \"loginRetentionDays\" = \"retentionDays\", \"eventRetentionDays\" = \"retentionDays\" WHERE \"retentionDays\" IS NOT NULL AND \"loginRetentionDays\" IS NULL AND \"eventRetentionDays\" IS NULL"
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "checkConstraint.operation_log_settings.operation_log_settings_event_retention_rule_1680dd3c",
+    "label": "Add check constraint \"operation_log_settings_event_retention_rule_1680dd3c\" on \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "operation_log_settings_event_retention_rule_1680dd3c",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"operation_log_settings_event_retention_rule_1680dd3c\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "operation_log_settings_event_retention_rule_1680dd3c",
+          "public",
+          "\"public\".\"operation_log_settings\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"operation_log_settings_event_retention_rule_1680dd3c\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD CONSTRAINT \"operation_log_settings_event_retention_rule_1680dd3c\" CHECK (\"eventRetentionDays\" IS NULL OR \"eventRetentionDays\" = 0 OR \"eventRetentionDays\" BETWEEN 30 AND 3650)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"operation_log_settings_event_retention_rule_1680dd3c\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "operation_log_settings_event_retention_rule_1680dd3c",
+          "public",
+          "\"public\".\"operation_log_settings\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.operation_log_settings.operation_log_settings_login_retention_rule_62c3223d",
+    "label": "Add check constraint \"operation_log_settings_login_retention_rule_62c3223d\" on \"operation_log_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "operation_log_settings_login_retention_rule_62c3223d",
+        "table": "operation_log_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"operation_log_settings_login_retention_rule_62c3223d\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "operation_log_settings_login_retention_rule_62c3223d",
+          "public",
+          "\"public\".\"operation_log_settings\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"operation_log_settings_login_retention_rule_62c3223d\"",
+        "sql": "ALTER TABLE \"public\".\"operation_log_settings\" ADD CONSTRAINT \"operation_log_settings_login_retention_rule_62c3223d\" CHECK (\"loginRetentionDays\" IS NULL OR \"loginRetentionDays\" = 0 OR \"loginRetentionDays\" BETWEEN 30 AND 3650)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"operation_log_settings_login_retention_rule_62c3223d\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "operation_log_settings_login_retention_rule_62c3223d",
+          "public",
+          "\"public\".\"operation_log_settings\""
+        ]
+      }
+    ]
+  }
+]

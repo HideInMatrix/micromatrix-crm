@@ -7,6 +7,11 @@ export class QueryOperationLogsDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   module?: string
+
+  @ApiPropertyOptional({ description: '排除指定模块，适用于独立分类日志视图' })
+  @IsString()
+  @IsOptional()
+  excludeModule?: string
 }
 
 export class QueryLoginLogsDto extends PaginationQueryDto {}

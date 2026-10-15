@@ -155,7 +155,6 @@ test(
       )
       const accepted = await service.findEnabled(user, saved.eventType, saved.source)
       assert.equal(accepted.id, saved.id)
-      assert.deepEqual(await service.logs(user, saved.id), [])
       const disabled = await service.update(user, saved.id, { enabled: false })
       assert.equal(disabled.version, 3)
       await service.delete(user, saved.id)
@@ -298,6 +297,10 @@ test(
       assert.equal(logged?.status, 'SUCCESS')
     } finally {
       await db.client.orm.public.ExternalEventInbox.where({ organizationId: tenant.id }).deleteAll()
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: tenant.id,
+        module: 'externalEvent',
+      }).deleteAll()
       await db.client.orm.public.Users.where({ tenantId: tenant.id }).deleteAll()
       await db.client.orm.public.Tenants.where({ id: tenant.id }).delete()
       await db.close()

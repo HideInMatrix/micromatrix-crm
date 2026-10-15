@@ -200,14 +200,19 @@ export const dictionaryApi = {
 // ===== 日志 =====
 
 export const logApi = {
-  operations: (params: PageQuery & { module?: string }) =>
+  operations: (params: PageQuery & { module?: string; excludeModule?: string }) =>
     http.get<PaginatedResult<OperationLogVO>>('/logs/operations', { params }),
   operationDetail: (id: string) => http.get<OperationLogDetailVO>(`/logs/operations/${id}`),
-  settings: () => http.get<OperationLogSettingVO>('/logs/settings'),
-  updateSettings: (data: UpdateOperationLogSettingInput) =>
-    http.put<OperationLogSettingVO>('/logs/settings', data),
-  cleanup: () => http.post<OperationLogCleanupResultVO>('/logs/cleanup'),
-  clearAll: () => http.post<OperationLogClearResultVO>('/logs/clear-all'),
+  settings: (category: 'operation' | 'login' | 'event' = 'operation') =>
+    http.get<OperationLogSettingVO>('/logs/settings', { params: { category } }),
+  updateSettings: (
+    data: UpdateOperationLogSettingInput,
+    category: 'operation' | 'login' | 'event' = 'operation',
+  ) => http.put<OperationLogSettingVO>('/logs/settings', data, { params: { category } }),
+  cleanup: (category: 'operation' | 'login' | 'event' = 'operation') =>
+    http.post<OperationLogCleanupResultVO>('/logs/cleanup', undefined, { params: { category } }),
+  clearAll: (category: 'operation' | 'event' = 'operation') =>
+    http.post<OperationLogClearResultVO>('/logs/clear-all', undefined, { params: { category } }),
   logins: (params: PageQuery) => http.get<PaginatedResult<LoginLogVO>>('/logs/logins', { params }),
 }
 

@@ -213,9 +213,3 @@ async function handleSubmit() {
     </CrmDialog>
   </div>
 </template>
-
-<style scoped>
-:deep(.wecom-login-dialog .el-dialog__body) {
-  padding: 0;
-}
-</style>

@@ -24,11 +24,14 @@ export class LogsService {
       tenantId,
       ...(module ? { module } : {}),
     })
+    const categoryScoped = query.excludeModule
+      ? scoped.where((log) => log.module.neq(query.excludeModule!))
+      : scoped
     const filtered = normalized
-      ? scoped.where((log) =>
+      ? categoryScoped.where((log) =>
           or(log.userName.ilike(`%${normalized}%`), log.targetName.ilike(`%${normalized}%`)),
         )
-      : scoped
+      : categoryScoped
     const [items, aggregate] = await Promise.all([
       filtered
         .select('id', 'userName', 'module', 'action', 'targetName', 'ip', 'createdAt')
