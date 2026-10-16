@@ -68,6 +68,7 @@ test('CustomerAccess 使用 Prisma 保持租户隔离与协作访问裁决', { s
 
     const dataScope = {
       matchesDirectOwner: async () => false,
+      matchesBusinessOwner: async () => false,
     } as unknown as DataScopeService
     const resourcePools = {
       options: async () => [],

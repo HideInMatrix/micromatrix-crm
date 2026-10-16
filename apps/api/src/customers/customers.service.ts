@@ -466,7 +466,7 @@ export class CustomersService {
         .select('customerId', 'collaborationType')
         .all(),
       this.pools.options(user, 'customer'),
-      this.dataScope.directOwnerFilter(user, 'customer:read'),
+      this.dataScope.businessOwnerFilter(user),
     ])
     const accessiblePoolIds = poolOptions.map((pool) => String(pool.id))
     const collaborationIds = collaborations.map((item) => String(item.customerId))
@@ -539,13 +539,9 @@ export class CustomersService {
     }
   }
 
-  /** Cordys /account/tab：决定“全部客户 / 部门客户”系统视图是否显示。 */
+  /** 客户系统视图能力与线索、联系人共享同一业务数据范围。 */
   tab(user: AuthUser) {
-    const roles = user.roles.filter((role) => hasPermission(role.permissions, 'customer:read'))
-    return {
-      all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
-      dept: roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
-    }
+    return this.dataScope.businessViewCapabilities(user)
   }
 
   async findOne(user: AuthUser, id: string): Promise<CustomerVO> {
@@ -2391,7 +2387,7 @@ export class CustomersService {
         .where((row) => row.customerId.in(unique))
         .select('customerId')
         .all(),
-      this.dataScope.directOwnerFilter(user, 'customer:read'),
+      this.dataScope.businessOwnerFilter(user),
     ])
     const poolIds = poolOptions.map((pool) => String(pool.id))
     const collaborationIds = collaborationRows.map((item) => String(item.customerId))
@@ -2961,7 +2957,7 @@ export class CustomersService {
     user: AuthUser,
     view?: 'ALL' | 'SELF' | 'DEPARTMENT' | 'COLLABORATION',
   ): Promise<CustomerListScope> {
-    if (!view) return this.dataScope.directOwnerFilter(user, 'customer:read')
+    if (!view) return this.dataScope.businessOwnerFilter(user)
     if (view === 'SELF') return { owner: user.id }
     if (view === 'COLLABORATION') {
       const collaborations = await this.prisma.client.orm.public.CustomerCollaboration.where({
@@ -2973,36 +2969,35 @@ export class CustomersService {
       if (!candidateIds.length) return { ids: [] }
       const customers = await this.prisma.client.orm.public.Customer.where({
         organizationId: user.tenantId,
+        inSharedPool: false,
       })
         .where((row) => row.id.in(candidateIds))
         .select('id')
         .all()
       return { ids: customers.map((item) => String(item.id)) }
     }
+
+    const effective = await this.dataScope.resolveBusinessScope(user)
+    const capabilities = await this.dataScope.businessViewCapabilities(user)
+    if (!effective.hasPermission) throw new ForbiddenException('当前角色没有业务数据权限')
     if (view === 'ALL') {
-      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'customer:read'))
-      if (!roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM')) {
+      if (!capabilities.all) {
         throw new ForbiddenException('当前角色没有全部客户视图权限')
       }
-      return this.dataScope.directOwnerFilter(user, 'customer:read')
+      return this.dataScope.businessOwnerFilter(user)
     }
-    if (view === 'DEPARTMENT') {
-      const roles = user.roles.filter((role) => hasPermission(role.permissions, 'customer:read'))
-      if (!roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope))) {
-        throw new ForbiddenException('当前角色没有部门客户视图权限')
-      }
-      const effective = await this.dataScope.resolveScope(user, 'customer:read')
-      if (effective.all) return {}
-      let users = this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
-      if (effective.deptIds.length) {
-        users = users.where((row) => or(row.id.eq(user.id), row.deptId.in(effective.deptIds)))
-      } else {
-        users = users.where({ id: user.id })
-      }
-      const owners = await users.select('id').all()
-      return { owner: { in: owners.map((item) => item.id) } }
+
+    if (!capabilities.dept) {
+      throw new ForbiddenException('当前角色没有部门客户视图权限')
     }
-    return this.dataScope.directOwnerFilter(user, 'customer:read')
+    if (effective.all) return {}
+    let users = this.prisma.client.orm.public.Users.where({
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+    })
+    users = users.where((row) => or(row.id.eq(user.id), row.deptId.in(effective.deptIds)))
+    const owners = await users.select('id').all()
+    return { owner: { in: owners.map((item) => item.id) } }
   }
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {

@@ -52,8 +52,12 @@ test(
 
       const dataScope = {
         directOwnerFilter: async () => ({}),
+        businessOwnerFilter: async () => ({}),
         resolveScope: async () => ({ all: true, deptIds: [] }),
+        resolveBusinessScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+        businessViewCapabilities: async () => ({ all: true, dept: true }),
         matchesDirectOwner: async () => true,
+        matchesBusinessOwner: async () => true,
       }
       const metadata = {
         listFields: async () => [

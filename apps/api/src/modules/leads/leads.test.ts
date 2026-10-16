@@ -49,8 +49,12 @@ test(
 
       const dataScope = {
         directOwnerFilter: async () => ({}),
+        businessOwnerFilter: async () => ({}),
         matchesDirectOwner: async () => true,
+        matchesBusinessOwner: async () => true,
         resolveScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+        resolveBusinessScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+        businessViewCapabilities: async () => ({ all: true, dept: true }),
       }
       const uniqueSystemFields = new Set<string>()
       const metadata = {

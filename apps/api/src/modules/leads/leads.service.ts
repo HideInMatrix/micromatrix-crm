@@ -312,7 +312,7 @@ export class LeadsService {
   }
 
   async getTabEnable(user: AuthUser) {
-    const scope = await this.dataScope.resolveScope(user, 'menu:lead')
+    const scope = await this.dataScope.resolveBusinessScope(user)
     return {
       all: scope.all,
       dept: !scope.all && scope.deptIds.length > 0,
@@ -502,7 +502,7 @@ export class LeadsService {
       db = this.applyHomeLeadWhere(db, homeWhere)
     } else {
       db = db.where({ inSharedPool: false })
-      const scopeFilter = await this.dataScope.directOwnerFilter(user, 'menu:lead')
+      const scopeFilter = await this.dataScope.businessOwnerFilter(user)
       const ownerScope = scopeFilter.owner
       if (typeof ownerScope === 'string') {
         db = db.where({ owner: ownerScope })
@@ -721,7 +721,7 @@ export class LeadsService {
       inSharedPool: false,
     }).first()
     if (!lead) throw new NotFoundException('线索不存在')
-    if (!(await this.dataScope.matchesDirectOwner(user, lead.owner, 'menu:lead'))) {
+    if (!(await this.dataScope.matchesBusinessOwner(user, lead.owner))) {
       throw new NotFoundException('线索不存在或不在你的数据范围内')
     }
     return this.toSingleVO(user, lead)
@@ -1450,7 +1450,7 @@ export class LeadsService {
       if (!options.some((pool) => pool.id === lead.poolId))
         throw new NotFoundException('线索不存在或无权访问')
     } else if (!lead.inSharedPool) {
-      await this.ensureInScope(user, id, 'menu:lead')
+      await this.ensureInScope(user, id, 'business:read')
     }
     return this.pools.ownerHistory(user, 'lead', id)
   }
@@ -2860,7 +2860,10 @@ export class LeadsService {
   }
 
   private async ensureInScope(user: AuthUser, id: string, permission: string) {
-    const scope = await this.dataScope.directOwnerFilter(user, permission)
+    const scope =
+      permission === 'business:read'
+        ? await this.dataScope.businessOwnerFilter(user)
+        : await this.dataScope.directOwnerFilter(user, permission)
     let query = this.prisma.client.orm.public.Clue.where({
       id: id,
       organizationId: user.tenantId,

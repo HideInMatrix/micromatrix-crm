@@ -97,6 +97,38 @@ describe('DataScopeService multi-role merge', () => {
     )
   })
 
+  it('unifies lead and customer menu roles into one business data scope', async () => {
+    const user = actor()
+    user.roles = [
+      {
+        id: 'customer-dept',
+        name: '客户部门',
+        permissions: ['menu:customer'],
+        dataScope: 'DEPT',
+        scopeDeptIds: [],
+      },
+      {
+        id: 'lead-self',
+        name: '线索本人',
+        permissions: ['menu:lead'],
+        dataScope: 'SELF',
+        scopeDeptIds: [],
+      },
+      {
+        id: 'unrelated-all',
+        name: '系统日志',
+        permissions: ['menu:dashboard'],
+        dataScope: 'ALL',
+        scopeDeptIds: [],
+      },
+    ]
+    const dataScope = service()
+    const scope = await dataScope.resolveBusinessScope(user)
+    assert.equal(scope.hasPermission, true)
+    assert.equal(scope.all, false)
+    assert.deepEqual(scope.deptIds, ['service'])
+  })
+
   it('returns invisible when no role owns the requested permission', async () => {
     const dataScope = service()
     assert.deepEqual(await dataScope.scopeFilter(actor(), 'customer:delete'), {

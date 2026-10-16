@@ -37,12 +37,13 @@ const savedViewBarRef = ref<InstanceType<typeof SavedViewBar>>()
 const fields = ref<FieldVO[]>([])
 const formProp = ref<ModuleFormProp>({})
 const customerOptions = ref<CustomerOptionVO[]>([])
-const tabConfig = ref({ all: false, dept: false })
-const scopeView = ref<'SELF' | 'DEPT' | 'ALL'>('SELF')
+const tabConfig = ref({ all: false, dept: false, collaboration: false })
+const scopeView = ref<'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION'>('SELF')
 const contactSystemViews = computed(() => [
+  ...(tabConfig.value.all ? [{ id: 'ALL', label: '全部联系人' }] : []),
   { id: 'SELF', label: '我的联系人' },
   ...(tabConfig.value.dept ? [{ id: 'DEPT', label: '部门联系人' }] : []),
-  ...(tabConfig.value.all ? [{ id: 'ALL', label: '全部联系人' }] : []),
+  ...(tabConfig.value.collaboration ? [{ id: 'COLLABORATION', label: '协作联系人' }] : []),
 ])
 const activeSavedViewId = ref('')
 const filters = ref<FilterCondition[]>([])
@@ -135,8 +136,14 @@ async function loadReferenceData() {
     formProp.value = config.formProp
     customerOptions.value = customers
     tabConfig.value = tabs
-    if (!tabs.dept && scopeView.value === 'DEPT') scopeView.value = 'SELF'
-    if (!tabs.all && scopeView.value === 'ALL') scopeView.value = 'SELF'
+    if (!tabs.dept && scopeView.value === 'DEPT') scopeView.value = tabs.all ? 'ALL' : 'SELF'
+    if (!tabs.all && scopeView.value === 'ALL') scopeView.value = tabs.dept ? 'DEPT' : 'SELF'
+    if (!tabs.collaboration && scopeView.value === 'COLLABORATION') {
+      scopeView.value = tabs.all ? 'ALL' : tabs.dept ? 'DEPT' : 'SELF'
+    }
+    if (!initialLoadDone.value) {
+      scopeView.value = tabs.all ? 'ALL' : tabs.dept ? 'DEPT' : 'SELF'
+    }
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
@@ -194,7 +201,7 @@ function handleSearch() {
   loadData()
 }
 
-function handleScopeChange(value: 'SELF' | 'DEPT' | 'ALL') {
+function handleScopeChange(value: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION') {
   scopeView.value = value
   query.page = 1
   clearListState()
@@ -202,8 +209,8 @@ function handleScopeChange(value: 'SELF' | 'DEPT' | 'ALL') {
 }
 
 function handleSystemViewChange(value?: string) {
-  if (!value || !['SELF', 'DEPT', 'ALL'].includes(value)) return
-  handleScopeChange(value as 'SELF' | 'DEPT' | 'ALL')
+  if (!value || !['SELF', 'DEPT', 'ALL', 'COLLABORATION'].includes(value)) return
+  handleScopeChange(value as 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION')
 }
 
 function handleSavedViewChange(viewId?: string) {

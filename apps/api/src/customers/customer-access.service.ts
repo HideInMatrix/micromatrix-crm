@@ -59,11 +59,10 @@ export class CustomerAccessService {
     }).first()
     if (!customer) throw new NotFoundException('客户不存在或无权访问')
 
-    const dataScope = await this.dataScopeService.matchesDirectOwner(
-      user,
-      customer.owner,
-      permission,
-    )
+    const dataScope =
+      permission === 'customer:read'
+        ? await this.dataScopeService.matchesBusinessOwner(user, customer.owner)
+        : await this.dataScopeService.matchesDirectOwner(user, customer.owner, permission)
 
     let pool = false
     let poolManager = false

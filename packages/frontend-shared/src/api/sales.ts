@@ -657,7 +657,7 @@ export interface ContactListParams extends PageQuery {
   filters?: string
   filterMode?: 'AND' | 'OR'
   viewId?: string
-  scopeView?: 'SELF' | 'DEPT' | 'ALL'
+  scopeView?: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION'
 }
 
 function parseContactFilters(raw?: string) {
@@ -738,7 +738,7 @@ export const contactApi = {
   enable: (id: string) => http.get<ContactVO>(`/account/contact/enable/${id}`),
   disable: (id: string, reason: string) =>
     http.post<ContactVO>(`/account/contact/disable/${id}`, { reason }),
-  tab: () => http.get<{ all: boolean; dept: boolean }>('/account/contact/tab'),
+  tab: () => http.get<{ all: boolean; dept: boolean; collaboration: boolean }>('/account/contact/tab'),
   batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
     http.post<{ success: number; fail: number; failedIds: string[] }>(
       '/account/contact/batch/update',

@@ -18,7 +18,7 @@ import { formatForExport } from '../../common/export-format'
 import { parseFilters } from '../../common/filter-builder'
 import { DataScopeService } from '../../common/services/data-scope.service'
 import { CustomerAccessService } from '../../customers/customer-access.service'
-import { not, or } from '@prisma/orm-postgres/orm-client'
+import { and, not, or } from '@prisma/orm-postgres/orm-client'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { PrismaService } from '../../prisma.service.js'
 import {
@@ -152,11 +152,30 @@ export class ContactsService {
       adHoc.length ? this.filterIds(user.tenantId, adHoc, query.filterMode ?? 'AND') : null,
     ])
     const filteredIds = this.intersectIds(savedIds, adHocIds)
-    const ownerIds = await this.resolveListOwnerIds(user, query.scopeView)
+    const visibility = await this.resolveListVisibility(user, query.scopeView)
     let dbQuery = this.prisma.client.orm.public.CustomerContact.where({
       organizationId: user.tenantId,
     })
-    if (ownerIds) dbQuery = dbQuery.where((row) => row.owner.in(ownerIds))
+    if (visibility.customerIds) {
+      const customerIds = visibility.customerIds
+      const orphanOwners = visibility.orphanOwnerIds ?? []
+      dbQuery = dbQuery.where((row) =>
+        customerIds.length && orphanOwners.length
+          ? or(row.customerId.in(customerIds), and(row.customerId.isNull(), row.owner.in(orphanOwners)))
+          : customerIds.length
+            ? row.customerId.in(customerIds)
+            : orphanOwners.length
+              ? and(row.customerId.isNull(), row.owner.in(orphanOwners))
+              : row.id.eq(''),
+      )
+    } else if (visibility.orphanOwnerIds) {
+      const orphanOwners = visibility.orphanOwnerIds
+      dbQuery = dbQuery.where((row) =>
+        orphanOwners.length
+          ? or(row.customerId.isNotNull(), and(row.customerId.isNull(), row.owner.in(orphanOwners)))
+          : row.customerId.isNotNull(),
+      )
+    }
     if (filteredIds) dbQuery = dbQuery.where((row) => row.id.in(filteredIds))
     if (query.customerId) dbQuery = dbQuery.where({ customerId: query.customerId })
     if (query.enable !== undefined) dbQuery = dbQuery.where({ enable: query.enable === 'true' })
@@ -192,12 +211,9 @@ export class ContactsService {
     }
   }
 
-  tab(user: AuthUser) {
-    const roles = user.roles.filter((role) => hasPermission(role.permissions, 'contact:read'))
-    return {
-      all: roles.some((role) => role.dataScope === 'ALL' || role.dataScope === 'CUSTOM'),
-      dept: roles.some((role) => ['ALL', 'DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
-    }
+  async tab(user: AuthUser) {
+    const capabilities = await this.dataScope.businessViewCapabilities(user)
+    return { ...capabilities, collaboration: hasPermission(user.permissions, 'customer:read') }
   }
 
   async chart(user: AuthUser, dto: ContactChartDto) {
@@ -480,8 +496,11 @@ export class ContactsService {
     if (contacts.length !== uniqueIds.length) {
       throw new ForbiddenException('选中联系人包含不存在或不在你数据范围内的数据')
     }
+    const permission = this.pickPermission(user, 'contact:update', 'customer:update')
     for (const contact of contacts) {
-      if (!(await this.dataScope.matchesDirectOwner(user, contact.owner, 'contact:read'))) {
+      try {
+        await this.assertWrite(user, contact, permission)
+      } catch {
         throw new ForbiddenException('选中联系人包含不存在或不在你数据范围内的数据')
       }
     }
@@ -826,23 +845,28 @@ export class ContactsService {
 
   private async ensureReadable(user: AuthUser, id: string): Promise<ContactWithRelations> {
     const contact = await this.loadContactWithRelations(user.tenantId, id)
-    if (
-      hasPermission(user.permissions, 'contact:read') &&
-      (await this.dataScope.matchesDirectOwner(user, contact.owner, 'contact:read'))
-    ) {
-      return contact
+    if (!contact.customerId) {
+      if (
+        hasPermission(user.permissions, 'contact:read') &&
+        (await this.dataScope.matchesBusinessOwner(user, contact.owner))
+      ) {
+        return contact
+      }
+      throw new NotFoundException('联系人不存在或无权访问')
     }
-    if (!contact.customerId) throw new NotFoundException('联系人尚未关联客户')
-    const access = await this.customerAccess.assertRead(user, contact.customerId)
-    if (access.dataScope || access.pool) return contact
-    if (access.collaborationType === 'COLLABORATION' && contact.owner === user.id) return contact
-    throw new NotFoundException('联系人不存在或无权访问')
+    await this.customerAccess.assertRead(user, contact.customerId)
+    return contact
   }
 
   private async assertWrite(user: AuthUser, contact: ContactRow, permission: string) {
-    if (await this.dataScope.matchesDirectOwner(user, contact.owner, permission)) return
-    if (!contact.customerId) throw new ForbiddenException('联系人尚未关联客户')
-    const access = await this.customerAccess.assertRead(user, contact.customerId)
+    if (!contact.customerId) {
+      if (await this.dataScope.matchesDirectOwner(user, contact.owner, permission)) return
+      throw new ForbiddenException('无权维护该联系人')
+    }
+    const access = await this.customerAccess.resolve(user, contact.customerId, permission)
+    if (access.customer.inSharedPool) {
+      throw new ForbiddenException('无权维护公海客户下的联系人')
+    }
     if (access.dataScope) return
     if (access.collaborationType === 'COLLABORATION' && contact.owner === user.id) return
     throw new ForbiddenException('无权维护该联系人')
@@ -854,45 +878,99 @@ export class ContactsService {
       organizationId: user.tenantId,
     }).first()
     if (!row) return null
-    return (await this.dataScope.matchesDirectOwner(user, row.owner, 'contact:import')) ? row : null
+    if (!row.customerId) {
+      return (await this.dataScope.matchesDirectOwner(user, row.owner, 'contact:import')) ? row : null
+    }
+    const access = await this.customerAccess.resolve(user, row.customerId, 'contact:import')
+    return access.dataScope && !access.customer.inSharedPool ? row : null
   }
 
-  private async resolveListOwnerIds(
+  private async resolveListVisibility(
     user: AuthUser,
-    builtInView?: string,
-  ): Promise<string[] | null> {
-    if (!builtInView) {
-      const scope = await this.dataScope.directOwnerFilter(user, 'contact:read')
-      const owner = scope.owner
-      if (!owner) return null
-      return typeof owner === 'string' ? [owner] : [...owner.in]
+    builtInView?: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION',
+  ): Promise<{ customerIds: string[] | null; orphanOwnerIds: string[] | null }> {
+    if (builtInView === 'COLLABORATION') {
+      if (!hasPermission(user.permissions, 'customer:read')) {
+        throw new ForbiddenException('当前角色没有协作客户数据权限')
+      }
+      const collaborations = await this.prisma.client.orm.public.CustomerCollaboration.where({
+        userId: user.id,
+      })
+        .select('customerId')
+        .all()
+      const candidateIds = [...new Set(collaborations.map((item) => String(item.customerId)))]
+      if (!candidateIds.length) return { customerIds: [], orphanOwnerIds: [] }
+      const customers = await this.prisma.client.orm.public.Customer.where({
+        organizationId: user.tenantId,
+        inSharedPool: false,
+      })
+        .where((row) => row.id.in(candidateIds))
+        .select('id')
+        .all()
+      return {
+        customerIds: customers.map((item) => String(item.id)),
+        orphanOwnerIds: [],
+      }
     }
-    if (builtInView === 'SELF') return [user.id]
-    if (builtInView === 'ALL') {
-      const effective = await this.dataScope.resolveScope(user, 'contact:read')
-      if (!effective.all) throw new ForbiddenException('当前角色没有全部联系人数据权限')
-      return null
-    }
-    if (builtInView === 'DEPT') {
-      const effective = await this.dataScope.resolveScope(user, 'contact:read')
+
+    const effective = await this.dataScope.resolveBusinessScope(user)
+    const capabilities = await this.dataScope.businessViewCapabilities(user)
+    if (!effective.hasPermission) return { customerIds: [], orphanOwnerIds: [] }
+
+    let ownerIds: string[] | null = null
+    if (builtInView === 'SELF') {
+      ownerIds = [user.id]
+    } else if (builtInView === 'DEPT') {
       if (!effective.all && effective.deptIds.length === 0) {
         throw new ForbiddenException('当前角色没有部门联系人数据权限')
       }
-      if (effective.all) return null
-      if (effective.deptIds.length === 0) return [user.id]
-      const owners = await this.prisma.client.orm.public.Users.where({
-        tenantId: user.tenantId,
-        status: 'ACTIVE',
-      })
-        .where((row) => row.deptId.in(effective.deptIds))
-        .select('id')
-        .all()
-      return [...new Set([user.id, ...owners.map((item) => item.id)])]
+      if (effective.all) {
+        ownerIds = null
+      } else {
+        const users = await this.prisma.client.orm.public.Users.where({
+          tenantId: user.tenantId,
+          status: 'ACTIVE',
+        })
+          .where((row) => or(row.id.eq(user.id), row.deptId.in(effective.deptIds)))
+          .select('id')
+          .all()
+        ownerIds = [...new Set(users.map((item) => String(item.id)))]
+      }
+    } else if (builtInView === 'ALL') {
+      if (!capabilities.all) {
+        throw new ForbiddenException('当前角色没有全部联系人视图权限')
+      }
+      ownerIds = effective.all ? null : await this.resolveBusinessOwnerIds(user, effective.deptIds)
+    } else {
+      ownerIds = effective.all ? null : await this.resolveBusinessOwnerIds(user, effective.deptIds)
     }
-    const scope = await this.dataScope.directOwnerFilter(user, 'contact:read')
-    const owner = scope.owner
-    if (!owner) return null
-    return typeof owner === 'string' ? [owner] : [...owner.in]
+
+    let customers = this.prisma.client.orm.public.Customer.where({
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    })
+    if (ownerIds) {
+      customers = customers.where((row) => row.owner.in(ownerIds))
+    }
+    const customerRows = await customers.select('id').all()
+    return {
+      customerIds: customerRows.map((item) => String(item.id)),
+      orphanOwnerIds: ownerIds,
+    }
+  }
+
+  private async resolveBusinessOwnerIds(user: AuthUser, deptIds: string[]) {
+    const ownerIds = new Set([user.id])
+    if (!deptIds.length) return [...ownerIds]
+    const users = await this.prisma.client.orm.public.Users.where({
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+    })
+      .where((row) => row.deptId.in(deptIds))
+      .select('id')
+      .all()
+    users.forEach((item) => ownerIds.add(String(item.id)))
+    return [...ownerIds]
   }
 
   private pickPermission(user: AuthUser, preferred: string, fallback: string) {

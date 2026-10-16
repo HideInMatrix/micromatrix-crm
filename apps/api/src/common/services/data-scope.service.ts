@@ -9,6 +9,8 @@ import type { AuthUser } from '../auth-user'
  */
 @Injectable()
 export class DataScopeService {
+  private static readonly BUSINESS_SCOPE_PERMISSIONS = ['menu:lead', 'menu:customer'] as const
+
   constructor(private readonly prisma: PrismaService) {}
 
   async scopeFilter(user: AuthUser, permission: string): Promise<Record<string, unknown>> {
@@ -38,22 +40,66 @@ export class DataScopeService {
     const scope = await this.resolveScope(user, permission)
     if (!scope.hasPermission) return { owner: '__permission_scope_denied__' }
     if (scope.all) return {}
-    const ownerIds = new Set([user.id])
-    if (scope.deptIds.length) {
-      const users = await this.prisma.client.orm.public.Users.where({
-        tenantId: user.tenantId,
-        status: 'ACTIVE',
-      })
-        .where((row) => row.deptId.in(scope.deptIds))
-        .select('id')
-        .all()
-      users.forEach((item) => ownerIds.add(item.id))
-    }
+    const ownerIds = await this.ownerIdsForScope(user, scope.deptIds)
     return ownerIds.size === 1 ? { owner: user.id } : { owner: { in: [...ownerIds] } }
   }
 
   async matchesDirectOwner(user: AuthUser, ownerId: string | null, permission: string) {
     const scope = await this.resolveScope(user, permission)
+    if (!scope.hasPermission) return false
+    if (scope.all || ownerId === user.id) return true
+    if (!ownerId || !scope.deptIds.length) return false
+    return !!(await this.prisma.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+    })
+      .where((row) => row.deptId.in(scope.deptIds))
+      .select('id')
+      .first())
+  }
+
+  /**
+   * 线索、客户、联系人共享的业务数据范围。
+   *
+   * DataScope 本身仍按权限计算，用于严格控制具体操作；业务资源的“可见范围”
+   * 则统一取线索/客户两大业务菜单角色的数据范围并集。联系人属于客户子资源，
+   * 列表与详情通过所属客户套用该范围。
+   */
+  async resolveBusinessScope(user: AuthUser) {
+    const roles = user.roles.filter((role) =>
+      DataScopeService.BUSINESS_SCOPE_PERMISSIONS.some((permission) =>
+        hasPermission(role.permissions, permission),
+      ),
+    )
+    return this.resolveRolesScope(user, roles)
+  }
+
+  async businessViewCapabilities(user: AuthUser) {
+    const roles = user.roles.filter((role) =>
+      DataScopeService.BUSINESS_SCOPE_PERMISSIONS.some((permission) =>
+        hasPermission(role.permissions, permission),
+      ),
+    )
+    const scope = await this.resolveRolesScope(user, roles)
+    return {
+      all: scope.all || roles.some((role) => role.dataScope === 'CUSTOM'),
+      dept: scope.all || roles.some((role) => ['DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
+    }
+  }
+
+  async businessOwnerFilter(
+    user: AuthUser,
+  ): Promise<{ owner?: string | { in: string[] } }> {
+    const scope = await this.resolveBusinessScope(user)
+    if (!scope.hasPermission) return { owner: '__permission_scope_denied__' }
+    if (scope.all) return {}
+    const ownerIds = await this.ownerIdsForScope(user, scope.deptIds)
+    return ownerIds.size === 1 ? { owner: user.id } : { owner: { in: [...ownerIds] } }
+  }
+
+  async matchesBusinessOwner(user: AuthUser, ownerId: string | null) {
+    const scope = await this.resolveBusinessScope(user)
     if (!scope.hasPermission) return false
     if (scope.all || ownerId === user.id) return true
     if (!ownerId || !scope.deptIds.length) return false
@@ -107,6 +153,10 @@ export class DataScopeService {
   /** Cordys 语义：筛出拥有当前权限的角色，再对这些角色的数据范围取并集。 */
   async resolveScope(user: AuthUser, permission: string) {
     const roles = user.roles.filter((role) => hasPermission(role.permissions, permission))
+    return this.resolveRolesScope(user, roles)
+  }
+
+  private async resolveRolesScope(user: AuthUser, roles: AuthUser['roles']) {
     if (roles.length === 0) return { hasPermission: false, all: false, deptIds: [] as string[] }
     if (roles.some((role) => role.dataScope === 'ALL')) {
       return { hasPermission: true, all: true, deptIds: [] as string[] }
@@ -124,6 +174,21 @@ export class DataScopeService {
     const expanded = await this.collectManyWithDescendants(user.tenantId, [...descendantRoots])
     expanded.forEach((id) => deptIds.add(id))
     return { hasPermission: true, all: false, deptIds: [...deptIds] }
+  }
+
+  private async ownerIdsForScope(user: AuthUser, deptIds: string[]) {
+    const ownerIds = new Set([user.id])
+    if (deptIds.length) {
+      const users = await this.prisma.client.orm.public.Users.where({
+        tenantId: user.tenantId,
+        status: 'ACTIVE',
+      })
+        .where((row) => row.deptId.in(deptIds))
+        .select('id')
+        .all()
+      users.forEach((item) => ownerIds.add(item.id))
+    }
+    return ownerIds
   }
 
   async collectWithDescendants(tenantId: string, rootId: string): Promise<string[]> {

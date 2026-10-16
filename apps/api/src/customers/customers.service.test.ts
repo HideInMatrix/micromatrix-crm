@@ -99,7 +99,12 @@ function createService(options: {
 }) {
   return new CustomersService(
     options.prisma as never,
-    (options.dataScope ?? { directOwnerFilter: async () => ({ owner: user.id }) }) as never,
+    (options.dataScope ?? {
+      directOwnerFilter: async () => ({ owner: user.id }),
+      businessOwnerFilter: async () => ({}),
+      resolveBusinessScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+      businessViewCapabilities: async () => ({ all: true, dept: true }),
+    }) as never,
     options.metadata as never,
     {} as never,
     options.fieldValues as never,

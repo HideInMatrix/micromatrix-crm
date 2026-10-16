@@ -32,6 +32,12 @@ test(
       permissions: ['*'],
     }
     const customerAccess = {
+      resolve: async () => ({
+        customer: { inSharedPool: false },
+        dataScope: true,
+        pool: false,
+        collaborationType: null,
+      }),
       assertRead: async () => ({ dataScope: true, pool: false, collaborationType: null }),
       assertCollaborateWrite: async () => ({
         dataScope: true,
@@ -41,8 +47,12 @@ test(
     }
     const dataScope = {
       directOwnerFilter: async () => ({}),
+      businessOwnerFilter: async () => ({}),
       matchesDirectOwner: async () => true,
+      matchesBusinessOwner: async () => true,
       resolveScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+      resolveBusinessScope: async () => ({ hasPermission: true, all: true, deptIds: [] }),
+      businessViewCapabilities: async () => ({ all: true, dept: true }),
     }
     const fields = [
       {

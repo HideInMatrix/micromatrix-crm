@@ -82,10 +82,10 @@ export class QueryContactsDto extends PaginationQueryDto {
   @IsOptional()
   viewId?: string
 
-  @ApiPropertyOptional({ enum: ['SELF', 'DEPT', 'ALL'], description: '联系人内置数据范围视图' })
-  @IsIn(['SELF', 'DEPT', 'ALL'])
+  @ApiPropertyOptional({ enum: ['SELF', 'DEPT', 'ALL', 'COLLABORATION'], description: '联系人系统视图；数据范围继承客户' })
+  @IsIn(['SELF', 'DEPT', 'ALL', 'COLLABORATION'])
   @IsOptional()
-  scopeView?: 'SELF' | 'DEPT' | 'ALL'
+  scopeView?: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION'
 }
 
 export class DisableContactDto {
@@ -150,10 +150,10 @@ export class ContactPageDto {
   @IsOptional()
   filterMode?: 'AND' | 'OR'
 
-  @ApiPropertyOptional({ enum: ['SELF', 'DEPT', 'ALL'] })
-  @IsIn(['SELF', 'DEPT', 'ALL'])
+  @ApiPropertyOptional({ enum: ['SELF', 'DEPT', 'ALL', 'COLLABORATION'] })
+  @IsIn(['SELF', 'DEPT', 'ALL', 'COLLABORATION'])
   @IsOptional()
-  scopeView?: 'SELF' | 'DEPT' | 'ALL'
+  scopeView?: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION'
 
   @ApiPropertyOptional({ type: ContactSortDto })
   @ValidateNested()
@@ -290,10 +290,10 @@ export class ContactChartDto {
   @IsOptional()
   filters?: FilterCondition[]
 
-  @ApiPropertyOptional({ enum: ['SELF', 'DEPT', 'ALL'] })
-  @IsIn(['SELF', 'DEPT', 'ALL'])
+  @ApiPropertyOptional({ enum: ['SELF', 'DEPT', 'ALL', 'COLLABORATION'] })
+  @IsIn(['SELF', 'DEPT', 'ALL', 'COLLABORATION'])
   @IsOptional()
-  scopeView?: 'SELF' | 'DEPT' | 'ALL'
+  scopeView?: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION'
 
   @ApiProperty({ type: ContactChartConfigDto })
   @ValidateNested()
