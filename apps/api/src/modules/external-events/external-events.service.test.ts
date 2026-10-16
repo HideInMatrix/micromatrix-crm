@@ -361,3 +361,86 @@ test(
     }
   },
 )
+test(
+  'External Event 普通调用无需 externalEventId，服务端自动分配；显式编号仍支持幂等重放',
+  { skip: !databaseUrl },
+  async () => {
+    assert.ok(databaseUrl)
+    const db = await openPrismaTestDatabase(databaseUrl)
+    let updates = 0
+    try {
+      const resolved = { kind: 'CUSTOMER' as const, customerId: 'customer-1' }
+      const templates = {
+        findEnabled: async () => ({
+          source: 'reception-system',
+          eventType: 'RECEPTION_COMPLETED',
+          config: { flow: { action: 'update', target: 'customer' } },
+        }),
+        prepareFlow: async () => ({
+          flow: { action: 'update', target: 'customer' },
+          resolved,
+          set: { cf_status: '已缴费' },
+          ownerId: null,
+        }),
+      }
+      const resolver = {} as ExternalResourceResolverService
+      const deps = customerServices({ resolver, onApply: () => updates++ })
+      const service = new ExternalEventsService(
+        { client: db.client } as PrismaService,
+        resolver,
+        deps.customers,
+        deps.leads,
+        templates as never,
+      )
+      const request = {
+        eventType: 'RECEPTION_COMPLETED',
+        data: { phone: '13800000000' },
+      }
+      const first = await service.executeConfigured(user, request)
+      const second = await service.executeConfigured(user, request)
+      assert.match(first.externalEventId, /^auto-[0-9a-f-]{36}$/)
+      assert.match(second.externalEventId, /^auto-[0-9a-f-]{36}$/)
+      assert.notEqual(first.externalEventId, second.externalEventId)
+      assert.equal(first.replayed, false)
+      assert.equal(second.replayed, false)
+      assert.equal(first.source, 'reception-system')
+      assert.equal(updates, 2)
+
+      const explicit = await service.executeConfigured(user, {
+        ...request,
+        externalEventId: 'source-business-event-1',
+      })
+      const replay = await service.executeConfigured(user, {
+        ...request,
+        source: 'legacy-client-source-is-ignored',
+        externalEventId: 'source-business-event-1',
+      })
+      assert.equal(explicit.replayed, false)
+      assert.equal(replay.replayed, true)
+      assert.equal(updates, 3)
+      assert.equal(replay.externalEventId, 'source-business-event-1')
+      await assert.rejects(
+        () =>
+          service.executeConfigured(user, {
+            ...request,
+            data: { phone: '19999999999' },
+            externalEventId: 'source-business-event-1',
+          }),
+        (error: unknown) => {
+          assert.ok(error instanceof ConflictException)
+          assert.equal((error.getResponse() as { code?: string }).code, 'IDEMPOTENCY_KEY_REUSED')
+          return true
+        },
+      )
+    } finally {
+      await db.client.orm.public.ExternalEventInbox.where({
+        organizationId: user.tenantId,
+      }).deleteAll()
+      await db.client.orm.public.OperationLogs.where({
+        tenantId: user.tenantId,
+        module: 'externalEvent',
+      }).deleteAll()
+      await db.close()
+    }
+  },
+)

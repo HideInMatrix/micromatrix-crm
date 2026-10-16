@@ -127,8 +127,8 @@ watch(visible, async (open) => {
 })
 
 async function save() {
-  if (!form.name.trim() || !form.eventType.trim() || !form.source.trim() || !form.apiKeyUserId) {
-    ElMessage.warning('请完善事件名称、标识、来源和授权账号')
+  if (!form.name.trim() || !form.apiKeyUserId) {
+    ElMessage.warning('请完善事件名称和授权账号')
     step.value = 0
     return
   }
@@ -145,8 +145,15 @@ async function save() {
     const payload = JSON.parse(JSON.stringify(form)) as ExternalEventTemplateInput
     const result = savedId.value
       ? await externalEventTemplateApi.update(savedId.value, payload)
-      : await externalEventTemplateApi.create(payload)
+      : await externalEventTemplateApi.create({
+          name: payload.name,
+          apiKeyUserId: payload.apiKeyUserId,
+          enabled: payload.enabled,
+          config: payload.config,
+        })
     savedId.value = result.data.id
+    form.eventType = result.data.eventType
+    form.source = result.data.source
     ElMessage.success('事件配置已保存')
     emit('saved')
     if (step.value !== 4) visible.value = false
@@ -231,20 +238,9 @@ function changeSource(item: ExternalEventTemplateConfig['fields'][number]) {
             <el-form-item label="事件名称"
               ><el-input v-model="form.name" maxlength="100" placeholder="例如：接待完成"
             /></el-form-item>
-            <el-form-item label="事件标识"
-              ><el-input
-                v-model="form.eventType"
-                :disabled="Boolean(props.existing)"
-                maxlength="80"
-                placeholder="RECEPTION_COMPLETED"
-              />
-              <div class="text-xs text-[var(--el-text-color-secondary)]">
-                唯一标识保存后不可修改，建议使用大写字母与下划线。
-              </div></el-form-item
-            >
-            <el-form-item label="调用来源"
-              ><el-input v-model="form.source" maxlength="80" placeholder="reception-system"
-            /></el-form-item>
+            <el-form-item v-if="props.existing" label="事件唯一标识">
+              <el-input :model-value="props.existing.eventType" disabled />
+            </el-form-item>
             <el-form-item label="API Key 所属账号"
               ><el-select
                 v-model="form.apiKeyUserId"

@@ -19,9 +19,7 @@ const rows = ref<ExternalEventTemplateVO[]>([])
 const search = ref('')
 const filtered = computed(() =>
   rows.value.filter((row) =>
-    `${row.name} ${row.eventType} ${row.source}`
-      .toLowerCase()
-      .includes(search.value.trim().toLowerCase()),
+    `${row.name} ${row.eventType}`.toLowerCase().includes(search.value.trim().toLowerCase()),
   ),
 )
 const editorVisible = ref(false)
@@ -107,7 +105,7 @@ onMounted(async () => {
       <el-input
         v-model="search"
         clearable
-        placeholder="搜索事件名称、标识或来源"
+        placeholder="搜索事件名称或标识"
         class="mb-4 !w-[300px]"
       />
       <el-table v-loading="loading" :data="filtered" row-key="id" class="w-full">
@@ -119,7 +117,6 @@ onMounted(async () => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="source" label="调用来源" min-width="130" />
         <el-table-column label="业务动作" min-width="220">
           <template #default="{ row }">
             <template v-if="row.config.flow">

@@ -1,5 +1,13 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger'
-import { IsBoolean, IsObject, IsString, Matches, MaxLength, MinLength } from 'class-validator'
+import {
+  IsBoolean,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator'
 import type { ExternalEventTemplateConfig } from '@micromatrix/shared'
 
 export class SaveExternalEventTemplateDto {
@@ -8,13 +16,15 @@ export class SaveExternalEventTemplateDto {
   @MaxLength(100)
   name!: string
 
+  @IsOptional()
   @IsString()
   @Matches(/^[A-Z][A-Z0-9_]{2,79}$/)
-  eventType!: string
+  eventType?: string
 
+  @IsOptional()
   @IsString()
   @Matches(/^[a-z][a-z0-9-]{1,79}$/)
-  source!: string
+  source?: string
 
   @IsString()
   @MinLength(1)

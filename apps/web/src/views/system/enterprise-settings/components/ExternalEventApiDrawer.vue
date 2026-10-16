@@ -42,9 +42,7 @@ const sampleData = computed(() => {
   return data
 })
 const examplePayload = computed(() => ({
-  source: props.template?.source ?? 'reception-system',
-  eventType: props.template?.eventType ?? 'RECEPTION_COMPLETED',
-  externalEventId: 'EVENT-20261014-0001',
+  eventType: props.template?.eventType ?? '',
   data: sampleData.value,
 }))
 const json = computed(() => JSON.stringify(examplePayload.value, null, 2))
@@ -211,17 +209,20 @@ async function simulate() {
                 </p>
               </template>
               <p class="text-xs text-[var(--el-text-color-secondary)]">
-                同一来源的 externalEventId
-                必须唯一；重复提交相同参数返回幂等结果，不执行第二次。匹配失败或权限不足时整体拒绝。
+                新创建事件的 eventType 由 CRM
+                自动生成并保持不变；历史事件沿用原标识。调用方只需使用此处的 eventType
+                和业务参数，无需传入调用来源。externalEventId
+                是可选的请求幂等编号，由服务端自动生成；外部系统需要安全重试时，可为同一业务事件提供稳定编号。
               </p>
             </section>
             <section>
               <h3 class="mb-2 text-sm font-semibold">必填参数</h3>
               <el-table
                 :data="[
-                  { key: 'source', meaning: '固定来源：' + template.source },
-                  { key: 'eventType', meaning: '固定标识：' + template.eventType },
-                  { key: 'externalEventId', meaning: '来源内唯一的请求事件编号' },
+                  {
+                    key: 'eventType',
+                    meaning: 'CRM 自动生成的事件唯一标识：' + template.eventType,
+                  },
                   ...sortedFields.map((key) => ({
                     key: `data.${key}`,
                     meaning: '由管理员配置的外部参数',
@@ -242,6 +243,10 @@ async function simulate() {
               <pre
                 class="m-0 overflow-x-auto rounded-md bg-[var(--el-fill-color-light)] p-4 text-xs leading-5"
                 >{{ json }}</pre>
+              <p class="mt-2 text-xs text-[var(--el-text-color-secondary)]">
+                如需对同一次业务事件安全重试，可由接入系统在请求体中额外传入稳定的
+                externalEventId；正常新请求无需填写。
+              </p>
             </section>
             <section>
               <div class="mb-2 flex flex-wrap items-center justify-between gap-2">

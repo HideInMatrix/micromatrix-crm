@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   BadRequestException,
   ConflictException,
@@ -7,6 +8,7 @@ import {
 } from '@nestjs/common'
 import type {
   ExternalEventTemplateConfig,
+  ExternalEventTemplateCreateInput,
   ExternalEventTemplateInput,
   ExternalEventTemplateVO,
   ExternalEventUserProvider,
@@ -81,9 +83,9 @@ export class ExternalEventTemplatesService {
     return this.toVO(row)
   }
 
-  async findEnabled(user: AuthUser, eventType: string, source: string) {
+  async findEnabled(user: AuthUser, eventType: string, _legacySource?: string) {
     const row = await this.table()
-      .where({ tenantId: user.tenantId, eventType, source, enabled: true })
+      .where({ tenantId: user.tenantId, eventType, enabled: true })
       .first()
     if (!row)
       throw new NotFoundException({
@@ -99,13 +101,9 @@ export class ExternalEventTemplatesService {
     return this.toVO(row)
   }
 
-  private async validate(user: AuthUser, input: ExternalEventTemplateInput) {
+  private async validate(user: AuthUser, input: ExternalEventTemplateCreateInput) {
     if (!input.name?.trim() || input.name.length > 100)
       throw new BadRequestException('事件名称长度不正确')
-    if (!/^[A-Z][A-Z0-9_]{2,79}$/.test(input.eventType))
-      throw new BadRequestException('事件标识必须为大写字母和下划线')
-    if (!/^[a-z][a-z0-9-]{1,79}$/.test(input.source))
-      throw new BadRequestException('来源标识格式不正确')
     const account = await this.prisma.client.orm.public.Users.where({
       id: input.apiKeyUserId,
       tenantId: user.tenantId,
@@ -347,18 +345,19 @@ export class ExternalEventTemplatesService {
     }
   }
 
-  async create(user: AuthUser, input: ExternalEventTemplateInput) {
+  async create(user: AuthUser, input: ExternalEventTemplateCreateInput) {
     await this.validate(user, input)
-    const existing = await this.table()
-      .where({ tenantId: user.tenantId, eventType: input.eventType })
-      .first()
-    if (existing) throw new ConflictException('事件标识已存在')
+    // New templates get a stable, unpredictable identity. The stored source is
+    // internal to legacy inbox partitioning and is never required in requests.
+    const token = randomUUID().replaceAll('-', '').toUpperCase()
+    const eventType = `EVENT_${token}`
+    const source = `event-${token.toLowerCase()}`
     const now = nowInstant()
     const row = await this.table().create({
       tenantId: user.tenantId,
       name: input.name.trim(),
-      eventType: input.eventType,
-      source: input.source,
+      eventType,
+      source,
       apiKeyUserId: input.apiKeyUserId,
       enabled: input.enabled,
       config: JSON.parse(JSON.stringify(input.config)),
@@ -369,17 +368,19 @@ export class ExternalEventTemplatesService {
 
   async update(user: AuthUser, id: string, patch: Partial<ExternalEventTemplateInput>) {
     const before = await this.get(user, id)
+    if (patch.eventType !== undefined && patch.eventType !== before.eventType)
+      throw new BadRequestException('事件标识不可修改')
+    if (patch.source !== undefined && patch.source !== before.source)
+      throw new BadRequestException('内部来源不可修改')
     const input = {
       name: before.name,
-      eventType: before.eventType,
-      source: before.source,
       apiKeyUserId: before.apiKeyUserId,
       enabled: before.enabled,
       config: before.config,
       ...patch,
+      eventType: before.eventType,
+      source: before.source,
     }
-    if (input.eventType !== before.eventType)
-      throw new BadRequestException('事件标识创建后不可更改')
     await this.validate(user, input)
     const row = await this.table()
       .where({ id, tenantId: user.tenantId, version: before.version })

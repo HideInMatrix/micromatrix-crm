@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   BadRequestException,
   ConflictException,
@@ -75,13 +75,10 @@ export class ExternalEventsService {
     requestMeta?: ExternalEventRequestMeta,
   ) {
     const source = dto.source.trim()
-    const externalEventId = dto.externalEventId.trim()
-    if (!source || !externalEventId) {
-      throw new BadRequestException({
-        code: 'INVALID_EVENT_ID',
-        message: 'source 和 externalEventId 不能为空',
-      })
+    if (!source) {
+      throw new BadRequestException({ code: 'INVALID_SOURCE', message: 'source 不能为空' })
     }
+    const externalEventId = this.resolveExternalEventId(dto.externalEventId)
     const requestHash = this.requestHash(dto.where, dto.set)
     const audit: ExternalEventAudit = {
       user,
@@ -179,10 +176,11 @@ export class ExternalEventsService {
     requestMeta?: ExternalEventRequestMeta,
   ) {
     if (!this.templates) throw new BadRequestException('外部事件配置服务不可用')
-    const template = await this.templates.findEnabled(user, dto.eventType, dto.source)
-    const source = dto.source.trim()
-    const externalEventId = dto.externalEventId?.trim()
-    if (!externalEventId) throw new BadRequestException('externalEventId 不能为空')
+    const template = await this.templates.findEnabled(user, dto.eventType)
+    // Stable internal source comes from the saved template, not the request.
+    // Existing template namespaces and their idempotency history stay intact.
+    const source = template.source
+    const externalEventId = this.resolveExternalEventId(dto.externalEventId)
     const requestHash = this.requestHash({ eventType: dto.eventType }, dto.data)
     const audit: ExternalEventAudit = {
       user,
@@ -658,6 +656,14 @@ export class ExternalEventsService {
       attempts: row.attempts,
       replayed,
     }
+  }
+
+  /** Omitted event IDs are per-request; callers requiring reliable retries should supply a stable key. */
+  private resolveExternalEventId(value?: string): string {
+    if (value === undefined || value === null) return `auto-${randomUUID()}`
+    if (!value.trim())
+      throw new BadRequestException('externalEventId 不能为空字符串；不需要时请省略')
+    return value.trim()
   }
 
   private requestHash(where: Record<string, unknown>, set: Record<string, unknown>): string {

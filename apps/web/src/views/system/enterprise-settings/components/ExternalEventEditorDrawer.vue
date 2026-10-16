@@ -147,7 +147,7 @@ watch(visible, async (open) => {
   sample()
 })
 async function save() {
-  if (!form.name.trim() || !form.eventType.trim() || !form.source.trim() || !form.apiKeyUserId) {
+  if (!form.name.trim() || !form.apiKeyUserId) {
     step.value = 0
     ElMessage.warning('请完善事件基本信息')
     return
@@ -182,8 +182,15 @@ async function save() {
     if (creating.value) payload.config.matches = []
     const result = savedId.value
       ? await externalEventTemplateApi.update(savedId.value, payload)
-      : await externalEventTemplateApi.create(payload)
+      : await externalEventTemplateApi.create({
+          name: payload.name,
+          apiKeyUserId: payload.apiKeyUserId,
+          enabled: payload.enabled,
+          config: payload.config,
+        })
     savedId.value = result.data.id
+    form.eventType = result.data.eventType
+    form.source = result.data.source
     ElMessage.success('外部事件已保存')
     emit('saved')
     if (step.value !== 5) visible.value = false
@@ -239,25 +246,15 @@ async function preview() {
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pr-2">
         <el-form v-if="step === 0" label-position="top" class="max-w-[620px]">
-          <el-alert
-            class="mb-4"
-            title="沿用现有 API Key 和 /api/external-events/execute 接口"
-            type="info"
-            :closable="false"
-          />
           <el-form-item label="事件名称"
             ><el-input v-model="form.name" maxlength="100"
           /></el-form-item>
-          <el-form-item label="事件标识"
-            ><el-input
-              v-model="form.eventType"
-              :disabled="Boolean(props.existing)"
-              maxlength="80"
-              placeholder="RECEPTION_COMPLETED"
-          /></el-form-item>
-          <el-form-item label="调用来源"
-            ><el-input v-model="form.source" placeholder="reception-system"
-          /></el-form-item>
+          <el-form-item v-if="form.eventType" label="事件唯一标识">
+            <el-input :model-value="form.eventType" disabled />
+          </el-form-item>
+          <p v-else class="text-[12px] text-[var(--el-text-color-secondary)]">
+            事件唯一标识由系统在首次保存时自动生成，后续调用接口使用此标识。
+          </p>
           <el-form-item label="API Key 所属账号">
             <el-select
               v-model="form.apiKeyUserId"
@@ -281,11 +278,6 @@ async function preview() {
             <el-radio-button value="lead">线索</el-radio-button>
             <el-radio-button value="customer">客户</el-radio-button>
           </el-radio-group>
-          <el-alert
-            title="目标模块决定资源定位字段与可执行的业务动作，不再默认优先匹配客户。"
-            type="info"
-            :closable="false"
-          />
         </div>
         <div v-else-if="step === 2" class="flex flex-col gap-3">
           <el-alert

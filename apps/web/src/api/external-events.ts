@@ -1,4 +1,8 @@
-import type { ExternalEventTemplateInput, ExternalEventTemplateVO } from '@micromatrix/shared'
+import type {
+  ExternalEventTemplateCreateInput,
+  ExternalEventTemplateInput,
+  ExternalEventTemplateVO,
+} from '@micromatrix/shared'
 import { http } from '@/api/http'
 
 export interface ExternalEventPreviewVO {
@@ -13,7 +17,7 @@ export interface ExternalEventPreviewVO {
 
 export const externalEventTemplateApi = {
   list: () => http.get<ExternalEventTemplateVO[]>('/external-event-templates'),
-  create: (input: ExternalEventTemplateInput) =>
+  create: (input: ExternalEventTemplateCreateInput) =>
     http.post<ExternalEventTemplateVO>('/external-event-templates', input),
   update: (id: string, input: Partial<ExternalEventTemplateInput>) =>
     http.patch<ExternalEventTemplateVO>(`/external-event-templates/${id}`, input),

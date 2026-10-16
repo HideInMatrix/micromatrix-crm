@@ -141,7 +141,17 @@ test(
         () => service.findEnabled(user, saved.eventType, saved.source),
         NotFoundException,
       )
-      await assert.rejects(() => service.create(user, input(member.id)), ConflictException)
+      assert.match(saved.eventType, /^EVENT_[A-F0-9]{32}$/)
+      assert.match(saved.source, /^event-[a-f0-9]{32}$/)
+      assert.notEqual(saved.eventType, input(member.id).eventType)
+      const second = await service.create(user, {
+        name: '自动创建的独立事件',
+        apiKeyUserId: member.id,
+        enabled: false,
+        config: config(),
+      })
+      assert.notEqual(second.eventType, saved.eventType)
+      await service.delete(user, second.id)
       await assert.rejects(
         () => service.update(user, saved.id, { eventType: 'NEW_NAME' }),
         BadRequestException,

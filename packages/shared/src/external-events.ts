@@ -50,6 +50,12 @@ export interface ExternalEventTemplateInput {
   config: ExternalEventTemplateConfig
 }
 
+/** Creation does not require identifiers: the server generates both. */
+export type ExternalEventTemplateCreateInput = Omit<
+  ExternalEventTemplateInput,
+  'eventType' | 'source'
+> & { eventType?: string; source?: string }
+
 export interface ExternalEventTemplateVO extends ExternalEventTemplateInput {
   id: string
   version: number
@@ -58,8 +64,10 @@ export interface ExternalEventTemplateVO extends ExternalEventTemplateInput {
 }
 
 export interface ExternalEventExecuteInput {
-  source: string
+  /** Legacy request field, ignored for configured execution. */
+  source?: string
   eventType: string
-  externalEventId: string
+  /** Optional idempotency key for stable client retries; server generates one if absent. */
+  externalEventId?: string
   data: Record<string, unknown>
 }
