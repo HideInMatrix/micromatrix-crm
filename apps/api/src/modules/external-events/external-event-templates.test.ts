@@ -156,6 +156,12 @@ test(
         () => service.update(user, saved.id, { eventType: 'NEW_NAME' }),
         BadRequestException,
       )
+      const renamed = await service.update(user, saved.id, { name: '接待完成事件' })
+      assert.equal(renamed.version, 1)
+      const logicChanged = await service.update(user, saved.id, {
+        config: { ...renamed.config, owner: { externalKey: 'receptionist', provider: 'WECOM' } },
+      })
+      assert.equal(logicChanged.version, 2)
       const enabled = await service.update(user, saved.id, { enabled: true })
       assert.equal(enabled.version, 2)
       await assert.rejects(() => service.delete(user, saved.id), BadRequestException)
@@ -166,7 +172,7 @@ test(
       const accepted = await service.findEnabled(user, saved.eventType, saved.source)
       assert.equal(accepted.id, saved.id)
       const disabled = await service.update(user, saved.id, { enabled: false })
-      assert.equal(disabled.version, 3)
+      assert.equal(disabled.version, 2)
       await service.delete(user, saved.id)
       assert.equal((await service.list(user)).length, 0)
     } finally {

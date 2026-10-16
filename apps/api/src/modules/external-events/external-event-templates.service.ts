@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import {
   BadRequestException,
   ConflictException,
@@ -382,17 +383,22 @@ export class ExternalEventTemplatesService {
       source: before.source,
     }
     await this.validate(user, input)
+    const configChanged = !isDeepStrictEqual(input.config, before.config)
+    const update: Record<string, unknown> = { updatedAt: nowInstant() }
+    if (patch.name !== undefined) update.name = input.name.trim()
+    if (patch.apiKeyUserId !== undefined) update.apiKeyUserId = input.apiKeyUserId
+    if (patch.enabled !== undefined) update.enabled = input.enabled
+    if (configChanged) {
+      update.config = JSON.parse(JSON.stringify(input.config))
+      update.version = before.version + 1
+    }
     const row = await this.table()
-      .where({ id, tenantId: user.tenantId, version: before.version })
-      .update({
-        name: input.name.trim(),
-        source: input.source,
-        apiKeyUserId: input.apiKeyUserId,
-        enabled: input.enabled,
-        config: JSON.parse(JSON.stringify(input.config)),
-        version: before.version + 1,
-        updatedAt: nowInstant(),
-      })
+      .where(
+        configChanged
+          ? { id, tenantId: user.tenantId, version: before.version }
+          : { id, tenantId: user.tenantId },
+      )
+      .update(update)
     if (!row) throw new ConflictException('事件配置已被其他管理员修改，请刷新后重试')
     return this.toVO(row)
   }
