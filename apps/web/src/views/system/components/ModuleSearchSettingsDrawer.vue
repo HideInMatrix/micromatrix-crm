@@ -48,6 +48,16 @@ const supported = computed(() =>
 const textFields = computed(() =>
   supported.value.filter((field) => ['text', 'textarea', 'phone', 'email'].includes(field.type)),
 )
+const selectFields = computed(() =>
+  supported.value.filter((field) => ['select', 'radio'].includes(field.type)),
+)
+function itemTitle(item: QuickSearchItem) {
+  if (item.kind === 'preset_select') return '自定义条件下拉'
+  const field = fields.value.find((value) => value.key === item.fieldKey)
+  if (field && ['select', 'radio'].includes(field.type)) return '关联字段下拉'
+  if (field && ['date', 'datetime'].includes(field.type)) return '日期搜索'
+  return '字段搜索'
+}
 function isTextField(item: QuickSearchItem) {
   return textFields.value.some((field) => field.key === item.fieldKey)
 }
@@ -114,6 +124,24 @@ function add(kind: 'field' | 'preset_select') {
     changedField(item)
     config.value.items.push(item)
   }
+}
+
+function addFieldSelect() {
+  if (config.value.items.length >= 12) return
+  const first = selectFields.value[0]
+  if (!first) {
+    ElMessage.warning('请先在线索或客户表单中配置下拉单选或单选框字段')
+    return
+  }
+  const item: QuickSearchItem = {
+    id: crypto.randomUUID(),
+    kind: 'field',
+    label: first.label,
+    fieldKey: first.key,
+    placeholder: '全部',
+    operator: 'eq',
+  }
+  config.value.items.push(item)
 }
 
 function addOption(item: QuickSearchItem) {
@@ -216,17 +244,18 @@ watch(
       </el-form>
       <div class="mb-3 flex items-center justify-between">
         <span class="font-medium">快捷搜索控件（最多 12 个）</span>
-        <div class="flex gap-2">
-          <el-button @click="add('field')">添加文字搜索</el-button>
-          <el-button type="primary" @click="add('preset_select')">添加下拉框搜索</el-button>
+        <div class="flex flex-wrap gap-2">
+          <el-button @click="add('field')">添加字段搜索</el-button>
+          <el-button :disabled="config.items.length >= 12" @click="addFieldSelect">
+            添加关联字段下拉
+          </el-button>
+          <el-button type="primary" @click="add('preset_select')">添加自定义条件下拉</el-button>
         </div>
       </div>
 
       <div v-for="(item, index) in config.items" :key="item.id" class="mb-3 rounded border p-4">
         <div class="mb-3 flex items-center justify-between">
-          <span class="font-medium">
-            {{ item.kind === 'preset_select' ? '下拉框搜索' : '文字搜索' }}
-          </span>
+          <span class="font-medium">{{ itemTitle(item) }}</span>
           <div>
             <el-button link :disabled="index === 0" @click="move(index, -1)">上移</el-button>
             <el-button link :disabled="index === config.items.length - 1" @click="move(index, 1)"
@@ -291,7 +320,8 @@ watch(
         <div v-if="item.kind === 'preset_select'" class="mt-4 border-t pt-3">
           <div class="mb-3 flex items-center justify-between">
             <span class="text-sm text-[var(--el-text-color-secondary)]">
-              每个选项可以预设多条 AND/OR 条件；不选时为全部数据
+              自定义条件下拉：每个选项可配置多条 AND/OR
+              条件；不选时为全部数据。若要直接使用表单已有选项，请添加「关联字段下拉」。
             </span>
             <el-button type="primary" plain @click="addOption(item)">新增选项</el-button>
           </div>
