@@ -177,6 +177,10 @@ function openBatchPoolAssign() {
       ref="savedViewBarRef"
       :module="savedViewModule"
       :fields="contextFields"
+      :extra-column-options="[
+        { key: 'status', label: '状态' },
+        { key: 'lastFollowedAt', label: '最近跟进' },
+      ]"
       :members="members"
       :dept-tree="deptTree"
       :current-filters="filters"

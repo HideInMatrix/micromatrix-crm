@@ -2,6 +2,13 @@
 import { computed, ref } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import type { FieldVO, LeadStageConfig, LeadVO } from '@micromatrix/shared'
+
+type LeadSystemColumn = {
+  key: 'status' | 'lastFollowedAt'
+  label: string
+  listWidth: number
+  systemColumn: true
+}
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useAuthStore } from '@/stores/auth'
 
@@ -11,7 +18,7 @@ const props = defineProps<{
   isPoolMode: boolean
   canExport: boolean
   canManualConvert: boolean
-  listColumns: FieldVO[]
+  listColumns: (FieldVO | LeadSystemColumn)[]
   leadStages: LeadStageConfig[]
   memberMap: Map<string, string>
   deptMap: Map<string, string>
@@ -146,47 +153,43 @@ function handleToPool(row: LeadVO) {
             @click="openOverview(row as LeadVO)"
           >
             {{
-              formatFieldValue(column, row, {
+              formatFieldValue(column as FieldVO, row, {
                 memberMap: memberMap,
                 deptMap: deptMap,
               })
             }}
           </el-button>
+          <template v-else-if="column.key === 'status'">
+            <el-select
+              v-if="!isPoolMode && auth.hasPerm('lead:update') && !row.transitionId"
+              :model-value="row.status"
+              size="small"
+              class="w-full"
+              @change="handleStageChange(row as LeadVO, String($event))"
+            >
+              <el-option
+                v-for="stage in leadStages"
+                :key="stage.key"
+                :label="stage.name"
+                :value="stage.key"
+                :disabled="stage.enabled === false"
+              />
+            </el-select>
+            <el-tag v-else :type="leadStageTagType(row.status)" size="small">
+              {{ leadStageLabel(row.status) }}
+            </el-tag>
+          </template>
+          <template v-else-if="column.key === 'lastFollowedAt'">
+            {{ row.lastFollowedAt ? new Date(row.lastFollowedAt).toLocaleDateString() : '-' }}
+          </template>
           <template v-else>
             {{
-              formatFieldValue(column, row, {
+              formatFieldValue(column as FieldVO, row, {
                 memberMap: memberMap,
                 deptMap: deptMap,
               })
             }}
           </template>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="150">
-        <template #default="{ row }">
-          <el-select
-            v-if="!isPoolMode && auth.hasPerm('lead:update') && !row.transitionId"
-            :model-value="row.status"
-            size="small"
-            class="w-full"
-            @change="handleStageChange(row as LeadVO, String($event))"
-          >
-            <el-option
-              v-for="stage in leadStages"
-              :key="stage.key"
-              :label="stage.name"
-              :value="stage.key"
-              :disabled="stage.enabled === false"
-            />
-          </el-select>
-          <el-tag v-else :type="leadStageTagType(row.status)" size="small">
-            {{ leadStageLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="最近跟进" width="110">
-        <template #default="{ row }">
-          {{ row.lastFollowedAt ? new Date(row.lastFollowedAt).toLocaleDateString() : '-' }}
         </template>
       </el-table-column>
       <el-table-column label="操作" width="210" fixed="right">

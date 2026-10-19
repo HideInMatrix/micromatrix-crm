@@ -27,6 +27,7 @@ interface CrmViewSelectItem {
 const props = defineProps<{
   module: string
   fields: FieldVO[]
+  extraColumnOptions?: { key: string; label: string }[]
   filterFields?: FieldVO[]
   members: MemberOption[]
   deptTree: DepartmentVO[]
@@ -97,11 +98,16 @@ const personalSelectViews = computed<CrmViewSelectItem[]>(() =>
     reorderable: true,
   })),
 )
-const columnOptions = computed(() =>
-  props.fields
+const columnOptions = computed(() => {
+  const fieldOptions = props.fields
     .filter((field) => !field.hidden)
-    .map((field) => ({ key: field.key, label: field.label })),
-)
+    .map((field) => ({ key: field.key, label: field.label }))
+  const fieldKeys = new Set(fieldOptions.map((field) => field.key))
+  return [
+    ...fieldOptions,
+    ...(props.extraColumnOptions ?? []).filter((column) => !fieldKeys.has(column.key)),
+  ]
+})
 const conditionFields = computed(() => props.filterFields ?? props.fields)
 
 function userStorageKey(kind: 'active' | 'columns', viewId?: string) {

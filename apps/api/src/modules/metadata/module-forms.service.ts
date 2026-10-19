@@ -974,7 +974,7 @@ export class ModuleFormsService {
     ]
     if (removedInUse.length) {
       throw new BadRequestException(
-        `仍有线索使用状态 ${removedInUse.join('、')}，请先迁移这些线索或停用状态，不能直接删除状态 key`,
+        `仍有线索使用状态 ${removedInUse.join('、')}，请保留对应状态标识（可以停用）；如需删除，请先将相关线索迁移到其他状态`,
       )
     }
   }
@@ -1348,7 +1348,7 @@ export class ModuleFormsService {
         if (!stage || typeof stage !== 'object') throw new BadRequestException('线索状态配置不正确')
         if (typeof stage.key !== 'string' || !/^[A-Za-z0-9_-]{1,30}$/.test(stage.key)) {
           throw new BadRequestException(
-            '线索状态 key 只能包含字母、数字、下划线或短横线，且最长 30 位',
+            '线索状态标识缺失或异常，请刷新页面后重试；如问题持续，请联系管理员',
           )
         }
         const name = typeof stage.name === 'string' ? stage.name.trim() : ''

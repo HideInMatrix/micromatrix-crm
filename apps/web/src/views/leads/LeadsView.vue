@@ -125,13 +125,31 @@ const contextFields = computed(() => {
     (field) => !field.hidden && (field.key === 'name' || !hiddenIds.has(field.id)),
   )
 })
-const defaultColumnKeys = computed(() =>
-  contextFields.value.filter((field) => field.showInList).map((field) => field.key),
-)
+type LeadSystemColumn = {
+  key: 'status' | 'lastFollowedAt'
+  label: string
+  listWidth: number
+  systemColumn: true
+}
+
+const leadSystemColumns: LeadSystemColumn[] = [
+  { key: 'status', label: '状态', listWidth: 150, systemColumn: true },
+  { key: 'lastFollowedAt', label: '最近跟进', listWidth: 110, systemColumn: true },
+]
+
+const defaultColumnKeys = computed(() => [
+  ...contextFields.value.filter((field) => field.showInList).map((field) => field.key),
+  ...leadSystemColumns.map((column) => column.key),
+])
 const listColumns = computed(() => {
   const keys = visibleColumnKeys.value.length ? visibleColumnKeys.value : defaultColumnKeys.value
   const fieldMap = new Map(contextFields.value.map((field) => [field.key, field]))
-  const ordered = keys.map((key) => fieldMap.get(key)).filter((field): field is FieldVO => !!field)
+  const systemColumnMap = new Map<string, LeadSystemColumn>(
+    leadSystemColumns.map((column) => [column.key, column]),
+  )
+  const ordered = keys
+    .map((key) => systemColumnMap.get(key) ?? fieldMap.get(key))
+    .filter((column): column is FieldVO | LeadSystemColumn => !!column)
   const nameField = fieldMap.get('name')
   if (isPoolMode.value && nameField && !ordered.some((field) => field.key === 'name')) {
     ordered.unshift(nameField)

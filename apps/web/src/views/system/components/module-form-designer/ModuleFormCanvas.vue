@@ -105,7 +105,7 @@ function canDelete(field: ModuleFormFieldDraft) {
               @click="emit('select', field)"
             >
               <div
-                class="absolute right-2 top-2 z-10 flex items-center gap-1"
+                class="absolute right-0 top-0 z-10 flex items-center gap-1"
                 :class="activeId === field.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
               >
                 <el-tooltip content="复制" placement="top">

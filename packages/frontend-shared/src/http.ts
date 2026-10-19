@@ -98,5 +98,6 @@ export function extractErrorMessage(error: unknown): string {
     if (Array.isArray(message)) return message[0] ?? '请求失败'
     if (message) return message
   }
+  if (error instanceof Error && error.message.trim()) return error.message
   return '网络异常，请稍后重试'
 }
