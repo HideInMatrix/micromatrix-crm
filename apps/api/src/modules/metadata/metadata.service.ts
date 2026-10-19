@@ -161,10 +161,17 @@ export class MetadataService {
         }
       }
     }
+    // ValidationPipe / class-transformer may materialize omitted DTO fields as own
+    // properties with `undefined`. A normal object spread would then erase persisted
+    // formProp entries (for example quickSearch) during an unrelated partial update.
+    const definedPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    ) as Partial<typeof patch>
+
     return this.moduleForms.saveFormProp(
       organizationId,
       module,
-      { ...current.formProp, ...patch },
+      { ...current.formProp, ...definedPatch },
       actorId,
     )
   }

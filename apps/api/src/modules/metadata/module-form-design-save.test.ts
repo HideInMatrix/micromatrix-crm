@@ -56,6 +56,26 @@ test(
       const service = new ModuleFormsService({ client: prismaClient } as PrismaService)
       const initial = await service.getConfig(tenant.id, 'lead')
       assert.ok(initial.fields.length > 0)
+      const persistedQuickSearch = {
+        enabled: true,
+        showAdvancedFilter: true,
+        showSavedViews: true,
+        items: [],
+      }
+      const persistedLeadStages = [
+        { key: 'NEW', name: '待联系', kind: 'ACTIVE' as const, enabled: true },
+      ]
+      await service.saveFormProp(
+        tenant.id,
+        'lead',
+        {
+          ...initial.formProp,
+          quickSearch: persistedQuickSearch,
+          leadStages: persistedLeadStages,
+          futureFlag: { revision: 'current' },
+        },
+        actor.id,
+      )
 
       const firstSystemField = initial.fields.find((field) => field.system)
       assert.ok(firstSystemField)
@@ -91,6 +111,9 @@ test(
       assert.equal(saved.formProp.layout, 3)
       assert.equal(saved.formProp.labelPos, 'left')
       assert.equal(saved.formProp.viewSize, 'large')
+      assert.deepEqual(saved.formProp.quickSearch, persistedQuickSearch)
+      assert.deepEqual(saved.formProp.leadStages, persistedLeadStages)
+      assert.deepEqual(saved.formProp.futureFlag, { revision: 'current' })
       assert.deepEqual(
         saved.fields.slice(0, initial.fields.length).map((field) => field.id),
         initial.fields.map((field) => field.id).reverse(),
@@ -130,6 +153,32 @@ test(
       )
 
       const customer = await service.getConfig(tenant.id, 'customer')
+      const customerQuickSearch = {
+        enabled: true,
+        showAdvancedFilter: true,
+        showSavedViews: true,
+        items: [],
+      }
+      await service.saveFormProp(
+        tenant.id,
+        'customer',
+        {
+          ...customer.formProp,
+          quickSearch: customerQuickSearch,
+          futureCustomerFlag: { revision: 'current' },
+        },
+        actor.id,
+      )
+      const customerDesignSaved = await service.saveDesign(
+        tenant.id,
+        'customer',
+        customer.fields.map(toSaveField),
+        { ...customer.formProp, labelPos: 'left' },
+        actor.id,
+      )
+      assert.deepEqual(customerDesignSaved.formProp.quickSearch, customerQuickSearch)
+      assert.deepEqual(customerDesignSaved.formProp.futureCustomerFlag, { revision: 'current' })
+
       const customerName = customer.fields.find((field) => field.key === 'name')
       const customerPhone = customer.fields.find((field) => field.key === 'cf_phone')
       assert.ok(customerName)

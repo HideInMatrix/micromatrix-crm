@@ -197,6 +197,32 @@ export class ModuleFormsService {
     return this.getConfig(organizationId, formKey)
   }
 
+  private mergeFormDesignerProp(
+    current: ModuleFormProp,
+    requested: ModuleFormProp,
+  ): ModuleFormProp {
+    // Start from the latest persisted state so unknown extension keys are not lost.
+    // Only these properties are edited by ModuleFormDesigner; the other properties
+    // are owned by dedicated settings drawers or other capabilities.
+    const next: ModuleFormProp = { ...requested, ...current }
+    const designerKeys = [
+      'labelPos',
+      'labelAlign',
+      'viewSize',
+      'labelStyle',
+      'alerts',
+      'linkProp',
+    ] as const
+    for (const key of designerKeys) {
+      if (requested[key] !== undefined) {
+        Object.assign(next, { [key]: requested[key] })
+      }
+    }
+    if (requested.layout !== undefined) next.layout = requested.layout
+    else delete next.layout
+    return next
+  }
+
   async saveDesign(
     organizationId: string,
     formKey: string,
@@ -204,9 +230,15 @@ export class ModuleFormsService {
     formProp: ModuleFormProp,
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
-    this.validateFormPropInput(formProp)
-    await this.validateLeadStageUsage(organizationId, formKey, formProp)
-    await this.validateHomeAnalyticsDesignChange(organizationId, formKey, fields, formProp)
+    // The form designer edits presentation, alerts and field linkage, but does not own
+    // search, lead-stage, deduplication or analytics settings. Its browser state may be
+    // older than a setting saved from another drawer/tab, so preserve the latest stored
+    // values for those properties (and unknown extensions) before validating or writing.
+    const currentConfig = await this.loadConfig(organizationId, formKey)
+    const nextFormProp = this.mergeFormDesignerProp(currentConfig.formProp, formProp)
+    this.validateFormPropInput(nextFormProp)
+    await this.validateLeadStageUsage(organizationId, formKey, nextFormProp)
+    await this.validateHomeAnalyticsDesignChange(organizationId, formKey, fields, nextFormProp)
     const labels = fields.map((field) => field.label.trim())
     if (labels.some((label) => !label)) throw new BadRequestException('字段名称不能为空')
     if (new Set(labels).size !== labels.length) throw new BadRequestException('字段名称不能重复')
@@ -364,8 +396,8 @@ export class ModuleFormsService {
         updateTime: now,
       })
       await tx.orm.public.SysModuleFormBlob.upsert({
-        create: { id: form.id, prop: JSON.stringify(formProp) },
-        update: { prop: JSON.stringify(formProp) },
+        create: { id: form.id, prop: JSON.stringify(nextFormProp) },
+        update: { prop: JSON.stringify(nextFormProp) },
         conflictOn: { id: form.id },
       })
 
@@ -378,9 +410,9 @@ export class ModuleFormsService {
         organizationId,
         formKey,
         savedFields,
-        formProp,
+        nextFormProp,
       )
-      return { formKey, formProp, fields: savedFields }
+      return { formKey, formProp: nextFormProp, fields: savedFields }
     })
     await this.invalidateForm(organizationId, formKey)
     return result

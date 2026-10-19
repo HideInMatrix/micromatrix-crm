@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { ValidationPipe } from '@nestjs/common'
 import type { ModuleFormProp, QuickSearchQueryGroup } from '@micromatrix/shared'
+import { UpdateFormPropDto } from './dto/field.dto'
 import {
   resolveQuickSearchGroupIds,
   validateQuickSearchGroups,
@@ -265,6 +267,57 @@ test('Lead 阶段 PATCH 保留既有判重、布局和扩展配置', async () =>
   await service.updateFormProp('tenant-1', 'lead', { leadStages }, 'user-1')
 
   assert.deepEqual(saved, { ...original, leadStages })
+})
+
+test('Lead 状态 PATCH 忽略 DTO 中未提交字段的 undefined，保留已有快捷搜索配置', async () => {
+  const quickSearch = {
+    enabled: true,
+    showAdvancedFilter: true,
+    showSavedViews: true,
+    items: [
+      {
+        id: 'lead-name',
+        kind: 'field' as const,
+        label: '线索名称',
+        fieldKey: 'name',
+        operator: 'contains' as const,
+      },
+    ],
+  }
+  const original: ModuleFormProp = {
+    layout: 2,
+    quickSearch,
+    leadStages: [{ key: 'NEW', name: '新建', kind: 'ACTIVE', enabled: true }],
+  }
+  let saved: ModuleFormProp | undefined
+  const moduleForms = {
+    getConfig: async () => ({ formKey: 'lead', formProp: original, fields: [] }),
+    saveFormProp: async (_tenant: string, _module: string, formProp: ModuleFormProp) => {
+      saved = formProp
+      return { formKey: 'lead', formProp, fields: [] }
+    },
+  } as unknown as ModuleFormsService
+  const service = new MetadataService(moduleForms)
+  const validationPipe = new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  })
+  const patch = (await validationPipe.transform(
+    {
+      leadStages: [{ key: 'NEW', name: '待联系', kind: 'ACTIVE', enabled: true }],
+    },
+    { type: 'body', metatype: UpdateFormPropDto, data: undefined },
+  )) as UpdateFormPropDto
+  assert.equal(Object.hasOwn(patch, 'quickSearch'), true)
+  assert.equal(patch.quickSearch, undefined)
+
+  await service.updateFormProp('tenant-1', 'lead', patch, 'user-1')
+
+  assert.deepEqual(saved, {
+    ...original,
+    leadStages: patch.leadStages,
+  })
 })
 
 test('首页分析 PATCH 在 Lead 与 Customer 各自表单属性中保持模块归属', async () => {
