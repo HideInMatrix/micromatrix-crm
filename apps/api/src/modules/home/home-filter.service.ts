@@ -90,8 +90,15 @@ export class HomeFilterService {
     const where = payload.period
       ? await this.clues.whereForPeriod(user, payload, payload.period)
       : await this.scopeOnlyWhere(user, payload, 'menu:lead')
+    // 线索列表的首页筛选适配器会处理 AND 中的 owner 条件，不处理根级 owner。
+    // 将 SELF / 部门范围生成的根级负责人条件归一到 AND，避免首页「我的线索」漏掉本人范围。
+    const { owner: ownerScope, ...baseWhere } = where as typeof where & {
+      owner?: string | { in: string[] }
+    }
+    const existingAnd = 'AND' in baseWhere && Array.isArray(baseWhere.AND) ? baseWhere.AND : []
     const result = {
-      ...where,
+      ...baseWhere,
+      ...(ownerScope !== undefined ? { AND: [...existingAnd, { owner: ownerScope }] } : {}),
       ...(payload.leadStageKey ? { stage: payload.leadStageKey } : {}),
       ...(payload.converted === true ? { converted: true } : {}),
     }

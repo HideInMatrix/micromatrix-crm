@@ -45,6 +45,21 @@ test('首页一次性筛选协议拒绝目标模块不匹配和非法周期', ()
   )
 })
 
+test('首页我的线索将本人 owner 条件传入线索列表适配器支持的 AND 结构', async () => {
+  const service = createService({
+    scope: { all: false, userIds: [user.id] },
+  })
+  const where = await service.clueWhere(user, {
+    module: 'lead',
+    searchType: 'SELF',
+    deptIds: [],
+  })
+
+  assert.equal('owner' in where, false)
+  assert.deepEqual((where as any).AND, [{ owner: { in: [user.id] } }])
+  assert.equal((where as any).inSharedPool, false)
+})
+
 test('线索创建人维度仅展示统计，后端拒绝伪造跳转列表', async () => {
   const service = createService()
   await assert.rejects(
