@@ -337,8 +337,8 @@ function handleToPool(row: LeadVO) {
 
 .lead-list-table :deep(.lead-list-table__grid.el-table) {
   --el-table-header-bg-color: #f5f7fa;
-  --el-table-header-text-color: #606266;
-  --el-table-text-color: #606266;
+  --el-table-header-text-color: #344054;
+  --el-table-text-color: #344054;
   font-size: 14px;
 }
 
@@ -346,7 +346,7 @@ function handleToPool(row: LeadVO) {
   height: 44px;
   padding: 0;
   background-color: #f5f7fa;
-  color: #606266;
+  color: #344054;
   font-size: 14px;
 }
 

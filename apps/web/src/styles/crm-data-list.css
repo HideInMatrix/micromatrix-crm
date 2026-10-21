@@ -90,8 +90,8 @@
 
 .crm-data-list-table > .el-table {
   --el-table-header-bg-color: #f5f7fa;
-  --el-table-header-text-color: #606266;
-  --el-table-text-color: #606266;
+  --el-table-header-text-color: #344054;
+  --el-table-text-color: #344054;
   min-height: 0;
   font-size: 14px;
 }
@@ -100,7 +100,7 @@
   height: 44px;
   padding: 0;
   background-color: #f5f7fa;
-  color: #606266;
+  color: #344054;
   font-size: 14px;
 }
 

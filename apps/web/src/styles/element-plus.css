@@ -183,6 +183,12 @@ html:not(.dark) {
   margin-bottom: 0;
 }
 
+.crm-dialog .el-dialog__body .el-form .el-form-item .el-form-item__label {
+  padding: 0 10px 0 0;
+  align-items: center;
+  height: 38px;
+}
+
 /* 每个栅格单元格的末尾不再叠加子组件自带的底部间距（含展示性组件）。 */
 .crm-dialog .el-dialog__body .el-form .el-row > .el-col > :last-child {
   margin-bottom: 0;
