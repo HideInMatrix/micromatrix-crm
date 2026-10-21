@@ -412,12 +412,6 @@ test('企业微信通知卡片复用工作台 H5 OAuth 入口并跳转到移动�
       '/mobile/customers/detail?id=customer-1',
     )
 
-    await client.sendTextMessage({ ...base, link: '/contacts' })
-    const contactsCard = payloads.at(-1)!['textcard'] as Record<string, string>
-    assert.equal(
-      new URL(contactsCard.url).searchParams.get('target'),
-      '/mobile/customers?tab=contact',
-    )
 
     await client.sendTextMessage({ ...base, link: '/leads?id=lead-123', content: '<test>&' })
     const escapedCard = payloads.at(-1)!['textcard'] as Record<string, string>

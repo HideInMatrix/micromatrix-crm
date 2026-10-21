@@ -4,7 +4,6 @@ import {
   CluePoolUserViewsController,
   ClueUserViewsController,
   FollowRecordUserViewsController,
-  CustomerContactUserViewsController,
   CustomerPoolUserViewsController,
   CustomerUserViewsController,
 } from './user-views.controller'
@@ -16,7 +15,6 @@ import { UserViewsService } from './user-views.service'
     ClueUserViewsController,
     CluePoolUserViewsController,
     CustomerUserViewsController,
-    CustomerContactUserViewsController,
     CustomerPoolUserViewsController,
     FollowRecordUserViewsController,
   ],

@@ -53,7 +53,6 @@ export interface FollowUpPlan {
   tenantId: string
   targetType: string
   targetId: string
-  contactId: string | null
   content: string
   method: string | null
   estimatedAt: ReturnType<typeof nowInstant> | null
@@ -75,7 +74,6 @@ interface FollowUpPlanRow {
   tenantId: string
   targetType: string
   targetId: string
-  contactId: string | null
   content: string
   method: string | null
   estimatedAt: ReturnType<typeof nowInstant> | null
@@ -180,7 +178,6 @@ export class FollowUpPlansService {
 
   async create(user: AuthUser, dto: CreateFollowUpPlanDto): Promise<FollowUpPlanVO> {
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
-    await this.assertContact(user.tenantId, dto.targetType, dto.targetId, dto.contactId)
     const owner = await this.resolveOwner(user, dto.ownerId)
     const dynamicValues = await this.moduleFieldsToDynamicValues(
       user.tenantId,
@@ -191,7 +188,6 @@ export class FollowUpPlansService {
         tenantId: user.tenantId,
         targetType: dto.targetType,
         targetId: dto.targetId,
-        contactId: dto.contactId ?? null,
         content: dto.content,
         method: dto.method ?? null,
         estimatedAt: dto.estimatedAt ? instantFromISOString(dto.estimatedAt) : null,
@@ -220,8 +216,6 @@ export class FollowUpPlansService {
     const targetType = dto.targetType ?? (existing.targetType as TargetType)
     const targetId = dto.targetId ?? existing.targetId
     await this.assertTargetAccess(user, targetType, targetId, true)
-    const contactId = dto.contactId === undefined ? existing.contactId : dto.contactId || null
-    await this.assertContact(user.tenantId, targetType, targetId, contactId ?? undefined)
     const owner = dto.ownerId ? await this.resolveOwner(user, dto.ownerId) : null
     const estimatedAt =
       dto.estimatedAt === undefined
@@ -240,7 +234,6 @@ export class FollowUpPlansService {
       await tx.orm.public.FollowUpPlans.where({ id }).update({
         targetType,
         targetId,
-        contactId,
         content: dto.content,
         method: dto.method,
         estimatedAt,
@@ -299,7 +292,6 @@ export class FollowUpPlansService {
       targetType: plan.targetType,
       targetId: plan.targetId,
       ownerId: plan.ownerId,
-      contactId: plan.contactId,
       estimatedAt: plan.estimatedAt ? instantToISOString(plan.estimatedAt) : null,
       content: plan.content,
       method: plan.method,
@@ -492,23 +484,6 @@ export class FollowUpPlansService {
     return { name: lead.name, customerId: null, collaboratorOnly: false }
   }
 
-  private async assertContact(
-    tenantId: string,
-    type: TargetType,
-    targetId: string,
-    contactId?: string,
-  ): Promise<void> {
-    if (!contactId) return
-    const customerId: string | null = type === 'customer' ? targetId : null
-    if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma.client.orm.public.CustomerContact.where({
-      id: contactId,
-      organizationId: tenantId,
-      customerId: customerId,
-    }).first()
-    if (!contact) throw new BadRequestException('联系人不属于当前客户')
-  }
-
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
     const owner = await this.prisma.client.orm.public.Users.where({
@@ -528,7 +503,6 @@ export class FollowUpPlansService {
       tenantId: row.tenantId,
       targetType: row.targetType,
       targetId: row.targetId,
-      contactId: row.contactId,
       content: row.content,
       method: row.method,
       estimatedAt: row.estimatedAt,
@@ -670,7 +644,6 @@ export class FollowUpPlansService {
       'targetType',
       'targetId',
       'ownerId',
-      'contactId',
       'estimatedAt',
       'content',
       'method',
@@ -707,9 +680,6 @@ export class FollowUpPlansService {
       throw new BadRequestException('计划状态不支持该筛选操作')
     }
     if (condition.op === 'isEmpty') {
-      if (key === 'contactId') {
-        return collection.where((row) => or(row.contactId.isNull(), row.contactId.eq('')))
-      }
       if (key === 'method') {
         return collection.where((row) => or(row.method.isNull(), row.method.eq('')))
       }
@@ -726,9 +696,6 @@ export class FollowUpPlansService {
       })
     }
     if (condition.op === 'notEmpty') {
-      if (key === 'contactId') {
-        return collection.where((row) => and(row.contactId.isNotNull(), row.contactId.neq('')))
-      }
       if (key === 'method') {
         return collection.where((row) => and(row.method.isNotNull(), row.method.neq('')))
       }
@@ -753,12 +720,6 @@ export class FollowUpPlansService {
     }
 
     const value = String(condition.value)
-    if (key === 'contactId') {
-      if (condition.op === 'contains')
-        return collection.where((row) => row.contactId.ilike(`%${value}%`))
-      if (condition.op === 'eq') return collection.where((row) => row.contactId.eq(value))
-      if (condition.op === 'ne') return collection.where((row) => row.contactId.neq(value))
-    }
     if (key === 'method') {
       if (condition.op === 'contains')
         return collection.where((row) => row.method.ilike(`%${value}%`))
@@ -807,31 +768,17 @@ export class FollowUpPlansService {
     if (plans.length === 0) return []
     const names = await this.targetNamesPrisma(plans)
     const ownerIds = [...new Set(plans.map((plan) => plan.ownerId))]
-    const contactIds = plans.flatMap((plan) => (plan.contactId ? [plan.contactId] : []))
-    const [owners, contacts, fields, dynamic] = await Promise.all([
+    const [owners, fields, dynamic] = await Promise.all([
       ownerIds.length
         ? this.prisma.client.orm.public.Users.where({ tenantId: user.tenantId })
             .where((row) => row.id.in(ownerIds))
             .select('id', 'name')
             .all()
         : [],
-      contactIds.length
-        ? this.prisma.client.orm.public.CustomerContact.where({
-            organizationId: user.tenantId,
-          })
-            .where((row) => row.id.in(contactIds))
-            .select('id', 'name')
-            .all()
-        : [],
       this.moduleForms.listFields(user.tenantId, 'followPlan'),
-      this.fieldValues.load(
-        user.tenantId,
-        'followPlan',
-        plans.map((plan) => plan.id),
-      ),
+      this.fieldValues.load(user.tenantId, 'followPlan', plans.map((plan) => plan.id)),
     ])
     const ownerMap = new Map(owners.map((item) => [String(item.id), String(item.name)]))
-    const contactMap = new Map(contacts.map((item) => [String(item.id), String(item.name)]))
     const admin = hasPermission(user.permissions, '*')
     return plans.map((plan) => {
       const dynamicValues = dynamic.get(plan.id) ?? {}
@@ -841,8 +788,6 @@ export class FollowUpPlansService {
         targetId: plan.targetId,
         targetName: names.get(`${plan.targetType}:${plan.targetId}`) ?? '已删除业务对象',
         customerId: plan.targetType === 'customer' ? plan.targetId : null,
-        contactId: plan.contactId,
-        contactName: plan.contactId ? (contactMap.get(plan.contactId) ?? null) : null,
         content: plan.content,
         method: plan.method,
         estimatedAt: plan.estimatedAt ? instantToISOString(plan.estimatedAt) : null,

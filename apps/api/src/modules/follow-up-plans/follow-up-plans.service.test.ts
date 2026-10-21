@@ -24,7 +24,6 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     tenantId: 'tenant-1',
     targetType: 'customer',
     targetId: 'customer-1',
-    contactId: null,
     content: '今天完成回访',
     method: '电话',
     estimatedAt: instant('2026-08-22T02:00:00.000Z'),
@@ -66,7 +65,6 @@ function dependencies(
     clue?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
     customer?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
     user?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
-    customerContact?: { findMany?: () => Promise<Array<Record<string, unknown>>> }
   }
   const collection = (load: () => Promise<Array<Record<string, unknown>>>) => {
     const api = {
@@ -94,9 +92,6 @@ function dependencies(
     Clue: collection(async () => (legacy.clue?.findMany ? legacy.clue.findMany() : [])),
     Customer: collection(async () => (legacy.customer?.findMany ? legacy.customer.findMany() : [])),
     Users: collection(async () => (legacy.user?.findMany ? legacy.user.findMany() : [])),
-    CustomerContact: collection(async () =>
-      legacy.customerContact?.findMany ? legacy.customerContact.findMany() : [],
-    ),
   }
   const supplied = (options.prismaRuntime ?? {}) as {
     client?: {
@@ -242,7 +237,6 @@ test('创建计划时多选数据源扩展字段作为标准 moduleField 写入�
     },
     clue: { findMany: async () => [] },
     user: { findMany: async () => [{ id: 'owner-1', name: '负责人' }] },
-    customerContact: { findMany: async () => [] },
   }
   const prismaRuntime = {
     client: {

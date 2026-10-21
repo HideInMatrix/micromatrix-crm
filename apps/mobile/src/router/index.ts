@@ -127,39 +127,6 @@ const router = createRouter({
           },
         },
         {
-          path: 'contacts/detail',
-          name: 'mobile-contact-detail',
-          component: () => import('@/views/contacts/ContactDetailView.vue'),
-          meta: {
-            title: '联系人详情',
-            perm: 'contact:read',
-            depth: 2,
-            mobileHeader: { back: true, titleQuery: 'name' },
-          },
-        },
-        {
-          path: 'contacts/create',
-          name: 'mobile-contact-create',
-          component: () => import('@/views/contacts/ContactFormView.vue'),
-          meta: {
-            title: '新建联系人',
-            perm: 'contact:create',
-            depth: 2,
-            mobileHeader: { back: true },
-          },
-        },
-        {
-          path: 'contacts/:id/edit',
-          name: 'mobile-contact-edit',
-          component: () => import('@/views/contacts/ContactFormView.vue'),
-          meta: {
-            title: '编辑联系人',
-            perm: 'contact:update',
-            depth: 2,
-            mobileHeader: { back: true },
-          },
-        },
-        {
           path: 'select/search',
           name: 'mobile-search-select',
           component: () => import('@/views/common/MobileSearchSelectView.vue'),

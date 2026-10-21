@@ -73,7 +73,6 @@ const BLOB_FIELD_TYPES = new Set([
 const CUSTOM_FORM_ATTACHMENT_TARGET = 'customFormData'
 const BUILTIN_DATA_SOURCE_FORM_KEYS: Partial<Record<BuiltinDataSourceType, string>> = {
   CUSTOMER: 'customer',
-  CONTACT: 'contact',
   CLUE: 'lead',
 }
 
@@ -1956,13 +1955,6 @@ export class CustomFormsService {
             id: client.sql.public.customer.columns.id,
             name: client.sql.public.customer.columns.name,
           })
-        case 'CONTACT':
-          return client.raw.sql`SELECT id, name FROM customer_contact
-            WHERE organization_id = ${tenantId}
-              AND id IN (SELECT jsonb_array_elements_text(${idsJson}::jsonb))`.returnsRow({
-            id: client.sql.public.customer_contact.columns.id,
-            name: client.sql.public.customer_contact.columns.name,
-          })
         case 'CLUE':
           return client.raw.sql`SELECT id, name FROM clue
             WHERE organization_id = ${tenantId}
@@ -1990,12 +1982,6 @@ export class CustomFormsService {
             WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
             id: client.sql.public.customer.columns.id,
             name: client.sql.public.customer.columns.name,
-          })
-        case 'CONTACT':
-          return client.raw.sql`SELECT id, name FROM customer_contact
-            WHERE organization_id = ${tenantId} AND name = ${name} LIMIT 2`.returnsRow({
-            id: client.sql.public.customer_contact.columns.id,
-            name: client.sql.public.customer_contact.columns.name,
           })
         case 'CLUE':
           return client.raw.sql`SELECT id, name FROM clue

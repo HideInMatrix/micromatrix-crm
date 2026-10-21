@@ -87,18 +87,16 @@ onBeforeUnmount(stopCountdown)
   >
     <el-form label-position="left" label-width="120px">
       <el-form-item label="线索转换为">
-        <el-checkbox :model-value="true" disabled>联系人</el-checkbox>
         <el-checkbox :model-value="true" disabled>客户</el-checkbox>
       </el-form-item>
 
       <div class="rounded-md bg-[var(--el-color-primary-light-9)] px-6 py-4 text-sm leading-7">
         <div class="mb-1 font-medium text-[var(--el-text-color-primary)]">备注</div>
-        <div>转换后会创建客户和联系人，并保留原线索数据。</div>
+        <div>转换后会创建客户，并保留原线索数据。</div>
         <div>线索跟进记录会复制到新客户，原线索跟进记录不会删除。</div>
-        <div>自定义字段仅按表单联动配置迁移；联系人姓名为空时不会创建联系人。</div>
+        <div>自定义字段仅按表单联动配置迁移。</div>
         <div v-if="auth.hasPerm('system:module')" class="mt-1 flex gap-4">
           <el-button link type="primary" @click="openSettings">客户表单设置</el-button>
-          <el-button link type="primary" @click="openSettings">新建联系人表单</el-button>
         </div>
       </div>
     </el-form>

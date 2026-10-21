@@ -11,7 +11,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { attachmentApi } from '@/api/attachments'
 import { extractErrorMessage } from '@/api/http'
-import { contactApi, followUpApi, followUpPlanApi } from '@/api/sales'
+import { followUpApi, followUpPlanApi } from '@/api/sales'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 
@@ -39,8 +39,6 @@ const visible = computed({
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
 const formProp = ref<ModuleFormProp>({})
-const contacts = ref<Array<{ id: string; name: string }>>([])
-const resolvedCustomerId = ref<string | null>(null)
 const formModel = ref<Record<string, unknown>>({})
 const attachmentMap = ref<Record<string, AttachmentVO[]>>({})
 const formRef = ref<InstanceType<typeof DynamicForm>>()
@@ -49,7 +47,6 @@ const saving = ref(false)
 const loadFailed = ref(false)
 
 const form = reactive({
-  contactId: '',
   ownerId: '',
   type: '',
   content: '',
@@ -77,47 +74,26 @@ function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-async function loadContacts() {
-  contacts.value = []
-  if (!resolvedCustomerId.value) return
-  try {
-    const { data } = await contactApi.list(resolvedCustomerId.value)
-    contacts.value = data.map((item) => ({ id: item.id, name: item.name }))
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
 
-async function resolveCustomerId() {
-  if (props.targetType === 'customer') return props.targetId
-  return null
-}
 
 async function reset() {
   loading.value = true
   loadFailed.value = false
   try {
-    const [configRes, prefillRes, recordRes, customerId] = await Promise.all([
+    const [configRes, prefillRes, recordRes] = await Promise.all([
       followUpApi.moduleForm(),
       props.sourcePlanId
         ? followUpPlanApi.recordPrefill(props.sourcePlanId)
         : Promise.resolve(null),
       props.recordId ? followUpApi.get(props.recordId) : Promise.resolve(null),
       fieldRefs.load(),
-      resolveCustomerId(),
-    ]).then(
-      ([config, prefill, record, _refs, customerId]) =>
-        [config, prefill, record, customerId] as const,
-    )
+    ]).then(([config, prefill, record]) => [config, prefill, record] as const)
 
     fields.value = configRes.data.fields
     formProp.value = configRes.data.formProp
-    resolvedCustomerId.value = customerId
-    await loadContacts()
     const record = recordRes?.data
     const values = record
       ? Object.fromEntries([
-          ['contactId', record.contactId],
           ['ownerId', record.ownerId],
           ['type', record.type],
           ['content', record.content],
@@ -129,7 +105,6 @@ async function reset() {
         ])
       : (prefillRes?.data.values ?? {})
     attachmentMap.value = record?.attachmentMap ?? {}
-    form.contactId = stringValue(values.contactId)
     form.ownerId = stringValue(values.ownerId)
     form.type = stringValue(values.type)
     form.content = stringValue(values.content)
@@ -173,13 +148,11 @@ async function save() {
     const { data } = props.recordId
       ? await followUpApi.update(props.recordId, {
           ...commonPayload,
-          contactId: form.contactId || null,
           type: form.type || null,
           followedAt: form.followedAt || null,
         })
       : await followUpApi.create({
           ...commonPayload,
-          contactId: form.contactId || undefined,
           type: form.type || undefined,
           followedAt: form.followedAt || undefined,
           sourcePlanId: props.sourcePlanId,
@@ -265,22 +238,6 @@ watch(
           <el-form v-if="!loading" label-width="92px">
             <el-form-item label="关联对象">
               <el-input :model-value="targetName || targetId" disabled />
-            </el-form-item>
-            <el-form-item v-if="targetType !== 'lead'" label="联系人">
-              <el-select
-                v-model="form.contactId"
-                clearable
-                filterable
-                class="w-full"
-                placeholder="可选"
-              >
-                <el-option
-                  v-for="item in contacts"
-                  :key="item.id"
-                  :label="item.name"
-                  :value="item.id"
-                />
-              </el-select>
             </el-form-item>
             <el-form-item label="跟进时间">
               <el-date-picker

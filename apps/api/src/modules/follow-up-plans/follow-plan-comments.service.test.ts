@@ -32,7 +32,6 @@ function plan(overrides: Partial<FollowUpPlan> = {}): FollowUpPlan {
     tenantId: user.tenantId,
     targetType: 'customer',
     targetId: 'customer-1',
-    contactId: null,
     content: '跟进计划',
     method: '电话',
     estimatedAt: instant('2026-09-07T03:00:00.000Z'),

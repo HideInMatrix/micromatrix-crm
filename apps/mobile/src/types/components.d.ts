@@ -11,8 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    MobileContactForm: typeof import('./../components/contact/MobileContactForm.vue')['default']
-    MobileContactListPane: typeof import('./../components/customer/MobileContactListPane.vue')['default']
     MobileCustomerForm: typeof import('./../components/customer/MobileCustomerForm.vue')['default']
     MobileCustomerListCard: typeof import('./../components/customer/MobileCustomerListCard.vue')['default']
     MobileCustomerListPane: typeof import('./../components/customer/MobileCustomerListPane.vue')['default']

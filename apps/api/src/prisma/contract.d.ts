@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'82e73dd2065611c8a2ada7ed77659018c2bb89809a0a0ae9f224e2189fc8da79'>;
+  StorageHashBase<'2c88c1204a08768aebd1ea09c360f4f4eaf0a4fc1f68daf4c3e73474faf6f68c'>;
 export type ExecutionHash =
   ExecutionHashBase<'4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a'>;
 export type ProfileHash =
@@ -402,32 +402,6 @@ export type FieldOutputTypes = {
       readonly userId: CodecTypes['pg/text@1']['output'];
       readonly customerId: CodecTypes['pg/text@1']['output'];
       readonly collaborationType: CodecTypes['pg/text@1']['output'];
-    };
-    readonly CustomerContact: {
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly customerId: CodecTypes['pg/text@1']['output'] | null;
-      readonly name: CodecTypes['pg/text@1']['output'];
-      readonly phone: CodecTypes['pg/text@1']['output'] | null;
-      readonly owner: CodecTypes['pg/text@1']['output'];
-      readonly createTime: CodecTypes['pg/int8@1']['output'];
-      readonly updateTime: CodecTypes['pg/int8@1']['output'];
-      readonly createUser: CodecTypes['pg/text@1']['output'];
-      readonly updateUser: CodecTypes['pg/text@1']['output'];
-      readonly enable: CodecTypes['pg/bool@1']['output'];
-      readonly disableReason: CodecTypes['pg/text@1']['output'] | null;
-      readonly organizationId: CodecTypes['pg/text@1']['output'];
-    };
-    readonly CustomerContactField: {
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly resourceId: CodecTypes['pg/text@1']['output'];
-      readonly fieldId: CodecTypes['pg/text@1']['output'];
-      readonly fieldValue: CodecTypes['pg/text@1']['output'];
-    };
-    readonly CustomerContactFieldBlob: {
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly resourceId: CodecTypes['pg/text@1']['output'];
-      readonly fieldId: CodecTypes['pg/text@1']['output'];
-      readonly fieldValue: CodecTypes['pg/text@1']['output'];
     };
     readonly CustomerField: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -900,7 +874,6 @@ export type FieldOutputTypes = {
       readonly tenantId: CodecTypes['pg/text@1']['output'];
       readonly targetType: CodecTypes['pg/text@1']['output'];
       readonly targetId: CodecTypes['pg/text@1']['output'];
-      readonly contactId: CodecTypes['pg/text@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'];
       readonly method: CodecTypes['pg/text@1']['output'] | null;
       readonly estimatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
@@ -950,7 +923,6 @@ export type FieldOutputTypes = {
       readonly tenantId: CodecTypes['pg/text@1']['output'];
       readonly targetType: CodecTypes['pg/text@1']['output'];
       readonly targetId: CodecTypes['pg/text@1']['output'];
-      readonly contactId: CodecTypes['pg/text@1']['output'] | null;
       readonly _type: CodecTypes['pg/text@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'];
       readonly followedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
@@ -1466,32 +1438,6 @@ export type FieldInputTypes = {
       readonly customerId: CodecTypes['pg/text@1']['input'];
       readonly collaborationType: CodecTypes['pg/text@1']['input'];
     };
-    readonly CustomerContact: {
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly customerId: CodecTypes['pg/text@1']['input'] | null;
-      readonly name: CodecTypes['pg/text@1']['input'];
-      readonly phone: CodecTypes['pg/text@1']['input'] | null;
-      readonly owner: CodecTypes['pg/text@1']['input'];
-      readonly createTime: CodecTypes['pg/int8@1']['input'];
-      readonly updateTime: CodecTypes['pg/int8@1']['input'];
-      readonly createUser: CodecTypes['pg/text@1']['input'];
-      readonly updateUser: CodecTypes['pg/text@1']['input'];
-      readonly enable: CodecTypes['pg/bool@1']['input'];
-      readonly disableReason: CodecTypes['pg/text@1']['input'] | null;
-      readonly organizationId: CodecTypes['pg/text@1']['input'];
-    };
-    readonly CustomerContactField: {
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly resourceId: CodecTypes['pg/text@1']['input'];
-      readonly fieldId: CodecTypes['pg/text@1']['input'];
-      readonly fieldValue: CodecTypes['pg/text@1']['input'];
-    };
-    readonly CustomerContactFieldBlob: {
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly resourceId: CodecTypes['pg/text@1']['input'];
-      readonly fieldId: CodecTypes['pg/text@1']['input'];
-      readonly fieldValue: CodecTypes['pg/text@1']['input'];
-    };
     readonly CustomerField: {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly resourceId: CodecTypes['pg/text@1']['input'];
@@ -1963,7 +1909,6 @@ export type FieldInputTypes = {
       readonly tenantId: CodecTypes['pg/text@1']['input'];
       readonly targetType: CodecTypes['pg/text@1']['input'];
       readonly targetId: CodecTypes['pg/text@1']['input'];
-      readonly contactId: CodecTypes['pg/text@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'];
       readonly method: CodecTypes['pg/text@1']['input'] | null;
       readonly estimatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
@@ -2013,7 +1958,6 @@ export type FieldInputTypes = {
       readonly tenantId: CodecTypes['pg/text@1']['input'];
       readonly targetType: CodecTypes['pg/text@1']['input'];
       readonly targetId: CodecTypes['pg/text@1']['input'];
-      readonly contactId: CodecTypes['pg/text@1']['input'] | null;
       readonly _type: CodecTypes['pg/text@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'];
       readonly followedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
@@ -2592,32 +2536,6 @@ export type StorageColumnTypes = {
       readonly update_user: CodecTypes['pg/text@1']['output'];
       readonly user_id: CodecTypes['pg/text@1']['output'];
     };
-    readonly customer_contact: {
-      readonly create_time: CodecTypes['pg/int8@1']['output'];
-      readonly create_user: CodecTypes['pg/text@1']['output'];
-      readonly customer_id: CodecTypes['pg/text@1']['output'] | null;
-      readonly disable_reason: CodecTypes['pg/text@1']['output'] | null;
-      readonly enable: CodecTypes['pg/bool@1']['output'];
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly name: CodecTypes['pg/text@1']['output'];
-      readonly organization_id: CodecTypes['pg/text@1']['output'];
-      readonly owner: CodecTypes['pg/text@1']['output'];
-      readonly phone: CodecTypes['pg/text@1']['output'] | null;
-      readonly update_time: CodecTypes['pg/int8@1']['output'];
-      readonly update_user: CodecTypes['pg/text@1']['output'];
-    };
-    readonly customer_contact_field: {
-      readonly field_id: CodecTypes['pg/text@1']['output'];
-      readonly field_value: CodecTypes['pg/text@1']['output'];
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly resource_id: CodecTypes['pg/text@1']['output'];
-    };
-    readonly customer_contact_field_blob: {
-      readonly field_id: CodecTypes['pg/text@1']['output'];
-      readonly field_value: CodecTypes['pg/text@1']['output'];
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly resource_id: CodecTypes['pg/text@1']['output'];
-    };
     readonly customer_field: {
       readonly field_id: CodecTypes['pg/text@1']['output'];
       readonly field_value: CodecTypes['pg/text@1']['output'];
@@ -3023,7 +2941,6 @@ export type StorageColumnTypes = {
     };
     readonly follow_up_plans: {
       readonly commentCount: CodecTypes['pg/int4@1']['output'];
-      readonly contactId: CodecTypes['pg/text@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'];
       readonly converted: CodecTypes['pg/bool@1']['output'];
       readonly convertedRecordId: CodecTypes['pg/text@1']['output'] | null;
@@ -3073,7 +2990,6 @@ export type StorageColumnTypes = {
     };
     readonly follow_up_records: {
       readonly commentCount: CodecTypes['pg/int4@1']['output'];
-      readonly contactId: CodecTypes['pg/text@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly createdById: CodecTypes['pg/text@1']['output'];
@@ -3655,32 +3571,6 @@ export type StorageColumnInputTypes = {
       readonly update_user: CodecTypes['pg/text@1']['input'];
       readonly user_id: CodecTypes['pg/text@1']['input'];
     };
-    readonly customer_contact: {
-      readonly create_time: CodecTypes['pg/int8@1']['input'];
-      readonly create_user: CodecTypes['pg/text@1']['input'];
-      readonly customer_id: CodecTypes['pg/text@1']['input'] | null;
-      readonly disable_reason: CodecTypes['pg/text@1']['input'] | null;
-      readonly enable: CodecTypes['pg/bool@1']['input'];
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly name: CodecTypes['pg/text@1']['input'];
-      readonly organization_id: CodecTypes['pg/text@1']['input'];
-      readonly owner: CodecTypes['pg/text@1']['input'];
-      readonly phone: CodecTypes['pg/text@1']['input'] | null;
-      readonly update_time: CodecTypes['pg/int8@1']['input'];
-      readonly update_user: CodecTypes['pg/text@1']['input'];
-    };
-    readonly customer_contact_field: {
-      readonly field_id: CodecTypes['pg/text@1']['input'];
-      readonly field_value: CodecTypes['pg/text@1']['input'];
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly resource_id: CodecTypes['pg/text@1']['input'];
-    };
-    readonly customer_contact_field_blob: {
-      readonly field_id: CodecTypes['pg/text@1']['input'];
-      readonly field_value: CodecTypes['pg/text@1']['input'];
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly resource_id: CodecTypes['pg/text@1']['input'];
-    };
     readonly customer_field: {
       readonly field_id: CodecTypes['pg/text@1']['input'];
       readonly field_value: CodecTypes['pg/text@1']['input'];
@@ -4086,7 +3976,6 @@ export type StorageColumnInputTypes = {
     };
     readonly follow_up_plans: {
       readonly commentCount: CodecTypes['pg/int4@1']['input'];
-      readonly contactId: CodecTypes['pg/text@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'];
       readonly converted: CodecTypes['pg/bool@1']['input'];
       readonly convertedRecordId: CodecTypes['pg/text@1']['input'] | null;
@@ -4136,7 +4025,6 @@ export type StorageColumnInputTypes = {
     };
     readonly follow_up_records: {
       readonly commentCount: CodecTypes['pg/int4@1']['input'];
-      readonly contactId: CodecTypes['pg/text@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly createdById: CodecTypes['pg/text@1']['input'];
@@ -4685,7 +4573,6 @@ export namespace Models {
     followTime: CodecTypes['pg/int8@1']['output'] | null;
     reasonId: CodecTypes['pg/text@1']['output'] | null;
     customerCollaborations: public_CustomerCollaboration[];
-    customerContacts: public_CustomerContact[];
     customerFieldBlobs: public_CustomerFieldBlob[];
     customerFields: public_CustomerField[];
     customerOwners: public_CustomerOwner[];
@@ -4694,7 +4581,6 @@ export namespace Models {
     pool: public_CustomerPool | null;
     readonly [RelationKeys]?:
       | 'customerCollaborations'
-      | 'customerContacts'
       | 'customerFieldBlobs'
       | 'customerFields'
       | 'customerOwners'
@@ -4807,40 +4693,6 @@ export namespace Models {
     collaborationType: CodecTypes['pg/text@1']['output'];
     customer: public_Customer;
     readonly [RelationKeys]?: 'customer';
-  };
-  export type public_CustomerContact = {
-    id: CodecTypes['pg/text@1']['output'];
-    customerId: CodecTypes['pg/text@1']['output'] | null;
-    name: CodecTypes['pg/text@1']['output'];
-    phone: CodecTypes['pg/text@1']['output'] | null;
-    owner: CodecTypes['pg/text@1']['output'];
-    createTime: CodecTypes['pg/int8@1']['output'];
-    updateTime: CodecTypes['pg/int8@1']['output'];
-    createUser: CodecTypes['pg/text@1']['output'];
-    updateUser: CodecTypes['pg/text@1']['output'];
-    enable: CodecTypes['pg/bool@1']['output'];
-    disableReason: CodecTypes['pg/text@1']['output'] | null;
-    organizationId: CodecTypes['pg/text@1']['output'];
-    customer: public_Customer | null;
-    customerContactFieldBlobs: public_CustomerContactFieldBlob[];
-    customerContactFields: public_CustomerContactField[];
-    readonly [RelationKeys]?: 'customer' | 'customerContactFieldBlobs' | 'customerContactFields';
-  };
-  export type public_CustomerContactField = {
-    id: CodecTypes['pg/text@1']['output'];
-    resourceId: CodecTypes['pg/text@1']['output'];
-    fieldId: CodecTypes['pg/text@1']['output'];
-    fieldValue: CodecTypes['pg/text@1']['output'];
-    resource: public_CustomerContact;
-    readonly [RelationKeys]?: 'resource';
-  };
-  export type public_CustomerContactFieldBlob = {
-    id: CodecTypes['pg/text@1']['output'];
-    resourceId: CodecTypes['pg/text@1']['output'];
-    fieldId: CodecTypes['pg/text@1']['output'];
-    fieldValue: CodecTypes['pg/text@1']['output'];
-    resource: public_CustomerContact;
-    readonly [RelationKeys]?: 'resource';
   };
   export type public_CustomerField = {
     id: CodecTypes['pg/text@1']['output'];
@@ -5397,7 +5249,6 @@ export namespace Models {
     tenantId: CodecTypes['pg/text@1']['output'];
     targetType: CodecTypes['pg/text@1']['output'];
     targetId: CodecTypes['pg/text@1']['output'];
-    contactId: CodecTypes['pg/text@1']['output'] | null;
     content: CodecTypes['pg/text@1']['output'];
     method: CodecTypes['pg/text@1']['output'] | null;
     estimatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
@@ -5464,7 +5315,6 @@ export namespace Models {
     tenantId: CodecTypes['pg/text@1']['output'];
     targetType: CodecTypes['pg/text@1']['output'];
     targetId: CodecTypes['pg/text@1']['output'];
-    contactId: CodecTypes['pg/text@1']['output'] | null;
     _type: CodecTypes['pg/text@1']['output'] | null;
     content: CodecTypes['pg/text@1']['output'];
     followedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
@@ -5900,9 +5750,6 @@ export declare const models: {
     CustomFormRoleUser: Models.public_CustomFormRoleUser;
     CustomerCapacity: Models.public_CustomerCapacity;
     CustomerCollaboration: Models.public_CustomerCollaboration;
-    CustomerContact: Models.public_CustomerContact;
-    CustomerContactField: Models.public_CustomerContactField;
-    CustomerContactFieldBlob: Models.public_CustomerContactFieldBlob;
     CustomerField: Models.public_CustomerField;
     CustomerFieldBlob: Models.public_CustomerFieldBlob;
     CustomerOwner: Models.public_CustomerOwner;
@@ -7647,223 +7494,6 @@ type ContractBase = Omit<
                     readonly columns: readonly ['id'];
                   };
                   readonly name: 'customer_collaboration_customer_id_fkey';
-                },
-              ];
-            };
-            readonly customer_contact: {
-              columns: {
-                readonly id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly customer_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly name: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly phone: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly owner: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly create_time: {
-                  readonly nativeType: 'int8';
-                  readonly codecId: 'pg/int8@1';
-                  readonly nullable: false;
-                };
-                readonly update_time: {
-                  readonly nativeType: 'int8';
-                  readonly codecId: 'pg/int8@1';
-                  readonly nullable: false;
-                };
-                readonly create_user: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly update_user: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly enable: {
-                  readonly nativeType: 'bool';
-                  readonly codecId: 'pg/bool@1';
-                  readonly nullable: false;
-                  readonly default: {
-                    readonly kind: 'literal';
-                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
-                  };
-                };
-                readonly disable_reason: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly organization_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-              };
-              primaryKey: {
-                readonly columns: readonly ['id'];
-                readonly name: 'customer_contact_pkey';
-              };
-              uniques: readonly [];
-              indexes: readonly [
-                {
-                  readonly name: 'customer_contact_customer_id_idx';
-                  readonly columns: readonly ['customer_id'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'customer_contact_organization_id_idx';
-                  readonly columns: readonly ['organization_id'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'customer_contact_phone_idx';
-                  readonly columns: readonly ['phone'];
-                  readonly unique: false;
-                },
-              ];
-              foreignKeys: readonly [
-                {
-                  readonly source: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'customer_contact';
-                    readonly columns: readonly ['customer_id'];
-                  };
-                  readonly target: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'customer';
-                    readonly columns: readonly ['id'];
-                  };
-                  readonly name: 'customer_contact_customer_id_fkey';
-                },
-              ];
-            };
-            readonly customer_contact_field: {
-              columns: {
-                readonly id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly resource_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly field_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly field_value: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-              };
-              primaryKey: {
-                readonly columns: readonly ['id'];
-                readonly name: 'customer_contact_field_pkey';
-              };
-              uniques: readonly [];
-              indexes: readonly [
-                {
-                  readonly name: 'customer_contact_field_resource_id_field_id_field_value_idx';
-                  readonly columns: readonly ['resource_id', 'field_id', 'field_value'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'customer_contact_field_resource_id_field_id_key';
-                  readonly columns: readonly ['resource_id', 'field_id'];
-                  readonly unique: true;
-                },
-              ];
-              foreignKeys: readonly [
-                {
-                  readonly source: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'customer_contact_field';
-                    readonly columns: readonly ['resource_id'];
-                  };
-                  readonly target: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'customer_contact';
-                    readonly columns: readonly ['id'];
-                  };
-                  readonly name: 'customer_contact_field_resource_id_fkey';
-                },
-              ];
-            };
-            readonly customer_contact_field_blob: {
-              columns: {
-                readonly id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly resource_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly field_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly field_value: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-              };
-              primaryKey: {
-                readonly columns: readonly ['id'];
-                readonly name: 'customer_contact_field_blob_pkey';
-              };
-              uniques: readonly [];
-              indexes: readonly [
-                {
-                  readonly name: 'customer_contact_field_blob_resource_id_field_id_key';
-                  readonly columns: readonly ['resource_id', 'field_id'];
-                  readonly unique: true;
-                },
-                {
-                  readonly name: 'customer_contact_field_blob_resource_id_idx';
-                  readonly columns: readonly ['resource_id'];
-                  readonly unique: false;
-                },
-              ];
-              foreignKeys: readonly [
-                {
-                  readonly source: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'customer_contact_field_blob';
-                    readonly columns: readonly ['resource_id'];
-                  };
-                  readonly target: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'customer_contact';
-                    readonly columns: readonly ['id'];
-                  };
-                  readonly name: 'customer_contact_field_blob_resource_id_fkey';
                 },
               ];
             };
@@ -11211,11 +10841,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
                 };
-                readonly contactId: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
                 readonly content: {
                   readonly nativeType: 'text';
                   readonly codecId: 'pg/text@1';
@@ -11625,11 +11250,6 @@ type ContractBase = Omit<
                   readonly nativeType: 'text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
-                };
-                readonly contactId: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
                 };
                 readonly type: {
                   readonly nativeType: 'text';
@@ -14463,18 +14083,6 @@ type ContractBase = Omit<
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'CustomerCollaboration';
     };
-    readonly customer_contact: {
-      readonly namespace: 'public' & NamespaceId;
-      readonly model: 'CustomerContact';
-    };
-    readonly customer_contact_field: {
-      readonly namespace: 'public' & NamespaceId;
-      readonly model: 'CustomerContactField';
-    };
-    readonly customer_contact_field_blob: {
-      readonly namespace: 'public' & NamespaceId;
-      readonly model: 'CustomerContactFieldBlob';
-    };
     readonly customer_field: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'CustomerField';
@@ -15580,17 +15188,6 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['customerId'];
                 };
               };
-              readonly customerContacts: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'CustomerContact';
-                };
-                readonly cardinality: '1:N';
-                readonly on: {
-                  readonly localFields: readonly ['id'];
-                  readonly targetFields: readonly ['customerId'];
-                };
-              };
               readonly customerFieldBlobs: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -15797,200 +15394,6 @@ type ContractBase = Omit<
                 readonly userId: { readonly column: 'user_id' };
                 readonly customerId: { readonly column: 'customer_id' };
                 readonly collaborationType: { readonly column: 'collaboration_type' };
-              };
-            };
-          };
-          readonly CustomerContact: {
-            readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly customerId: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly name: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly phone: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly owner: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly createTime: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
-              };
-              readonly updateTime: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
-              };
-              readonly createUser: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly updateUser: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly enable: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
-              };
-              readonly disableReason: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly organizationId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-            };
-            readonly relations: {
-              readonly customer: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'Customer';
-                };
-                readonly cardinality: 'N:1';
-                readonly nullable: true;
-                readonly on: {
-                  readonly localFields: readonly ['customerId'];
-                  readonly targetFields: readonly ['id'];
-                };
-              };
-              readonly customerContactFieldBlobs: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'CustomerContactFieldBlob';
-                };
-                readonly cardinality: '1:N';
-                readonly on: {
-                  readonly localFields: readonly ['id'];
-                  readonly targetFields: readonly ['resourceId'];
-                };
-              };
-              readonly customerContactFields: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'CustomerContactField';
-                };
-                readonly cardinality: '1:N';
-                readonly on: {
-                  readonly localFields: readonly ['id'];
-                  readonly targetFields: readonly ['resourceId'];
-                };
-              };
-            };
-            readonly storage: {
-              readonly table: 'customer_contact';
-              readonly namespaceId: 'public';
-              readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly customerId: { readonly column: 'customer_id' };
-                readonly name: { readonly column: 'name' };
-                readonly phone: { readonly column: 'phone' };
-                readonly owner: { readonly column: 'owner' };
-                readonly createTime: { readonly column: 'create_time' };
-                readonly updateTime: { readonly column: 'update_time' };
-                readonly createUser: { readonly column: 'create_user' };
-                readonly updateUser: { readonly column: 'update_user' };
-                readonly enable: { readonly column: 'enable' };
-                readonly disableReason: { readonly column: 'disable_reason' };
-                readonly organizationId: { readonly column: 'organization_id' };
-              };
-            };
-          };
-          readonly CustomerContactField: {
-            readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly resourceId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly fieldId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly fieldValue: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-            };
-            readonly relations: {
-              readonly resource: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'CustomerContact';
-                };
-                readonly cardinality: 'N:1';
-                readonly nullable: false;
-                readonly on: {
-                  readonly localFields: readonly ['resourceId'];
-                  readonly targetFields: readonly ['id'];
-                };
-              };
-            };
-            readonly storage: {
-              readonly table: 'customer_contact_field';
-              readonly namespaceId: 'public';
-              readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly resourceId: { readonly column: 'resource_id' };
-                readonly fieldId: { readonly column: 'field_id' };
-                readonly fieldValue: { readonly column: 'field_value' };
-              };
-            };
-          };
-          readonly CustomerContactFieldBlob: {
-            readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly resourceId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly fieldId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly fieldValue: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-            };
-            readonly relations: {
-              readonly resource: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'CustomerContact';
-                };
-                readonly cardinality: 'N:1';
-                readonly nullable: false;
-                readonly on: {
-                  readonly localFields: readonly ['resourceId'];
-                  readonly targetFields: readonly ['id'];
-                };
-              };
-            };
-            readonly storage: {
-              readonly table: 'customer_contact_field_blob';
-              readonly namespaceId: 'public';
-              readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly resourceId: { readonly column: 'resource_id' };
-                readonly fieldId: { readonly column: 'field_id' };
-                readonly fieldValue: { readonly column: 'field_value' };
               };
             };
           };
@@ -19471,10 +18874,6 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly contactId: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
               readonly content: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -19595,7 +18994,6 @@ type ContractBase = Omit<
                 readonly tenantId: { readonly column: 'tenantId' };
                 readonly targetType: { readonly column: 'targetType' };
                 readonly targetId: { readonly column: 'targetId' };
-                readonly contactId: { readonly column: 'contactId' };
                 readonly content: { readonly column: 'content' };
                 readonly method: { readonly column: 'method' };
                 readonly estimatedAt: { readonly column: 'estimatedAt' };
@@ -19874,10 +19272,6 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly contactId: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
               readonly _type: {
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -19974,7 +19368,6 @@ type ContractBase = Omit<
                 readonly tenantId: { readonly column: 'tenantId' };
                 readonly targetType: { readonly column: 'targetType' };
                 readonly targetId: { readonly column: 'targetId' };
-                readonly contactId: { readonly column: 'contactId' };
                 readonly _type: { readonly column: 'type' };
                 readonly content: { readonly column: 'content' };
                 readonly followedAt: { readonly column: 'followedAt' };

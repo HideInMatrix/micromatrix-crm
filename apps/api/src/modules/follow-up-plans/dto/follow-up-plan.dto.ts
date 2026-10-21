@@ -43,10 +43,6 @@ export class CreateFollowUpPlanDto {
   @IsNotEmpty()
   targetId!: string
 
-  @ApiPropertyOptional()
-  @IsString()
-  @IsOptional()
-  contactId?: string
 
   @ApiProperty({ description: '计划内容' })
   @IsString()

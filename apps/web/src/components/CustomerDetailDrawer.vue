@@ -8,7 +8,6 @@ import FollowRecordPanel from '@/components/follow-records/FollowRecordPanel.vue
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import CustomerRelationsPanel from '@/components/CustomerRelationsPanel.vue'
 import OwnerHistoryTimeline from '@/components/OwnerHistoryTimeline.vue'
-import CustomerContactTable from '@/components/contacts/CustomerContactTable.vue'
 import type { MemberOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 
@@ -21,7 +20,7 @@ const props = defineProps<{
 const visible = defineModel<boolean>({ required: true })
 const auth = useAuthStore()
 
-const activeTab = ref('contacts')
+const activeTab = ref('team')
 const team = ref<TeamMemberVO[]>([])
 const loading = ref(false)
 const collaborationType = ref<CustomerVO['collaborationType']>(null)
@@ -36,7 +35,7 @@ const teamDialogVisible = ref(false)
 
 watch(visible, (open) => {
   if (open && props.customer) {
-    activeTab.value = 'contacts'
+    activeTab.value = 'team'
     loadAll()
   }
 })
@@ -96,13 +95,6 @@ async function handleTeamRemove(member: TeamMemberVO) {
       </el-descriptions>
 
       <el-tabs v-if="!pool" v-model="activeTab">
-        <el-tab-pane label="联系人" name="contacts">
-          <CustomerContactTable
-            v-if="customer"
-            :source-id="customer.id"
-            :readonly="!resourceCanCollaborateWrite"
-          />
-        </el-tab-pane>
 
         <el-tab-pane label="协作团队" name="team">
           <div class="flex justify-end mb-2">

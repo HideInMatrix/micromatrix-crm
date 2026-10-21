@@ -56,7 +56,7 @@ Redis 协调层只能减少重复进入；业务自身 CAS、唯一约束、状�
 - API enqueue 失败必须 fail-closed 并撤销新建 PENDING task，不返回伪成功。
 - worker 使用同一 API 镜像的 `dist/worker.js`，不启动 HTTP/Cron，并与 API 共享 uploads volume。
 - worker 每次执行重新加载当前用户/角色和资源权限，不信任提交时缓存权限快照。
-- 当前导出 module key 只允许 `customer / customer_pool / contact / lead / lead_pool / customFormData`。
+- 当前导出 module key 只允许 `customer / customer_pool / lead / lead_pool / customFormData`。
 - transient error 有限重试；确定性 4xx/权限/数据错误直接 FAILED。
 - worker 重启后依据 PostgreSQL PENDING task 恢复缺失 job。
 

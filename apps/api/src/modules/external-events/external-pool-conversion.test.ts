@@ -108,7 +108,7 @@ test('池内转化在同一事务中先出池指定负责人，再创建并关�
     assert.equal(lead?.owner, 'owner-1')
     assert.equal(lead?.inSharedPool, false)
     events.push('associate')
-    return { contactIds: [] }
+    return
   }
   const tx = {
     query: async function* () {

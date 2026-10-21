@@ -148,12 +148,6 @@ onMounted(load)
                   <el-tag v-if="plan.method" size="small" effect="plain">{{ plan.method }}</el-tag>
                 </div>
                 <div class="break-words">{{ plan.content }}</div>
-                <div
-                  v-if="plan.contactName"
-                  class="text-xs text-[var(--el-text-color-secondary)] mt-1"
-                >
-                  联系人：{{ plan.contactName }}
-                </div>
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <el-button

@@ -10,13 +10,11 @@ import FollowRecordPanel from '@/components/follow-records/FollowRecordPanel.vue
 import FollowRecordFormDrawer from '@/components/follow-records/FollowRecordFormDrawer.vue'
 import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import CustomerChangeHistoryTimeline from '@/components/customer/CustomerChangeHistoryTimeline.vue'
-import CustomerContactsTab from '@/components/customer/CustomerContactsTab.vue'
-import CustomerContactCreateDrawer from '@/components/customer/CustomerContactCreateDrawer.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
-type TabName = 'overview' | 'contact' | 'followRecord' | 'headRecord'
+type TabName = 'overview' | 'followRecord' | 'headRecord'
 
 const props = defineProps<{
   customerId: string
@@ -42,8 +40,6 @@ const activeTab = ref<TabName>('overview')
 const transferVisible = ref(false)
 const poolAssignVisible = ref(false)
 const createFollowVisible = ref(false)
-const createContactVisible = ref(false)
-const contactRefreshKey = ref(0)
 const followRefreshKey = ref(0)
 const canMainAction = computed(
   () =>
@@ -58,11 +54,6 @@ const canWrite = computed(
 )
 const allTabs = computed<{ name: TabName; label: string; visible: boolean }[]>(() => [
   { name: 'overview', label: '概览', visible: true },
-  {
-    name: 'contact',
-    label: '联系人',
-    visible: !props.pool && customer.value?.inSea !== true && auth.hasPerm('contact:read'),
-  },
   { name: 'followRecord', label: '跟进记录', visible: true },
   { name: 'headRecord', label: '变更记录', visible: true },
 ])
@@ -86,18 +77,6 @@ function displayField(field: FieldVO) {
 const isAdmissionsConfig = computed(() =>
   fields.value.some((field) => /(学员|学生|家长|招生)/.test(field.label)),
 )
-function createContact() {
-  if (!canWrite.value || !auth.hasPerm('contact:create') || !customer.value) return
-  activeTab.value = 'contact'
-  createContactVisible.value = true
-}
-
-async function handleContactCreated() {
-  contactRefreshKey.value += 1
-  await loadBase()
-  emit('changed')
-}
-
 function createFollowRecord() {
   if (!canWrite.value || !customer.value) return
   activeTab.value = 'followRecord'
@@ -204,7 +183,6 @@ watch(
   async () => {
     activeTab.value = 'overview'
     createFollowVisible.value = false
-    createContactVisible.value = false
     await loadBase()
   },
 )
@@ -317,7 +295,7 @@ onMounted(async () => {
               v-else
               class="h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
               :class="
-                tab.name === 'contact' || tab.name === 'followRecord' || tab.name === 'headRecord'
+                tab.name === 'followRecord' || tab.name === 'headRecord'
                   ? 'px-5 pt-[10px] pb-5'
                   : 'px-5 pt-[22px] pb-[30px] max-sm:px-[14px] max-sm:py-[18px]'
               "
@@ -332,12 +310,6 @@ onMounted(async () => {
                 :allow-manage="canWrite"
                 detail
                 @changed="handleFollowChanged"
-              />
-              <CustomerContactsTab
-                v-else-if="tab.name === 'contact'"
-                :customer-id="customerId"
-                :refresh-key="contactRefreshKey"
-                :admissions="isAdmissionsConfig"
               />
               <CustomerChangeHistoryTimeline
                 v-else-if="tab.name === 'headRecord'"
@@ -378,17 +350,6 @@ onMounted(async () => {
       </template>
       <template v-else>
         <el-button
-          v-if="
-            canWrite &&
-            auth.hasPerm('contact:create') &&
-            visibleTabs.some((tab) => tab.name === 'contact')
-          "
-          class="!ml-0 !h-[36px] !w-[88px] !shrink-0 !rounded-[4px] !p-0 [--el-font-size-base:14px] [--el-button-bg-color:#FFFFFF] [--el-button-border-color:#DCDFE6] [--el-button-text-color:#606266]"
-          @click="createContact"
-        >
-          新增联系人
-        </el-button>
-        <el-button
           v-if="canWrite"
           type="primary"
           class="!ml-0 !h-[36px] !w-[88px] !shrink-0 !rounded-[4px] !p-0 [--el-font-size-base:14px] [--el-button-bg-color:var(--el-color-primary)] [--el-button-border-color:var(--el-color-primary)] [--el-button-text-color:#FFFFFF]"
@@ -399,12 +360,6 @@ onMounted(async () => {
       </template>
     </footer>
 
-    <CustomerContactCreateDrawer
-      v-if="customer && !pool"
-      v-model="createContactVisible"
-      :customer-id="customerId"
-      @saved="handleContactCreated"
-    />
 
     <FollowRecordFormDrawer
       v-if="customer && !pool"

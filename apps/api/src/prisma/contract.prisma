@@ -320,7 +320,6 @@ namespace public {
     followTime                        BigInt?                 @map("follow_time")
     reasonId                          String?            @map("reason_id")
     customerCollaborations            CustomerCollaboration[]
-    customerContacts                  CustomerContact[]
     customerFields                    CustomerField[]
     customerFieldBlobs                CustomerFieldBlob[]
     customerOwners                    CustomerOwner[]
@@ -557,69 +556,6 @@ namespace public {
     @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_c2dcb526d1")
     @@check(expression: "char_length(\"collaboration_type\") <= 50", name: "text_len_2934ac6836")
     @@map("customer_collaboration")
-  }
-
-  model CustomerContact {
-    id                        String                @id(map: "customer_contact_pkey")
-    customerId                String?               @map("customer_id")
-    name                      String
-    phone                     String?
-    owner                     String
-    createTime                BigInt                     @map("create_time")
-    updateTime                BigInt                     @map("update_time")
-    createUser                String                @map("create_user")
-    updateUser                String                @map("update_user")
-    enable                    Boolean                    @default(false)
-    disableReason             String?              @map("disable_reason")
-    organizationId            String                @map("organization_id")
-    customerContactFields     CustomerContactField[]
-    customerContactFieldBlobs CustomerContactFieldBlob[]
-    customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "customer_contact_customer_id_fkey")
-
-    @@index([customerId], map: "customer_contact_customer_id_idx")
-    @@index([organizationId], map: "customer_contact_organization_id_idx")
-    @@index([phone], map: "customer_contact_phone_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_02c9381bd0")
-    @@check(expression: "char_length(\"customer_id\") <= 32", name: "text_len_604b16465a")
-    @@check(expression: "char_length(\"name\") <= 255", name: "text_len_d66315c44d")
-    @@check(expression: "char_length(\"phone\") <= 30", name: "text_len_4c8af87865")
-    @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_5386c253de")
-    @@check(expression: "char_length(\"create_user\") <= 32", name: "text_len_debf02b9b3")
-    @@check(expression: "char_length(\"update_user\") <= 32", name: "text_len_eb84d5bc69")
-    @@check(expression: "char_length(\"disable_reason\") <= 255", name: "text_len_ed42946db6")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_9408accba8")
-    @@map("customer_contact")
-  }
-
-  model CustomerContactField {
-    id         String     @id(map: "customer_contact_field_pkey")
-    resourceId String     @map("resource_id")
-    fieldId    String     @map("field_id")
-    fieldValue String    @map("field_value")
-    resource   CustomerContact @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_contact_field_resource_id_fkey", index: false)
-
-    @@index([resourceId, fieldId, fieldValue], map: "customer_contact_field_resource_id_field_id_field_value_idx")
-    @@index([resourceId, fieldId], map: "customer_contact_field_resource_id_field_id_key", unique: true)
-    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_2237660bfc")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_4ee8ab6d5a")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_00250722f4")
-    @@check(expression: "char_length(\"field_value\") <= 255", name: "text_len_c5f9520a25")
-    @@map("customer_contact_field")
-  }
-
-  model CustomerContactFieldBlob {
-    id         String     @id(map: "customer_contact_field_blob_pkey")
-    resourceId String     @map("resource_id")
-    fieldId    String     @map("field_id")
-    fieldValue String          @map("field_value")
-    resource   CustomerContact @relation(fields: [resourceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "customer_contact_field_blob_resource_id_fkey")
-
-    @@index([resourceId, fieldId], map: "customer_contact_field_blob_resource_id_field_id_key", unique: true)
-    @@index([resourceId], map: "customer_contact_field_blob_resource_id_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_51d2e55e07")
-    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_9ec8491e61")
-    @@check(expression: "char_length(\"field_id\") <= 32", name: "text_len_54e8572f96")
-    @@map("customer_contact_field_blob")
   }
 
   model CustomerField {
@@ -1309,7 +1245,6 @@ namespace public {
     tenantId               String
     targetType             String
     targetId               String
-    contactId              String?
     content                String
     method                 String?
     estimatedAt            Timestamptz(3)?
@@ -1411,7 +1346,6 @@ namespace public {
     tenantId                 String
     targetType               String
     targetId                 String
-    contactId                String?
     _type                    String?                   @map("type")
     content                  String
     followedAt               Timestamptz(3)?

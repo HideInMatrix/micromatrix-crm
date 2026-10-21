@@ -596,7 +596,7 @@ export class CustomersService {
     return rows.map((row) => ({ id: String(row.id), name: String(row.name) }))
   }
 
-  /** 名称模糊 + 电话精确，命中客户/联系人/线索；非数据范围仅露负责人 */
+  /** 名称模糊 + 电话精确，命中客户与线索；非数据范围仅露负责人。 */
   async checkDuplicate(user: AuthUser, query: CheckDuplicateQueryDto): Promise<DuplicateHitVO[]> {
     const name = query.name?.trim()
     const phone = query.phone?.trim()
@@ -607,7 +607,6 @@ export class CustomersService {
           { key: 'cf_phone', op: 'eq', value: phone },
         ])
       : []
-
     let customerQuery = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
     })
@@ -623,19 +622,6 @@ export class CustomersService {
       customerQuery = customerQuery.where((row) => row.id.eq(''))
     }
 
-    let contactQuery = this.prisma.client.orm.public.CustomerContact.where({
-      organizationId: user.tenantId,
-    })
-    if (name && phone) {
-      contactQuery = contactQuery.where((row) =>
-        or(row.name.ilike('%' + name + '%'), row.phone.eq(phone)),
-      )
-    } else if (name) {
-      contactQuery = contactQuery.where((row) => row.name.ilike('%' + name + '%'))
-    } else if (phone) {
-      contactQuery = contactQuery.where({ phone: phone })
-    }
-
     let leadQuery = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
     }).where((row) => row.stage.neq('FAIL'))
@@ -646,46 +632,14 @@ export class CustomersService {
     } else if (name) {
       leadQuery = leadQuery.where((row) => row.name.ilike('%' + name + '%'))
     } else if (phone) {
-      leadQuery = leadQuery.where({ phone: phone })
+      leadQuery = leadQuery.where({ phone })
     }
 
-    const [customerRows, contactRows, leadRows] = await Promise.all([
+    const [customerRows, leadRows] = await Promise.all([
       customerQuery.limit(10).all(),
-      contactQuery.limit(10).all(),
       leadQuery.limit(10).all(),
     ])
     const customers = customerRows as unknown as Customer[]
-    const contactCustomerIds = [
-      ...new Set(
-        contactRows.flatMap((contact) => (contact.customerId ? [String(contact.customerId)] : [])),
-      ),
-    ]
-    const refCustomerIds = contactCustomerIds
-    const refCustomers = refCustomerIds.length
-      ? await this.prisma.client.orm.public.Customer.where((row) => row.id.in(refCustomerIds))
-          .select('id', 'name', 'owner', 'inSharedPool')
-          .all()
-      : []
-    const customerRefMap = new Map(
-      refCustomers.map((item) => [
-        String(item.id),
-        {
-          id: String(item.id),
-          name: String(item.name),
-          owner: item.owner ? String(item.owner) : null,
-          inSharedPool: item.inSharedPool,
-        },
-      ]),
-    )
-    const contacts = contactRows.map((contact) => ({
-      id: String(contact.id),
-      customerId: contact.customerId ? String(contact.customerId) : null,
-      name: String(contact.name),
-      phone: contact.phone ? String(contact.phone) : null,
-      customer: contact.customerId
-        ? (customerRefMap.get(String(contact.customerId)) ?? null)
-        : null,
-    }))
     const leads = leadRows.map((lead) => ({
       id: String(lead.id),
       name: String(lead.name),
@@ -693,26 +647,14 @@ export class CustomersService {
       owner: lead.owner ? String(lead.owner) : null,
       inSharedPool: lead.inSharedPool,
     }))
-    const customerIds = [
-      ...customers.map((customer) => customer.id),
-      ...contacts.flatMap((contact) => (contact.customerId ? [contact.customerId] : [])),
-    ]
     const [inScopeCustomers, inScopeLeads, ownerMap, customerValues] = await Promise.all([
-      this.inScopeCustomerIds(user, customerIds),
-      this.inScopeLeadIds(
-        user,
-        leads.map((lead) => lead.id),
-      ),
+      this.inScopeCustomerIds(user, customers.map((customer) => customer.id)),
+      this.inScopeLeadIds(user, leads.map((lead) => lead.id)),
       this.userNames([
         ...customers.map((customer) => customer.owner),
-        ...contacts.map((contact) => contact.customer?.owner),
         ...leads.map((lead) => lead.owner),
       ]),
-      this.fieldValues.load(
-        user.tenantId,
-        'customer',
-        customers.map((customer) => customer.id),
-      ),
+      this.fieldValues.load(user.tenantId, 'customer', customers.map((customer) => customer.id)),
     ])
 
     const hits: DuplicateHitVO[] = []
@@ -725,19 +667,6 @@ export class CustomersService {
         phone: inScope ? String(customerValues.get(row.id)?.cf_phone ?? '') || null : null,
         ownerName: row.owner ? (ownerMap.get(row.owner) ?? null) : null,
         inSea: row.inSharedPool,
-        inScope,
-      })
-    }
-    for (const row of contacts) {
-      if (!row.customerId || !row.customer) continue
-      const inScope = inScopeCustomers.has(row.customerId)
-      hits.push({
-        id: row.id,
-        source: 'contact',
-        name: inScope ? row.name + '（' + row.customer.name + '）' : null,
-        phone: inScope ? row.phone : null,
-        ownerName: ownerMap.get(row.customer.owner ?? '') ?? null,
-        inSea: row.customer.inSharedPool,
         inScope,
       })
     }
@@ -758,25 +687,8 @@ export class CustomersService {
 
   async related(user: AuthUser, id: string): Promise<CustomerRelatedVO> {
     const access = await this.customerAccess.assertRead(user, id)
-    const isOpenSea = access.customer.inSharedPool
-    const canReadContacts =
-      !isOpenSea &&
-      hasPermission(user.permissions, 'contact:read') &&
-      (access.dataScope || access.pool || access.collaborationType === 'COLLABORATION')
-    const canReadTeam = !isOpenSea && access.collaborationType === null
-
-    let contactQuery = this.prisma.client.orm.public.CustomerContact.where({
-      organizationId: user.tenantId,
-      customerId: id,
-    })
-    if (!access.dataScope && !access.pool && access.collaborationType === 'COLLABORATION') {
-      contactQuery = contactQuery.where({ owner: user.id })
-    }
-
-    const [contacts, followUps, team] = await Promise.all([
-      canReadContacts
-        ? contactQuery.orderBy((row) => row.createTime.asc()).all()
-        : Promise.resolve([]),
+    const canReadTeam = !access.customer.inSharedPool && access.collaborationType === null
+    const [followUps, team] = await Promise.all([
       this.prisma.client.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',
@@ -786,27 +698,17 @@ export class CustomersService {
         .limit(50)
         .all(),
       canReadTeam
-        ? this.prisma.client.orm.public.CustomerCollaboration.where({
-            customerId: id,
-          })
+        ? this.prisma.client.orm.public.CustomerCollaboration.where({ customerId: id })
             .orderBy((row) => row.createTime.asc())
             .all()
         : Promise.resolve([]),
     ])
-
     const ownerMap = await this.userNames(team.map((item) => String(item.userId)))
-
     return {
-      contacts: contacts.map((contact) => ({
-        id: String(contact.id),
-        name: String(contact.name),
-        phone: contact.phone ? String(contact.phone) : null,
-      })),
       followUps: followUps.map((record) => ({
         id: record.id,
         targetType: record.targetType as 'customer',
         targetId: record.targetId,
-        contactId: record.contactId,
         type: record._type,
         content: record.content,
         followedAt: record.followedAt ? instantToISOString(record.followedAt) : null,
@@ -1054,7 +956,6 @@ export class CustomersService {
 
   async remove(user: AuthUser, id: string): Promise<{ id: string; name: string }> {
     const customer = await this.ensureInScope(user, id, 'customer:delete')
-    await this.assertCustomersDeletable(user.tenantId, [id])
     await this.deleteCustomerResources(user, [customer])
     return { id, name: customer.name }
   }
@@ -1326,7 +1227,6 @@ export class CustomersService {
     const customers = await Promise.all(
       ids.map((id) => this.ensureInScope(user, id, 'customer:delete')),
     )
-    await this.assertCustomersDeletable(user.tenantId, ids)
     await this.deleteCustomerResources(user, customers)
     return { success: ids.length, fail: 0, failedIds: [] }
   }
@@ -1401,7 +1301,6 @@ export class CustomersService {
     if (customers.length !== ids.length) {
       throw new BadRequestException('所选客户必须全部属于同一个指定公海')
     }
-    await this.assertCustomersDeletable(user.tenantId, ids)
     await this.deleteCustomerResources(user, customers)
     return { success: ids.length, fail: 0, failedIds: [] }
   }
@@ -1846,22 +1745,18 @@ export class CustomersService {
       },
       counts: {
         customersToDelete: context.sourceIds.length,
-        contacts: context.sourceContacts.length,
-        contactsWillMove: context.sourceContacts.length - context.skipContactIds.length,
-        contactsWillSkip: context.skipContactIds.length,
         followUps: followUpAggregate.count,
         followUpPlans: followUpPlanAggregate.count,
         attachments: attachmentAggregate.count,
         collaborations: collaborationAggregate.count,
         relationsToRemove: relationAggregate.count,
       },
-      contactConflicts: context.contactConflicts,
     }
   }
 
   async merge(user: AuthUser, dto: CustomerMergeDto) {
     const context = await this.prepareMergeContext(user, dto)
-    const { sourceIds, target, sources, newOwner, skipContactIds, contactConflicts } = context
+    const { sourceIds, target, sources, newOwner } = context
     const sourceVarchars = sourceIds
 
     const sourceNames = sources.map((source) => source.name)
@@ -1891,42 +1786,6 @@ export class CustomersService {
 
     const now = BigInt(Date.now())
     const result = await this.prisma.client.transaction(async (tx) => {
-      if (skipContactIds.length > 0) {
-        for (const conflict of contactConflicts) {
-          if (!skipContactIds.includes(conflict.sourceContactId)) continue
-          const targetContactId = conflict.targetContactIds[0]
-          if (targetContactId) {
-            await tx.orm.public.FollowUpPlans.where({
-              tenantId: user.tenantId,
-              contactId: conflict.sourceContactId,
-            }).updateAndCount({ contactId: targetContactId })
-            await tx.orm.public.FollowUpRecords.where({
-              tenantId: user.tenantId,
-              contactId: conflict.sourceContactId,
-            }).updateAndCount({ contactId: targetContactId })
-            await tx.orm.public.Attachments.where({
-              tenantId: user.tenantId,
-              targetType: 'contact',
-              targetId: conflict.sourceContactId,
-            }).updateAndCount({ targetId: targetContactId })
-          }
-        }
-        await tx.orm.public.CustomerContact.where({
-          organizationId: user.tenantId,
-        })
-          .where((row) => row.id.in(skipContactIds))
-          .deleteAll()
-      }
-
-      await tx.orm.public.CustomerContact.where({
-        organizationId: user.tenantId,
-      })
-        .where((row) => row.customerId.in(sourceVarchars))
-        .updateAndCount({
-          customerId: dto.toMergeId,
-          updateTime: now,
-          updateUser: user.id,
-        })
       await tx.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',
@@ -1976,17 +1835,6 @@ export class CustomersService {
           collectionTime: target.collectionTime,
           endTime: now,
           reasonId: null,
-        })
-      }
-      if (target.owner && target.owner !== newOwner.id) {
-        await tx.orm.public.CustomerContact.where({
-          organizationId: user.tenantId,
-          customerId: target.id,
-          owner: target.owner,
-        }).updateAndCount({
-          owner: newOwner.id,
-          updateTime: now,
-          updateUser: user.id,
         })
       }
       const mergedTarget = await tx.orm.public.Customer.where({
@@ -2075,50 +1923,6 @@ export class CustomersService {
       await this.pools.assertCapacityForOwner(user.tenantId, 'customer', newOwner.id)
     }
 
-    const [targetContactRows, sourceContactRows] = await Promise.all([
-      this.prisma.client.orm.public.CustomerContact.where({
-        organizationId: user.tenantId,
-        customerId: target.id,
-      })
-        .select('id', 'customerId', 'name', 'phone')
-        .all(),
-      this.prisma.client.orm.public.CustomerContact.where({
-        organizationId: user.tenantId,
-      })
-        .where((row) => row.customerId.in(sourceIds))
-        .select('id', 'customerId', 'name', 'phone')
-        .all(),
-    ])
-    const targetContacts = targetContactRows.map((contact) => ({
-      id: String(contact.id),
-      customerId: contact.customerId ? String(contact.customerId) : null,
-      name: String(contact.name),
-      phone: contact.phone ? String(contact.phone) : null,
-    }))
-    const sourceContacts = sourceContactRows.map((contact) => ({
-      id: String(contact.id),
-      customerId: contact.customerId ? String(contact.customerId) : null,
-      name: String(contact.name),
-      phone: contact.phone ? String(contact.phone) : null,
-    }))
-    const contactFields = await this.metadata.fieldsMap(user.tenantId, 'contact')
-    const uniqueRules = {
-      name: contactFields.get('name')?.config?.unique === true,
-      phone: contactFields.get('phone')?.config?.unique === true,
-    }
-    const contactConflicts = this.findMergeContactConflicts(
-      targetContacts.filter(
-        (contact): contact is typeof contact & { customerId: string } =>
-          contact.customerId !== null,
-      ),
-      sourceContacts.filter(
-        (contact): contact is typeof contact & { customerId: string } =>
-          contact.customerId !== null,
-      ),
-      uniqueRules,
-    )
-    const skipContactIds = contactConflicts.map((item) => item.sourceContactId)
-
     return {
       requestedIds,
       targetWasSelected,
@@ -2126,60 +1930,7 @@ export class CustomersService {
       target,
       sources,
       newOwner,
-      sourceContacts,
-      contactConflicts,
-      skipContactIds,
     }
-  }
-
-  private findMergeContactConflicts(
-    targetContacts: { id: string; customerId: string; name: string; phone: string | null }[],
-    sourceContacts: { id: string; customerId: string; name: string; phone: string | null }[],
-    uniqueRules: { name: boolean; phone: boolean },
-  ) {
-    const normalizeName = (value: string) => value.trim().toLocaleLowerCase()
-    const normalizePhone = (value: string | null) => value?.trim() ?? ''
-    const targetNames = new Map<string, string[]>()
-    const targetPhones = new Map<string, string[]>()
-    for (const contact of targetContacts) {
-      const name = normalizeName(contact.name)
-      if (uniqueRules.name && name) {
-        targetNames.set(name, [...(targetNames.get(name) ?? []), contact.id])
-      }
-      const phone = normalizePhone(contact.phone)
-      if (uniqueRules.phone && phone) {
-        targetPhones.set(phone, [...(targetPhones.get(phone) ?? []), contact.id])
-      }
-    }
-
-    return sourceContacts.flatMap((contact) => {
-      const matchedBy: ('name' | 'phone')[] = []
-      const targetContactIds = new Set<string>()
-      const nameMatches = uniqueRules.name
-        ? (targetNames.get(normalizeName(contact.name)) ?? [])
-        : []
-      if (nameMatches.length > 0) {
-        matchedBy.push('name')
-        nameMatches.forEach((id) => targetContactIds.add(id))
-      }
-      const phone = normalizePhone(contact.phone)
-      const phoneMatches = uniqueRules.phone && phone ? (targetPhones.get(phone) ?? []) : []
-      if (phoneMatches.length > 0) {
-        matchedBy.push('phone')
-        phoneMatches.forEach((id) => targetContactIds.add(id))
-      }
-      if (matchedBy.length === 0) return []
-      return [
-        {
-          sourceContactId: contact.id,
-          sourceCustomerId: contact.customerId,
-          name: contact.name,
-          phone: contact.phone,
-          matchedBy,
-          targetContactIds: [...targetContactIds],
-        },
-      ]
-    })
   }
 
   private async userNames(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
@@ -2873,19 +2624,6 @@ export class CustomersService {
     if (selected.length !== wanted.size)
       throw new BadRequestException('选中数据包含不存在或无权导出的客户')
     return selected
-  }
-
-  /** Cordys 在删除客户前会阻止仍被 Contact 引用的客户。 */
-  private async assertCustomersDeletable(tenantId: string, ids: string[]) {
-    const customerIds = ids
-    const contacts = await this.prisma.client.orm.public.CustomerContact.where({
-      organizationId: tenantId,
-    })
-      .where((row) => row.customerId.in(customerIds))
-      .aggregate((row) => ({ count: row.count() }))
-    if (contacts.count > 0) {
-      throw new BadRequestException('客户已关联联系人，不能删除')
-    }
   }
 
   private async deleteCustomerResources(

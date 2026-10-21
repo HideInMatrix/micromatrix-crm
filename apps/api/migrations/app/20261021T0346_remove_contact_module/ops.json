@@ -1,0 +1,238 @@
+[
+  {
+    "id": "contact-module.cleanup-legacy-metadata",
+    "label": "Remove legacy contact module metadata and permissions",
+    "operationClass": "data",
+    "target": {
+      "id": "public.sys_module_form",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sys_module_form"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Delete saved views for the removed contact resource",
+        "sql": "DELETE FROM \"public\".\"sys_user_view\" WHERE \"resource_type\" IN ('CUSTOMER_CONTACT', 'CONTACT', 'contact')"
+      },
+      {
+        "description": "Delete the removed contact form and its field metadata",
+        "sql": "DELETE FROM \"public\".\"sys_module_form\" WHERE \"form_key\" = 'contact'"
+      },
+      {
+        "description": "Delete stale contact module configuration",
+        "sql": "DELETE FROM \"public\".\"module_configs\" WHERE \"key\" = 'contact'"
+      },
+      {
+        "description": "Delete stale contact top navigation configuration",
+        "sql": "DELETE FROM \"public\".\"top_navigation_configs\" WHERE \"key\" = 'contact'"
+      },
+      {
+        "description": "Delete contact notification settings",
+        "sql": "DELETE FROM \"public\".\"message_task_settings\" WHERE \"module\" = 'contact'"
+      },
+      {
+        "description": "Remove contact permissions from existing roles",
+        "sql": "UPDATE \"public\".\"roles\" SET \"permissions\" = ARRAY(SELECT p.permission FROM unnest(\"permissions\") AS p(permission) WHERE p.permission NOT LIKE 'contact:%') WHERE \"permissions\" IS NOT NULL AND EXISTS (SELECT 1 FROM unnest(\"permissions\") AS p(permission) WHERE p.permission LIKE 'contact:%')"
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "dropTable.customer_contact_field",
+    "label": "Drop table \"customer_contact_field\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "customer_contact_field"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"customer_contact_field\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customer_contact_field\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"customer_contact_field\"",
+        "sql": "DROP TABLE \"public\".\"customer_contact_field\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"customer_contact_field\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customer_contact_field\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.customer_contact_field_blob",
+    "label": "Drop table \"customer_contact_field_blob\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "customer_contact_field_blob"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"customer_contact_field_blob\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customer_contact_field_blob\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"customer_contact_field_blob\"",
+        "sql": "DROP TABLE \"public\".\"customer_contact_field_blob\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"customer_contact_field_blob\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customer_contact_field_blob\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.customer_contact",
+    "label": "Drop table \"customer_contact\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "customer_contact"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"customer_contact\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customer_contact\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"customer_contact\"",
+        "sql": "DROP TABLE \"public\".\"customer_contact\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"customer_contact\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customer_contact\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.follow_up_plans.contactId",
+    "label": "Drop column \"contactId\" from \"follow_up_plans\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "contactId",
+        "table": "follow_up_plans"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"contactId\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "follow_up_plans",
+          "contactId"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"contactId\"",
+        "sql": "ALTER TABLE \"public\".\"follow_up_plans\" DROP COLUMN \"contactId\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"contactId\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "follow_up_plans",
+          "contactId"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.follow_up_records.contactId",
+    "label": "Drop column \"contactId\" from \"follow_up_records\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "contactId",
+        "table": "follow_up_records"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"contactId\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "follow_up_records",
+          "contactId"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"contactId\"",
+        "sql": "ALTER TABLE \"public\".\"follow_up_records\" DROP COLUMN \"contactId\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"contactId\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "follow_up_records",
+          "contactId"
+        ]
+      }
+    ]
+  }
+]

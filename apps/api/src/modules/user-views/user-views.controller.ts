@@ -97,12 +97,6 @@ export const CustomerUserViewsController = createResourceUserViewsController(
   'CUSTOMER',
   ['customer:read'],
 )
-export const CustomerContactUserViewsController = createResourceUserViewsController(
-  'account/contact/view',
-  '联系人视图',
-  'CUSTOMER_CONTACT',
-  ['customer:read', 'contact:read'],
-)
 export const CustomerPoolUserViewsController = createResourceUserViewsController(
   'pool/account/view',
   '客户公海视图',

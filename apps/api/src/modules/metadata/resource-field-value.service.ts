@@ -24,7 +24,6 @@ type PrismaDatabase = { orm: PrismaService['client']['orm'] }
 export type ResourceFieldType =
   | 'clue'
   | 'customer'
-  | 'customerContact'
   | 'followRecord'
   | 'followPlan'
 export type ResourceFieldSaveMode = 'create' | 'update'
@@ -43,7 +42,6 @@ interface ResourceFieldValidationOptions {
 export const RESOURCE_FIELD_TYPES: ResourceFieldType[] = [
   'clue',
   'customer',
-  'customerContact',
   'followRecord',
   'followPlan',
 ]
@@ -52,25 +50,21 @@ interface ResourceConfig {
   formKey:
     | 'lead'
     | 'customer'
-    | 'contact'
     | 'followRecord'
     | 'followPlan'
   resourceTable:
     | 'clue'
     | 'customer'
-    | 'customer_contact'
     | 'follow_up_records'
     | 'follow_up_plans'
   normalTable:
     | 'clue_field'
     | 'customer_field'
-    | 'customer_contact_field'
     | 'follow_up_record_field'
     | 'follow_up_plan_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
-    | 'customer_contact_field_blob'
     | 'follow_up_record_field_blob'
     | 'follow_up_plan_field_blob'
   organizationColumn?: 'organization_id' | '"tenantId"'
@@ -102,12 +96,6 @@ const RESOURCE_CONFIG: Record<ResourceFieldType, ResourceConfig> = {
     resourceTable: 'customer',
     normalTable: 'customer_field',
     blobTable: 'customer_field_blob',
-  },
-  customerContact: {
-    formKey: 'contact',
-    resourceTable: 'customer_contact',
-    normalTable: 'customer_contact_field',
-    blobTable: 'customer_contact_field_blob',
   },
   followPlan: {
     formKey: 'followPlan',
@@ -432,11 +420,6 @@ export class ResourceFieldValueService {
           WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
           id: client.sql.public.customer.columns.id,
         })
-      case 'customerContact':
-        return client.raw.sql`SELECT resource.id FROM customer_contact AS resource
-          WHERE resource.organization_id = ${organizationId} AND (${predicate})`.returnsRow({
-          id: client.sql.public.customer_contact.columns.id,
-        })
       case 'followRecord':
         return client.raw.sql`SELECT resource.id FROM follow_up_records AS resource
           WHERE resource."tenantId" = ${organizationId} AND (${predicate})`.returnsRow({
@@ -498,26 +481,6 @@ export class ResourceFieldValueService {
               )
             : client.raw
                 .sql`EXISTS (SELECT 1 FROM customer_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-      case 'customerContact':
-        return blob
-          ? predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM customer_contact_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM customer_contact_field_blob AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
-                'pg/bool@1',
-              )
-          : predicate
-            ? client.raw
-                .sql`EXISTS (SELECT 1 FROM customer_contact_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId} ${suffix})`.returns(
-                'pg/bool@1',
-              )
-            : client.raw
-                .sql`EXISTS (SELECT 1 FROM customer_contact_field AS field_value WHERE field_value.resource_id = resource.id AND field_value.field_id = ${fieldId})`.returns(
                 'pg/bool@1',
               )
       case 'followRecord':
@@ -940,13 +903,6 @@ export class ResourceFieldValueService {
             .select('id')
             .all(),
         )
-      case 'customerContact':
-        return selectIds(
-          client.orm.public.CustomerContact.where({ organizationId: organizationId })
-            .where((row) => row.id.in(ids))
-            .select('id')
-            .all(),
-        )
       case 'followRecord':
         return selectIds(
           client.orm.public.FollowUpRecords.where({ tenantId: organizationId })
@@ -1036,22 +992,6 @@ export class ResourceFieldValueService {
         if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
         return read(rows.select('resourceId').all())
       }
-      case 'customerContact': {
-        if (storage === 'blob') {
-          let rows = client.orm.public.CustomerContactFieldBlob.where({
-            fieldId: fieldIdValue,
-            fieldValue,
-          })
-          if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-          return read(rows.select('resourceId').all())
-        }
-        let rows = client.orm.public.CustomerContactField.where({
-          fieldId: fieldIdValue,
-          fieldValue: normalValue,
-        })
-        if (excluded) rows = rows.where((row) => row.resourceId.neq(excluded))
-        return read(rows.select('resourceId').all())
-      }
       case 'followRecord': {
         if (storage === 'blob') {
           let rows = client.orm.public.FollowUpRecordFieldBlob.where({
@@ -1117,16 +1057,6 @@ export class ResourceFieldValueService {
             .deleteAll(),
         ])
         return
-      case 'customerContact':
-        await Promise.all([
-          tx.orm.public.CustomerContactField.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-          tx.orm.public.CustomerContactFieldBlob.where({ resourceId: resource })
-            .where((row) => row.fieldId.in(fields))
-            .deleteAll(),
-        ])
-        return
       case 'followRecord':
         await Promise.all([
           tx.orm.public.FollowUpRecordField.where({ resourceId: resource })
@@ -1177,10 +1107,6 @@ export class ResourceFieldValueService {
       case 'customer':
         if (normalData.length) await tx.orm.public.CustomerField.createAll(normalData)
         if (blobData.length) await tx.orm.public.CustomerFieldBlob.createAll(blobData)
-        return
-      case 'customerContact':
-        if (normalData.length) await tx.orm.public.CustomerContactField.createAll(normalData)
-        if (blobData.length) await tx.orm.public.CustomerContactFieldBlob.createAll(blobData)
         return
       case 'followRecord':
         if (normalData.length) await tx.orm.public.FollowUpRecordField.createAll(normalData)
@@ -1240,19 +1166,6 @@ export class ResourceFieldValueService {
           ),
           selectRows(
             client.orm.public.CustomerFieldBlob.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-        ])
-      case 'customerContact':
-        return Promise.all([
-          selectRows(
-            client.orm.public.CustomerContactField.where((row) => row.resourceId.in(ids))
-              .select('resourceId', 'fieldId', 'fieldValue')
-              .all(),
-          ),
-          selectRows(
-            client.orm.public.CustomerContactFieldBlob.where((row) => row.resourceId.in(ids))
               .select('resourceId', 'fieldId', 'fieldValue')
               .all(),
           ),

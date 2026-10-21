@@ -37,10 +37,6 @@ export class CreateFollowUpDto {
   @IsNotEmpty()
   targetId!: string
 
-  @ApiPropertyOptional({ description: '联系人 ID' })
-  @IsString()
-  @IsOptional()
-  contactId?: string
 
   @ApiPropertyOptional({ description: '负责人；省略时为当前用户' })
   @IsString()
@@ -78,12 +74,8 @@ export class CreateFollowUpDto {
 }
 
 export class UpdateFollowUpDto extends PartialType(
-  OmitType(CreateFollowUpDto, ['sourcePlanId', 'contactId', 'type', 'followedAt'] as const),
+  OmitType(CreateFollowUpDto, ['sourcePlanId', 'type', 'followedAt'] as const),
 ) {
-  @ApiPropertyOptional({ description: '联系人 ID；null 表示清空', nullable: true })
-  @IsString()
-  @IsOptional()
-  contactId?: string | null
 
   @ApiPropertyOptional({ description: '跟进方式；null 表示清空', nullable: true })
   @IsString()

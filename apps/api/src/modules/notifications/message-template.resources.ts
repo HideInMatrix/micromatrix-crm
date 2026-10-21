@@ -24,10 +24,6 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     eventName: '新建客户',
     template: '请注意！${OPERATOR}新建${name}客户给您，请知悉！',
   },
-  CUSTOMER_CONCAT_ADD: {
-    eventName: '新建联系人',
-    template: '请注意！${operator} 新建 ${cName} 联系人给您，请知悉！',
-  },
   CUSTOMER_COLLABORATION_ADD: {
     eventName: '新建协作人',
     template: '请注意！${operator} 将 ${uName} 添加为您负责客户 ${name} 的协作人！请知悉！',
@@ -127,10 +123,6 @@ const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
   CUSTOMER_ADD: {
     eventName: 'New Account',
     template: 'Attention! ${OPERATOR} created a new account ${name} for you, please be informed!',
-  },
-  CUSTOMER_CONCAT_ADD: {
-    eventName: 'New Concat',
-    template: 'Attention！ ${operator} creates a ${cName} contact for you, please be informed!',
   },
   CUSTOMER_COLLABORATION_ADD: {
     eventName: 'New Collaboration',

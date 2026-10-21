@@ -46,7 +46,7 @@ export interface FieldCapabilities {
 }
 
 export function dynamicFieldCapabilities(type: FieldType, module?: string): FieldCapabilities {
-  const supportsUniqueModule = !module || ['lead', 'customer', 'contact'].includes(module)
+  const supportsUniqueModule = !module || ['lead', 'customer'].includes(module)
   return {
     rename: true,
     copy: true,
@@ -128,7 +128,6 @@ export interface DataSourceSubFieldLinkField extends DataSourceLinkField {
 
 export const FORM_LINK_SCENARIO_KEYS = [
   'CLUE_TO_CUSTOMER',
-  'CLUE_TO_CONTACT',
   'CLUE_TO_RECORD',
   'CUSTOMER_TO_RECORD',
   'PLAN_TO_RECORD',
@@ -365,7 +364,7 @@ export function isSubTableFieldType(type: FieldType): type is SubTableFieldType 
   return (SUB_TABLE_FIELD_TYPES as readonly string[]).includes(type)
 }
 
-export const BUILTIN_DATA_SOURCE_TYPES = ['CUSTOMER', 'CONTACT', 'CLUE'] as const
+export const BUILTIN_DATA_SOURCE_TYPES = ['CUSTOMER', 'CLUE'] as const
 
 export type BuiltinDataSourceType = (typeof BUILTIN_DATA_SOURCE_TYPES)[number]
 export type DataSourceType = BuiltinDataSourceType | string
@@ -395,7 +394,6 @@ export interface DataSourcePageVO {
 
 export const BUILTIN_DATA_SOURCE_OPTIONS: DataSourceTypeOption[] = [
   { value: 'CUSTOMER', label: '客户' },
-  { value: 'CONTACT', label: '联系人' },
   { value: 'CLUE', label: '线索' },
 ]
 

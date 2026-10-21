@@ -166,9 +166,6 @@ interface AssignLeadInput {
 }
 
 interface LeadAssociationPrepared {
-  contactNameUnique: boolean
-  contactPhoneUnique: boolean
-  contactCustomData: Map<string, Record<string, unknown>>
   ownerMap: Map<string, { id: string; deptId: string | null }>
 }
 
@@ -1605,7 +1602,7 @@ export class LeadsService {
       prepared.customerPrepared,
       tx,
     )
-    const associated = await this.associateLeadsToCustomerInTransaction(
+    await this.associateLeadsToCustomerInTransaction(
       tx,
       user,
       [associationLead],
@@ -1615,7 +1612,6 @@ export class LeadsService {
     )
     return {
       customerId: String(createdCustomer.id),
-      contactIds: associated.contactIds,
       createdCustomer,
     }
   }
@@ -1633,7 +1629,7 @@ export class LeadsService {
     await this.notifyLeadAssociation(user, [prepared.lead], result.customerId)
   }
 
-  /** Lead → Customer：创建/复用客户并迁移联系人、跟进与附件。 */
+  /** Lead → Customer：创建/复用客户并迁移跟进与附件。 */
   async transform(user: AuthUser, dto: TransformClueDto) {
     this.assertFunctionalPermission(user, 'lead:convert', '无线索转化权限')
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
@@ -1689,7 +1685,7 @@ export class LeadsService {
           : null
       const customerId = createdCustomer?.id ?? matchedCustomer?.id
       if (!customerId) throw new BadRequestException('客户创建失败')
-      const associated = await this.associateLeadsToCustomerInTransaction(
+      await this.associateLeadsToCustomerInTransaction(
         tx,
         user,
         [current as unknown as Lead],
@@ -1697,7 +1693,7 @@ export class LeadsService {
         { copyFollowArtifacts: true },
         associationPrepared,
       )
-      return { customerId, createdCustomer, associated }
+      return { customerId, createdCustomer }
     })
 
     if (transactionResult.createdCustomer && customerPrepared) {
@@ -1711,7 +1707,6 @@ export class LeadsService {
     return {
       clueId: lead.id,
       customerId: transactionResult.customerId,
-      contactId: transactionResult.associated.contactIds[0] ?? null,
     }
   }
 
@@ -1721,7 +1716,6 @@ export class LeadsService {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
     const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
     if (!lead.owner) throw new BadRequestException('线索暂无负责人，无法关联客户')
-    const leadOwner = lead.owner
     const { clueId: _, ...customerPayload } = dto
     const prepared = await this.customers.prepareCreateForTransaction(user, customerPayload)
     const result = await this.prisma.client.transaction(async (tx) => {
@@ -1731,35 +1725,6 @@ export class LeadsService {
         prepared,
         tx,
       )
-      let contactId: string | null = null
-      if (lead.contact?.trim()) {
-        const duplicate = lead.phone?.trim()
-          ? await tx.orm.public.CustomerContact.where({
-              organizationId: user.tenantId,
-              phone: lead.phone.trim(),
-            })
-              .select('id')
-              .first()
-          : null
-        if (!duplicate) {
-          const now = BigInt(Date.now())
-          const contact = await tx.orm.public.CustomerContact.create({
-            id: createLegacyId32(),
-            customerId: String(customer.id),
-            owner: String(customer.owner ?? leadOwner),
-            name: lead.contact.trim(),
-            phone: lead.phone ? lead.phone : null,
-            enable: true,
-            disableReason: null,
-            organizationId: user.tenantId,
-            createTime: now,
-            updateTime: now,
-            createUser: user.id,
-            updateUser: user.id,
-          })
-          contactId = String(contact.id)
-        }
-      }
       const updatedLead = await tx.orm.public.Clue.where({ id: lead.id }).update({
         transitionType: 'CUSTOMER',
         transitionId: String(customer.id),
@@ -1767,14 +1732,13 @@ export class LeadsService {
         updateUser: user.id,
       })
       if (!updatedLead) throw new NotFoundException('线索不存在')
-      return { customer, contactId }
+      return { customer }
     })
     await this.customers.notifyCreatedCustomer(user, result.customer, prepared.owner.id)
     await this.notifyLeadAssociation(user, [lead], result.customer.id)
     return {
       clueId: lead.id,
       customerId: result.customer.id,
-      contactId: result.contactId,
     }
   }
 
@@ -1823,7 +1787,7 @@ export class LeadsService {
       .filter((lead) => !lead.owner || !activeOwners.has(String(lead.owner)))
       .map((lead) => String(lead.id))
     const associationPrepared = await this.prepareLeadAssociation(user, validLeads)
-    const result = await this.prisma.client.transaction(async (tx) => {
+    await this.prisma.client.transaction(async (tx) => {
       if (customer.inSharedPool) {
         if (!customer.poolId) throw new BadRequestException('客户不属于有效公海')
         await this.customerPools.pickInTransaction(tx, {
@@ -1848,7 +1812,6 @@ export class LeadsService {
       customerId: customer.id,
       success: validLeads.length,
       skippedIds,
-      contactIds: result.contactIds,
     }
   }
 
@@ -1902,18 +1865,6 @@ export class LeadsService {
     user: AuthUser,
     leads: Lead[],
   ): Promise<LeadAssociationPrepared> {
-    // 新租户首次访问 contact 表单时 listFields 会惰性 ensureForm；这里必须串行，
-    // 否则两个并发 ensureForm 可能同时 upsert 同一 (organizationId, formKey) 触发 P2002。
-    const contactNameUnique = await this.metadata.hasUniqueRule(user.tenantId, 'contact', 'name')
-    const contactPhoneUnique = await this.metadata.hasUniqueRule(user.tenantId, 'contact', 'phone')
-    const contactCustomData = new Map<string, Record<string, unknown>>()
-    for (const lead of leads) {
-      if (!lead.contact?.trim()) continue
-      contactCustomData.set(
-        lead.id,
-        await this.mapLeadCustomData(user.tenantId, 'contact', lead, true),
-      )
-    }
     const ownerIds = [
       ...new Set(leads.map((lead) => lead.owner).filter((id): id is string => !!id)),
     ]
@@ -1930,12 +1881,7 @@ export class LeadsService {
     if (ownerMap.size !== ownerIds.length) {
       throw new BadRequestException('线索负责人不存在或已禁用')
     }
-    return {
-      contactNameUnique,
-      contactPhoneUnique,
-      contactCustomData,
-      ownerMap,
-    }
+    return { ownerMap }
   }
 
   private async associateLeadsToCustomerInTransaction(
@@ -1946,16 +1892,13 @@ export class LeadsService {
     options: { copyFollowArtifacts?: boolean } = {},
     prepared: LeadAssociationPrepared,
   ) {
-    if (leads.length === 0) {
-      return { contactIds: [] as string[] }
-    }
+    if (leads.length === 0) return
     const customer = await tx.orm.public.Customer.where({
       id: customerId,
       organizationId: user.tenantId,
     }).first()
     if (!customer) throw new NotFoundException('客户不存在')
 
-    const contactIds: string[] = []
     let newestFollowedAt = customer.followTime
     let newestFollower: string | null = customer.follower ? String(customer.follower) : null
 
@@ -1987,60 +1930,9 @@ export class LeadsService {
         }
       }
 
-      let contactId: string | null = null
-      if (lead.contact?.trim()) {
-        const normalizedName = lead.contact.trim()
-        let duplicate: { id: string } | null = null
-        if (prepared.contactNameUnique) {
-          const row = await tx.orm.public.CustomerContact.where({
-            organizationId: user.tenantId,
-            name: normalizedName,
-          })
-            .select('id')
-            .first()
-          duplicate = row ? { id: String(row.id) } : null
-        }
-        if (!duplicate && prepared.contactPhoneUnique && lead.phone?.trim()) {
-          const row = await tx.orm.public.CustomerContact.where({
-            organizationId: user.tenantId,
-            phone: lead.phone.trim(),
-          })
-            .select('id')
-            .first()
-          duplicate = row ? { id: String(row.id) } : null
-        }
-        if (!duplicate) {
-          const now = BigInt(Date.now())
-          const contact = await tx.orm.public.CustomerContact.create({
-            id: createLegacyId32(),
-            customerId: customerId,
-            owner: lead.owner,
-            name: normalizedName,
-            phone: lead.phone ? lead.phone : null,
-            enable: true,
-            disableReason: null,
-            organizationId: user.tenantId,
-            createTime: now,
-            updateTime: now,
-            createUser: user.id,
-            updateUser: user.id,
-          })
-          await this.fieldValues.save(
-            user.tenantId,
-            'customerContact',
-            contact.id,
-            prepared.contactCustomData.get(lead.id) ?? {},
-            'create',
-            tx,
-            user.id,
-          )
-          contactId = String(contact.id)
-          contactIds.push(String(contact.id))
-        }
-      }
 
       if (options.copyFollowArtifacts) {
-        await this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId, contactId)
+        await this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId)
       }
 
       if (lead.followTime && (!newestFollowedAt || lead.followTime > newestFollowedAt)) {
@@ -2072,7 +1964,6 @@ export class LeadsService {
       if (!updatedCustomer) throw new NotFoundException('客户不存在')
     }
 
-    return { contactIds }
   }
 
   private async copyLeadFollowArtifactsInTransaction(
@@ -2080,7 +1971,6 @@ export class LeadsService {
     user: AuthUser,
     leadId: string,
     customerId: string,
-    contactId: string | null,
   ) {
     const sourceRecords = await tx.orm.public.FollowUpRecords.where({
       tenantId: user.tenantId,
@@ -2103,7 +1993,6 @@ export class LeadsService {
         tenantId: record.tenantId,
         targetType: 'customer',
         targetId: customerId,
-        contactId,
         _type: record._type,
         content: record.content,
         followedAt: record.followedAt,
@@ -2161,7 +2050,6 @@ export class LeadsService {
         tenantId: plan.tenantId,
         targetType: 'customer',
         targetId: customerId,
-        contactId,
         content: plan.content,
         method: plan.method,
         estimatedAt: plan.estimatedAt,
@@ -2235,7 +2123,7 @@ export class LeadsService {
 
   private async mapLeadCustomData(
     tenantId: string,
-    module: 'customer' | 'contact',
+    module: 'customer',
     lead: Lead,
     _requireAll: boolean,
   ) {
@@ -2247,7 +2135,7 @@ export class LeadsService {
       owner: lead.owner,
       ...(values.get(lead.id) ?? {}),
     }
-    const scenario = module === 'customer' ? 'CLUE_TO_CUSTOMER' : 'CLUE_TO_CONTACT'
+    const scenario = 'CLUE_TO_CUSTOMER'
     const linkedValues = await this.moduleForms.resolveFormLink(
       tenantId,
       module,

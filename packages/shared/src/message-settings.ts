@@ -4,7 +4,6 @@ export type MessageLanguage = 'zh-CN' | 'en-US'
 
 export type MessageTaskEvent =
   | 'CUSTOMER_ADD'
-  | 'CUSTOMER_CONCAT_ADD'
   | 'CUSTOMER_COLLABORATION_ADD'
   | 'CUSTOMER_TRANSFERRED_CUSTOMER'
   | 'CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS'
@@ -137,7 +136,6 @@ const EVENT_GROUPS: Array<{
     module: 'CUSTOMER',
     events: [
       ['CUSTOMER_ADD', '新建客户'],
-      ['CUSTOMER_CONCAT_ADD', '新建联系人'],
       ['CUSTOMER_COLLABORATION_ADD', '新建协作人'],
       ['CUSTOMER_TRANSFERRED_CUSTOMER', '被转移客户'],
       ['CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS', '客户自动移入公海（到时间）'],

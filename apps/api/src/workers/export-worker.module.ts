@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common'
 import { CustomersModule } from '../customers/customers.module'
-import { ContactsModule } from '../modules/contacts/contacts.module'
 import { CustomFormsModule } from '../modules/custom-forms/custom-forms.module'
 import { ImportExportModule } from '../modules/import-export/import-export.module'
 import { LeadsModule } from '../modules/leads/leads.module'
@@ -11,7 +10,6 @@ import { ExportWorkerService } from './export-worker.service'
   imports: [
     ImportExportModule,
     CustomersModule,
-    ContactsModule,
     LeadsModule,
     CustomFormsModule,
     PrismaModule,

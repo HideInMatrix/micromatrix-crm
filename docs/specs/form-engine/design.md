@@ -31,7 +31,7 @@ Field
   └── capabilities: rename / copy / delete / changeType / changeRequired / hide / unique
 ```
 
-SYSTEM 的模板 label 是底层业务用途说明；用户修改 label 只改变展示。SYSTEM 字段在每次 ensure 时持续保证存在；PRESET 只在模块表单首次创建时初始化一次，之后属于普通动态字段，可按 CUSTOM 规则调整或删除，删除后不得被自动补种。SYSTEM 与 unique 是正交能力：例如 Lead `name/contact/phone`、Customer `name`、Contact `name/phone` 可由模板声明 unique 能力，而 owner、customerId、enable 等结构字段不开放；唯一值是否可配置由后端 capability registry 决定，并在保存时再次校验。
+SYSTEM 的模板 label 是底层业务用途说明；用户修改 label 只改变展示。SYSTEM 字段在每次 ensure 时持续保证存在；PRESET 只在模块表单首次创建时初始化一次，之后属于普通动态字段，可按 CUSTOM 规则调整或删除，删除后不得被自动补种。SYSTEM 与 unique 是正交能力：例如 Lead `name/contact/phone`、Customer `name` 可由模板声明 unique 能力，而 owner、customerId、enable 等结构字段不开放；唯一值是否可配置由后端 capability registry 决定，并在保存时再次校验。
 
 ## 3. 值存储
 
@@ -50,7 +50,7 @@ Attachment 字段保存附件 ID 数组。保存流程：校验临时/已绑定�
 
 ## 5. Data Source
 
-公共 source adapter 提供 `page / resolve / fields / record snapshot`，内置 source 为 Customer、Contact、Lead；自定义表单 source 由目标 formId 动态解析。
+公共 source adapter 提供 `page / resolve / fields / record snapshot`，内置 source 为 Customer、Lead；自定义表单 source 由目标 formId 动态解析。
 
 Adapter 必须进入目标资源的 Service/DataScope，不允许 Form Engine 直接拼 Prisma 查询绕过权限。
 

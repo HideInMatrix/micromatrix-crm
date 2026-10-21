@@ -323,9 +323,6 @@ export class WeComClient {
       } else if (/^\/customers\/[^/]+$/.test(source.pathname)) {
         mobile.pathname = '/mobile/customers/detail'
         mobile.searchParams.set('id', decodeURIComponent(source.pathname.split('/')[2]!))
-      } else if (source.pathname === '/contacts') {
-        mobile.pathname = '/mobile/customers'
-        mobile.searchParams.set('tab', 'contact')
       } else if (
         source.pathname === '/mobile/leads' ||
         source.pathname === '/mobile/leads/detail' ||

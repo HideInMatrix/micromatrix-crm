@@ -120,7 +120,7 @@ test('完整返回当前 Cordys 事件目录并合并默认开关', async () => 
 
   assert.equal(groups.length, 2)
   const items = groups.flatMap((group) => group.items)
-  assert.equal(items.length, 26)
+  assert.equal(items.length, 25)
   assert.ok(items.some((item) => item.event === 'CUSTOMER_FOLLOW_UP_PLAN_COMMENT_ADDED'))
   assert.ok(items.some((item) => item.event === 'CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED'))
   assert.ok(items.some((item) => item.event === 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED'))

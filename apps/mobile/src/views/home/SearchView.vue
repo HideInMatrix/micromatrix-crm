@@ -68,12 +68,6 @@ async function openResult(group: GlobalSearchGroupKey, item: GlobalSearchItem) {
     })
     return
   }
-  if (group === 'contact') {
-    router.push({
-      path: '/contacts/detail',
-      query: { id: item.id, name: item.name },
-    })
-  }
 }
 
 watch(keyword, scheduleSearch, { immediate: true })

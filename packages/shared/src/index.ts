@@ -99,11 +99,10 @@ export interface CustomerVO {
   updatedAt: string
 }
 
-export type DuplicateSource = 'customer' | 'contact' | 'lead'
+export type DuplicateSource = 'customer' | 'lead'
 
 export const DUPLICATE_SOURCE_LABELS: Record<DuplicateSource, string> = {
   customer: '客户',
-  contact: '联系人',
   lead: '线索',
 }
 
@@ -119,11 +118,6 @@ export interface DuplicateHitVO {
 }
 
 export interface CustomerRelatedVO {
-  contacts: {
-    id: string
-    name: string
-    phone: string | null
-  }[]
   followUps: FollowUpVO[]
   team: TeamMemberVO[]
 }

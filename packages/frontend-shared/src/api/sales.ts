@@ -1,5 +1,4 @@
 import type {
-  ContactVO,
   FieldVO,
   FilterCondition,
   QuickSearchQueryGroup,
@@ -26,8 +25,6 @@ import {
   type ImportResult,
   type ImportType,
 } from './import-export'
-
-export type { ContactVO } from '@micromatrix/shared'
 
 // ===== 线索 =====
 
@@ -476,15 +473,14 @@ export const leadApi = {
     http.post<{
       clueId: string
       customerId: string
-      contactId: string | null
     }>('/lead/transform', data),
   transitionCustomer: (data: Record<string, unknown> & { clueId: string }) =>
-    http.post<{ clueId: string; customerId: string; contactId: string | null }>(
+    http.post<{ clueId: string; customerId: string }>(
       '/lead/transition/account',
       data,
     ),
   retransitionCustomer: (data: { clueIds: string[]; customerId: string }) =>
-    http.post<{ customerId: string; success: number; skippedIds: string[]; contactIds: string[] }>(
+    http.post<{ customerId: string; success: number; skippedIds: string[] }>(
       '/lead/re-transition/account',
       data,
     ),
@@ -553,7 +549,6 @@ export const followUpApi = {
   create: (data: {
     targetType: FollowTargetType
     targetId: string
-    contactId?: string
     ownerId?: string
     type?: string
     content: string
@@ -566,7 +561,6 @@ export const followUpApi = {
     data: Partial<{
       targetType: FollowTargetType
       targetId: string
-      contactId: string | null
       ownerId: string
       type: string | null
       content: string
@@ -623,7 +617,6 @@ export interface FollowUpPlanListParams extends PageQuery {
 export interface FollowUpPlanPayload {
   targetType: FollowUpPlanTargetType
   targetId: string
-  contactId?: string
   content: string
   method?: string
   estimatedAt?: string
@@ -647,124 +640,6 @@ export const followUpPlanApi = {
   recordPrefill: (id: string) =>
     http.get<FollowUpRecordPrefillVO>(`/follow-up-plans/${id}/record-prefill`),
   remove: (id: string) => http.delete(`/follow-up-plans/${id}`),
-}
-
-// ===== 联系人 =====
-
-export interface ContactListParams extends PageQuery {
-  customerId?: string
-  enable?: 'true' | 'false'
-  filters?: string
-  filterMode?: 'AND' | 'OR'
-  viewId?: string
-  scopeView?: 'SELF' | 'DEPT' | 'ALL' | 'COLLABORATION'
-}
-
-function parseContactFilters(raw?: string) {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function contactPageBody(params: ContactListParams) {
-  return {
-    current: params.page ?? 1,
-    pageSize: params.pageSize ?? 10,
-    keyword: params.keyword,
-    viewId: params.viewId,
-    scopeView: params.scopeView,
-    filters: parseContactFilters(params.filters),
-    filterMode: params.filterMode,
-  }
-}
-
-type ContactMutationInput = {
-  customerId?: string
-  /** Cordys 联系人写入协议与动态表单统一使用 owner。 */
-  owner?: string
-  name?: string
-  phone?: string | null
-  customData?: Record<string, unknown>
-}
-
-function toContactPayload(data: ContactMutationInput) {
-  const customData = data.customData ?? {}
-  return {
-    customerId: data.customerId || undefined,
-    owner: data.owner || undefined,
-    name: data.name,
-    phone: data.phone ?? undefined,
-    moduleFields: Object.entries(customData).map(([fieldId, fieldValue]) => ({
-      fieldId,
-      fieldValue,
-    })),
-  }
-}
-
-export const contactApi = {
-  moduleForm: () =>
-    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
-      '/account/contact/module/form',
-    ),
-  list: async (customerId: string): Promise<AxiosResponse<ContactVO[]>> => {
-    const response = await http.get<{ list: ContactVO[] }>(`/account/contact/list/${customerId}`)
-    return { ...response, data: response.data.list }
-  },
-  page: async (params: ContactListParams): Promise<AxiosResponse<PaginatedResult<ContactVO>>> => {
-    const response = await http.post<CordysPager<ContactVO>>(
-      '/account/contact/page',
-      contactPageBody(params),
-    )
-    return {
-      ...response,
-      data: {
-        items: response.data.list,
-        total: response.data.total,
-        page: response.data.current,
-        pageSize: response.data.pageSize,
-      },
-    }
-  },
-  get: (id: string) => http.get<ContactVO>(`/account/contact/get/${id}`),
-  create: (data: ContactMutationInput & { name: string; customerId?: string }) =>
-    http.post<ContactVO>('/account/contact/add', toContactPayload(data)),
-  update: (id: string, data: ContactMutationInput) =>
-    http.post<ContactVO>('/account/contact/update', { id, ...toContactPayload(data) }),
-  remove: (id: string) => http.get(`/account/contact/delete/${id}`),
-  enable: (id: string) => http.get<ContactVO>(`/account/contact/enable/${id}`),
-  disable: (id: string, reason: string) =>
-    http.post<ContactVO>(`/account/contact/disable/${id}`, { reason }),
-  tab: () => http.get<{ all: boolean; dept: boolean; collaboration: boolean }>('/account/contact/tab'),
-  batchUpdate: (data: { ids: string[]; fieldId: string; fieldValue: unknown }) =>
-    http.post<{ success: number; fail: number; failedIds: string[] }>(
-      '/account/contact/batch/update',
-      data,
-    ),
-  importTemplate: (_importType: ImportType) =>
-    http.get<Blob>('/account/contact/template/download', { responseType: 'blob' }),
-  downloadImportErrorRows: (file: File, rowNumbers: number[]) => {
-    const form = new FormData()
-    form.append('file', file)
-    form.append('rowNumbers', JSON.stringify(rowNumbers))
-    return http.post<Blob>('/account/contact/import/error-rows/download', form, {
-      responseType: 'blob',
-    })
-  },
-  importPrecheck: (file: File, importType: ImportType) =>
-    http.post<ImportResult>(
-      '/account/contact/import/pre-check',
-      createImportForm(file, importType),
-    ),
-  importXlsx: (file: File, importType: ImportType) =>
-    http.post<ImportResult>('/account/contact/import', createImportForm(file, importType)),
-  exportAll: (params: ContactListParams, data: ExportCreatePayload) =>
-    http.post('/account/contact/export-all', { ...contactPageBody(params), ...data }),
-  exportSelected: (_params: ContactListParams, data: ExportCreatePayload & { ids: string[] }) =>
-    http.post('/account/contact/export-select', data),
 }
 
 // ===== 客户公海/团队 =====

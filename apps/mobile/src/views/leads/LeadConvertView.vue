@@ -20,10 +20,7 @@ const canCreateCustomer = computed(() =>
   auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
 )
 
-const cards = [
-  { key: 'contact', label: '联系人', active: true, disabled: true },
-  { key: 'customer', label: '客户', active: true, disabled: true },
-]
+const cards = [{ key: 'customer', label: '客户', active: true, disabled: true }]
 
 async function load() {
   try {
@@ -102,9 +99,8 @@ onMounted(load)
       <div class="mt-6 rounded-[var(--border-radius-medium)] bg-white px-5 py-4">
         <div class="mb-1 font-medium">备注</div>
         <div class="text-xs leading-6 text-gray-500">
-          <div>转换后会创建客户和联系人，并保留原线索。</div>
+          <div>转换后会创建客户，并保留原线索。</div>
           <div>跟进记录会复制到客户，原线索跟进记录不会删除。</div>
-          <div>联系人姓名为空时不会生成联系人。</div>
         </div>
       </div>
     </div>

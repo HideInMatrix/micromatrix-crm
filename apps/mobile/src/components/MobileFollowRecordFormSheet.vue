@@ -9,7 +9,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
 import { showSuccessFeedback } from '@/utils/feedback'
-import { contactApi, followUpApi, followUpPlanApi } from '@/api/sales'
+import { followUpApi, followUpPlanApi } from '@/api/sales'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 import MobileVantDateTimeField from '@/components/MobileVantDateTimeField.vue'
 import MobileVantPickerField from '@/components/MobileVantPickerField.vue'
@@ -24,13 +24,11 @@ const emit = defineEmits<{ saved: [record: FollowUpVO] }>()
 
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
-const contacts = ref<Array<{ id: string; name: string }>>([])
 const formModel = ref<Record<string, unknown>>({})
 const loading = ref(false)
 const saving = ref(false)
 const loadFailed = ref(false)
 const form = reactive({
-  contactId: '',
   ownerId: '',
   type: '',
   content: '',
@@ -40,10 +38,6 @@ const form = reactive({
 const dynamicFields = computed(() =>
   fields.value.filter((field) => !field.system && !field.hidden && field.type !== 'formula'),
 )
-const contactOptions = computed(() => [
-  { text: '不关联联系人', value: '' },
-  ...contacts.value.map((item) => ({ text: item.name, value: item.id })),
-])
 const typeOptions = computed(() => [
   { text: '未设置', value: '' },
   ...FOLLOW_UP_TYPES.map((item) => ({ text: item, value: item })),
@@ -86,13 +80,6 @@ function moduleFieldsPayload() {
   }))
 }
 
-async function loadContacts(plan: FollowUpPlanVO) {
-  contacts.value = []
-  const customerId = plan.targetType === 'customer' ? plan.targetId : (plan.customerId ?? '')
-  if (!customerId) return
-  const { data } = await contactApi.list(customerId)
-  contacts.value = data.map((item) => ({ id: item.id, name: item.name }))
-}
 
 async function reset() {
   const plan = props.plan
@@ -104,11 +91,9 @@ async function reset() {
       followUpApi.moduleForm(),
       followUpPlanApi.recordPrefill(plan.id),
       fieldRefs.load(),
-      loadContacts(plan),
     ]).then(([config, prefill]) => [config, prefill] as const)
     fields.value = configRes.data.fields
     const values = prefillRes.data.values
-    form.contactId = stringValue(values.contactId)
     form.ownerId = stringValue(values.ownerId)
     form.type = stringValue(values.type)
     form.content = stringValue(values.content)
@@ -153,7 +138,6 @@ async function save() {
     const { data } = await followUpApi.create({
       targetType: plan.targetType,
       targetId: plan.targetId,
-      contactId: form.contactId || undefined,
       ownerId: form.ownerId || undefined,
       type: form.type || undefined,
       content: form.content.trim(),
@@ -186,12 +170,6 @@ watch(show, (open) => {
         </div>
         <template v-else>
           <van-field label="关联对象" :model-value="plan.targetName" readonly />
-          <MobileVantPickerField
-            v-if="contacts.length"
-            v-model="form.contactId"
-            label="联系人"
-            :options="contactOptions"
-          />
           <MobileVantPickerField v-model="form.type" label="跟进方式" :options="typeOptions" />
           <MobileVantPickerField v-model="form.ownerId" label="负责人" :options="ownerOptions" />
           <MobileVantDateTimeField

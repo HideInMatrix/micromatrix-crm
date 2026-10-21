@@ -22,7 +22,7 @@ interface LeadsServiceTestHarness {
   }
   mapLeadCustomData: (
     tenantId: string,
-    module: 'customer' | 'contact',
+    module: 'customer',
     lead: never,
     requireAll: boolean,
   ) => Promise<Record<string, unknown>>
@@ -99,14 +99,6 @@ test('线索转换仅保存显式 formLink 解析出的目标自定义字段', a
   })
 })
 
-test('联系人转换使用 Cordys 对应 formLink 场景', async () => {
-  const calls: unknown[][] = []
-  const service = serviceForFormLink({ onResolve: (args) => calls.push(args) })
-
-  await service.mapLeadCustomData('tenant-1', 'contact', lead, true)
-
-  assert.equal(calls[0]?.[3], 'CLUE_TO_CONTACT')
-})
 
 test('Lead 阶段运行时使用租户配置并以第一个启用阶段作为新建默认值', async () => {
   const stages: LeadStageConfig[] = [

@@ -10,7 +10,6 @@ import {
 import { Job, UnrecoverableError } from 'bullmq'
 import { toAuthUser } from '../common/auth-user'
 import { CustomersService } from '../customers/customers.service'
-import { ContactsService } from '../modules/contacts/contacts.service'
 import { CustomFormsService } from '../modules/custom-forms/custom-forms.service'
 import type {
   ExportBuildResult,
@@ -30,7 +29,6 @@ export class ExportWorkerService implements OnApplicationBootstrap {
     private readonly prisma: PrismaService,
     private readonly tasks: ExportTasksService,
     private readonly customers: CustomersService,
-    private readonly contacts: ContactsService,
     private readonly leads: LeadsService,
     private readonly customForms: CustomFormsService,
   ) {}
@@ -72,8 +70,6 @@ export class ExportWorkerService implements OnApplicationBootstrap {
       case 'customer':
       case 'customer_pool':
         return this.customers.buildQueuedExport(user, payload)
-      case 'contact':
-        return this.contacts.buildQueuedExport(user, payload)
       case 'lead':
       case 'lead_pool':
         return this.leads.buildQueuedExport(user, payload)

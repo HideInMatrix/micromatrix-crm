@@ -329,8 +329,6 @@ export class ExternalResourceResolverService {
         return query.where({ id: value })
       case 'name':
         return query.where({ name: value })
-      case 'contact':
-        return query.where({ contact: value })
       case 'phone':
         return query.where({ phone: value })
       case 'owner':

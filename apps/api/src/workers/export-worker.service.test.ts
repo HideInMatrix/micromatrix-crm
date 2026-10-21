@@ -70,7 +70,6 @@ function serviceFixture() {
     prisma as never,
     tasks as never,
     handler('customer', calls) as never,
-    handler('contact', calls) as never,
     handler('lead', calls) as never,
     handler('customFormData', calls) as never,
   )
@@ -85,7 +84,6 @@ test('当前保留的导出 module key 全部路由到对应业务 handler', asy
   const routes = [
     ['customer', 'customer'],
     ['customer_pool', 'customer'],
-    ['contact', 'contact'],
     ['lead', 'lead'],
     ['lead_pool', 'lead'],
     ['customFormData', 'customFormData'],

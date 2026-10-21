@@ -42,7 +42,6 @@ type FollowRecordSystemSort =
   | 'targetType'
   | 'targetId'
   | 'ownerId'
-  | 'contactId'
   | 'followedAt'
   | 'type'
   | 'createdAt'
@@ -62,7 +61,6 @@ export type FollowRecord = {
   tenantId: string
   targetType: string
   targetId: string
-  contactId: string | null
   type: string | null
   content: string
   followedAt: ReturnType<typeof nowInstant> | null
@@ -197,7 +195,6 @@ export class FollowUpsService {
       'targetType',
       'targetId',
       'ownerId',
-      'contactId',
       'followedAt',
       'type',
       'createdAt',
@@ -248,11 +245,6 @@ export class FollowUpsService {
     if (sort.field === 'ownerId')
       return query.orderBy([
         (row) => (asc ? row.ownerId.asc() : row.ownerId.desc()),
-        (row) => row.id.asc(),
-      ])
-    if (sort.field === 'contactId')
-      return query.orderBy([
-        (row) => (asc ? row.contactId.asc() : row.contactId.desc()),
         (row) => row.id.asc(),
       ])
     if (sort.field === 'followedAt')
@@ -338,7 +330,6 @@ export class FollowUpsService {
       throw new BadRequestException('转记录目标必须与来源跟进计划一致')
     }
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
-    await this.assertContact(user.tenantId, dto.targetType, dto.targetId, dto.contactId)
     const owner = await this.resolveOwner(user, dto.ownerId ?? sourcePlan?.ownerId)
     const dynamicValues = await this.moduleFieldsToDynamicValues(
       user.tenantId,
@@ -358,7 +349,6 @@ export class FollowUpsService {
         tenantId: user.tenantId,
         targetType: dto.targetType,
         targetId: dto.targetId,
-        contactId: dto.contactId ?? null,
         _type: dto.type ?? null,
         content: dto.content,
         followedAt: dto.followedAt ? instantFromISOString(dto.followedAt) : nowInstant(),
@@ -435,8 +425,6 @@ export class FollowUpsService {
     if (targetType !== currentType || targetId !== existing.targetId) {
       await this.assertTargetAccess(user, targetType, targetId, true)
     }
-    const contactId = dto.contactId === undefined ? existing.contactId : dto.contactId || null
-    await this.assertContact(user.tenantId, targetType, targetId, contactId ?? undefined)
     const owner = dto.ownerId ? await this.resolveOwner(user, dto.ownerId) : null
     const dynamicValues =
       dto.moduleFields === undefined
@@ -446,7 +434,6 @@ export class FollowUpsService {
       const record = await tx.orm.public.FollowUpRecords.where({ id }).update({
         targetType,
         targetId,
-        contactId,
         _type: dto.type,
         content: dto.content,
         followedAt:
@@ -757,7 +744,6 @@ export class FollowUpsService {
       'targetType',
       'targetId',
       'ownerId',
-      'contactId',
       'followedAt',
       'content',
       'type',
@@ -767,9 +753,6 @@ export class FollowUpsService {
 
     if (condition.op === 'isEmpty') {
       if (key === 'followedAt') return collection.where((row) => row.followedAt.isNull())
-      if (key === 'contactId') {
-        return collection.where((row) => or(row.contactId.isNull(), row.contactId.eq('')))
-      }
       if (key === 'type') {
         return collection.where((row) => or(row._type.isNull(), row._type.eq('')))
       }
@@ -777,9 +760,6 @@ export class FollowUpsService {
     }
     if (condition.op === 'notEmpty') {
       if (key === 'followedAt') return collection.where((row) => row.followedAt.isNotNull())
-      if (key === 'contactId') {
-        return collection.where((row) => not(or(row.contactId.isNull(), row.contactId.eq(''))))
-      }
       if (key === 'type') {
         return collection.where((row) => not(or(row._type.isNull(), row._type.eq(''))))
       }
@@ -820,8 +800,6 @@ export class FollowUpsService {
             ? row.targetId
             : key === 'ownerId'
               ? row.ownerId
-              : key === 'contactId'
-                ? row.contactId
                 : key === 'content'
                   ? row.content
                   : row._type
@@ -886,25 +864,6 @@ export class FollowUpsService {
     return owner
   }
 
-  private async assertContact(
-    tenantId: string,
-    targetType: CreateFollowUpDto['targetType'],
-    targetId: string,
-    contactId?: string,
-  ): Promise<void> {
-    if (!contactId) return
-    const customerId: string | null = targetType === 'customer' ? targetId : null
-    if (!customerId) throw new BadRequestException('当前业务对象不能关联客户联系人')
-    const contact = await this.prisma.client.orm.public.CustomerContact.where({
-      id: contactId,
-      organizationId: tenantId,
-      customerId: customerId,
-    })
-      .select('id')
-      .first()
-    if (!contact) throw new BadRequestException('联系人不属于当前客户')
-  }
-
   /** 更新目标对象的最近跟进时间与跟进人；跟记录写入保持同一事务。 */
   private async touchTarget(
     tx: PrismaTransaction,
@@ -945,8 +904,7 @@ export class FollowUpsService {
     tenantId: string
     targetType: string
     targetId: string
-    contactId: string | null
-    _type: string | null
+      _type: string | null
     content: string
     followedAt: ReturnType<typeof nowInstant> | null
     ownerId: string
@@ -962,7 +920,6 @@ export class FollowUpsService {
       tenantId: row.tenantId,
       targetType: row.targetType,
       targetId: row.targetId,
-      contactId: row.contactId,
       type: row._type,
       content: row.content,
       followedAt: row.followedAt,
@@ -1007,8 +964,7 @@ export class FollowUpsService {
     const customerIds = records
       .filter((record) => record.targetType === 'customer')
       .map((record) => record.targetId)
-    const contactIds = records.flatMap((record) => (record.contactId ? [record.contactId] : []))
-    const [fields, dynamic, leads, customers, contacts] = await Promise.all([
+    const [fields, dynamic, leads, customers] = await Promise.all([
       this.moduleForms.listFields(user.tenantId, 'followRecord'),
       this.fieldValues.load(user.tenantId, 'followRecord', ids),
       leadIds.length
@@ -1027,20 +983,11 @@ export class FollowUpsService {
             .select('id', 'name')
             .all()
         : Promise.resolve([]),
-      contactIds.length
-        ? this.prisma.client.orm.public.CustomerContact.where({
-            organizationId: user.tenantId,
-          })
-            .where((row) => row.id.in(contactIds))
-            .select('id', 'name')
-            .all()
-        : Promise.resolve([]),
     ])
     const targetNameMap = new Map<string, string>([
       ...leads.map((item) => [`lead:${String(item.id)}`, item.name] as const),
       ...customers.map((item) => [`customer:${String(item.id)}`, item.name] as const),
     ])
-    const contactMap = new Map(contacts.map((item) => [String(item.id), item.name]))
     return records.map((record) => {
       const dynamicValues = dynamic.get(record.id) ?? {}
       return {
@@ -1053,8 +1000,6 @@ export class FollowUpsService {
           record.targetType === 'customer'
             ? record.targetId
             : null,
-        contactId: record.contactId,
-        contactName: record.contactId ? (contactMap.get(record.contactId) ?? null) : null,
         type: record.type,
         content: record.content,
         followedAt: record.followedAt ? instantToISOString(record.followedAt) : null,

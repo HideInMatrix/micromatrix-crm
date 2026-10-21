@@ -311,7 +311,7 @@ export class MetadataService {
 
   /**
    * 图外模块仍使用 customData 时的过渡校验器；字段定义已经来自直接 ModuleForm 表。
-   * Clue/Customer/CustomerContact 必须改用 ResourceFieldValueService，不能调用本方法落库。
+   * Clue/Customer 必须改用 ResourceFieldValueService，不能调用本方法落库。
    */
   async validateCustomData(
     organizationId: string,

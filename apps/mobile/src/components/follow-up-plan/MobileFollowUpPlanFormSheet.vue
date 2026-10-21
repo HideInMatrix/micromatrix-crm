@@ -46,7 +46,6 @@ defineExpose({
           :fields="form.fields.value"
           :members="form.fieldRefs.members.value"
           :dept-tree="form.fieldRefs.deptTree.value"
-          :field-filter="form.fieldFilter"
         >
           <template #system-field="{ field, value, setValue }">
             <MobileFollowUpPlanSystemField
@@ -54,7 +53,6 @@ defineExpose({
               :model-value="value"
               :target-locked="form.targetLocked.value"
               :targets="form.targets.value"
-              :contacts="form.contacts.value"
               :members="form.fieldRefs.members.value"
               @update:model-value="setValue"
             />

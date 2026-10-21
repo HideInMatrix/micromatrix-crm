@@ -244,14 +244,6 @@ export class CustomerPoolRepository {
     }).aggregate((aggregate) => ({ count: aggregate.count() }))
     this.calculator.assertCapacity(capacity?.capacity ?? null, ownedCount.count, 0, 1)
     await this.appendOwnerHistoryPrisma(tx, customer, input.operatorId, input.reasonId, now)
-    await tx.orm.public.CustomerContact.where({
-      organizationId: input.organizationId,
-      customerId: customer.id,
-    }).updateAndCount({
-      owner: input.ownerId,
-      updateUser: input.operatorId,
-      updateTime: now,
-    })
     const updated = await tx.orm.public.Customer.where({ id: customer.id }).update({
       owner: input.ownerId,
       collectionTime: now,
@@ -348,14 +340,6 @@ export class CustomerPoolRepository {
       updateTime: now,
     })
     if (updated !== 1) throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
-    await tx.orm.public.CustomerContact.where({
-      organizationId: input.organizationId,
-      customerId: customer.id,
-    }).updateAndCount({
-      owner: input.ownerId,
-      updateUser: input.operatorId,
-      updateTime: now,
-    })
     const claimed = await tx.orm.public.Customer.where({ id: customer.id }).first()
     if (!claimed) throw new NotFoundException('客户不存在')
     return claimed
@@ -392,14 +376,6 @@ export class CustomerPoolRepository {
         throw new BadRequestException('客户当前没有可结束的负责人')
 
       await this.appendOwnerHistoryPrisma(tx, customer, input.operatorId, input.reasonId, now)
-      await tx.orm.public.CustomerContact.where({
-        organizationId: input.organizationId,
-        customerId: customer.id,
-      }).updateAndCount({
-        owner: '-',
-        updateUser: input.operatorId,
-        updateTime: now,
-      })
       const updated = await tx.orm.public.Customer.where({ id: customer.id }).update({
         poolId: pool.id,
         inSharedPool: true,

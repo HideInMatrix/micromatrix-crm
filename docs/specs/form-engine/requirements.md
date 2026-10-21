@@ -34,7 +34,7 @@ Form Engine 是当前招生 CRM 的公共元数据能力，负责模块表单、
 
 ## 5. Data Source
 
-- 内置 source registry 当前只包含 `CUSTOMER / CONTACT / CLUE`。
+- 内置 source registry 当前只包含 `CUSTOMER / CLUE`。
 - 自定义表单 source 直接使用目标 `customFormId`，不扩张固定枚举。
 - 候选加载、resolve 和 record snapshot 必须复用目标业务对象的数据权限，Form Engine 不直接绕过 DataScope 查询数据库。
 - 单选保存资源 ID；多选保存 ID 数组。

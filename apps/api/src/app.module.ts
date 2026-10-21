@@ -11,7 +11,6 @@ import { AuthGuard } from './common/guards/auth.guard'
 import { OperationLogInterceptor } from './common/interceptors/operation-log.interceptor'
 import { CustomersModule } from './customers/customers.module'
 import { HealthController } from './health/health.controller'
-import { ContactsModule } from './modules/contacts/contacts.module'
 import { CustomFormsModule } from './modules/custom-forms/custom-forms.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { DepartmentsModule } from './modules/departments/departments.module'
@@ -53,7 +52,6 @@ import { RedisModule } from './redis/redis.module'
     ModuleFormsModule,
     ModuleConfigsModule,
     CustomersModule,
-    ContactsModule,
     LeadsModule,
     FollowUpsModule,
     EnterpriseIntegrationsModule,

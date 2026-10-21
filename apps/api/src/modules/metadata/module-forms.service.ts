@@ -1958,12 +1958,6 @@ export class ModuleFormsService {
       tx.orm.public.CustomerFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
         count: agg.count(),
       })),
-      tx.orm.public.CustomerContactField.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
-      tx.orm.public.CustomerContactFieldBlob.where({ fieldId: id }).aggregate((agg) => ({
-        count: agg.count(),
-      })),
       tx.orm.public.FollowUpPlanField.where({ fieldId: id }).aggregate((agg) => ({
         count: agg.count(),
       })),
@@ -1993,8 +1987,6 @@ export class ModuleFormsService {
       tx.orm.public.ClueFieldBlob.where({ fieldId: id }).deleteAll(),
       tx.orm.public.CustomerField.where({ fieldId: id }).deleteAll(),
       tx.orm.public.CustomerFieldBlob.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.CustomerContactField.where({ fieldId: id }).deleteAll(),
-      tx.orm.public.CustomerContactFieldBlob.where({ fieldId: id }).deleteAll(),
       tx.orm.public.FollowUpPlanField.where({ fieldId: id }).deleteAll(),
       tx.orm.public.FollowUpPlanFieldBlob.where({ fieldId: id }).deleteAll(),
       tx.orm.public.FollowUpRecordField.where({ fieldId: id }).deleteAll(),

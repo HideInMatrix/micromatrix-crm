@@ -10,7 +10,7 @@ import { showFailToast } from 'vant'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { showSuccessFeedback } from '@/utils/feedback'
-import { contactApi, followUpPlanApi, leadApi } from '@/api/sales'
+import { followUpPlanApi, leadApi } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -33,7 +33,6 @@ export function useMobileFollowUpPlanForm(
   const resetting = ref(false)
   const editing = ref<FollowUpPlanVO | null>(null)
   const targets = ref<MobileFollowUpPlanTargetOption[]>([])
-  const contacts = ref<{ id: string; name: string }[]>([])
   const fields = ref<FieldVO[]>([])
   const formModel = ref<Record<string, unknown>>({})
   const metaLoaded = ref(false)
@@ -52,8 +51,7 @@ export function useMobileFollowUpPlanForm(
       (field) =>
         !field.hidden &&
         field.type !== 'formula' &&
-        field.mobile !== false &&
-        fieldFilter(field),
+        field.mobile !== false,
     ),
   )
 
@@ -62,9 +60,6 @@ export function useMobileFollowUpPlanForm(
     return typeof value === 'string' ? value : ''
   }
 
-  function fieldFilter(field: FieldVO) {
-    return !(field.key === 'contactId' && currentTargetType.value === 'lead')
-  }
 
   function defaultFieldModel() {
     return Object.fromEntries(fields.value.map((field) => [field.key, field.config?.defaultValue]))
@@ -130,18 +125,6 @@ export function useMobileFollowUpPlanForm(
     }
   }
 
-  async function loadContacts() {
-    contacts.value = []
-    if (currentTargetType.value === 'lead') return
-    const customerId = currentTargetId.value
-    if (!customerId) return
-    try {
-      const { data } = await contactApi.list(customerId)
-      contacts.value = data.map((item) => ({ id: item.id, name: item.name }))
-    } catch (error) {
-      showFailToast(extractErrorMessage(error))
-    }
-  }
 
   async function open(plan?: FollowUpPlanVO) {
     try {
@@ -161,7 +144,6 @@ export function useMobileFollowUpPlanForm(
         ...dynamicValues(plan),
         targetType: nextTargetType,
         targetId: nextTargetId,
-        contactId: plan?.contactId ?? '',
         method: plan?.method ?? '电话',
         estimatedAt: plan?.estimatedAt ?? '',
         content: plan?.content ?? '',
@@ -169,7 +151,6 @@ export function useMobileFollowUpPlanForm(
         status: plan?.status ?? 'PREPARED',
       }
       await loadTargets()
-      await loadContacts()
       show.value = true
     } finally {
       resetting.value = false
@@ -193,7 +174,6 @@ export function useMobileFollowUpPlanForm(
       const payload = {
         targetType: currentTargetType.value,
         targetId: nextTargetId,
-        contactId: stringValue('contactId') || undefined,
         method: stringValue('method') || undefined,
         estimatedAt: stringValue('estimatedAt') || undefined,
         content,
@@ -217,31 +197,20 @@ export function useMobileFollowUpPlanForm(
     async () => {
       if (!show.value || targetLocked.value || resetting.value) return
       formModel.value.targetId = ''
-      formModel.value.contactId = ''
       await loadTargets()
     },
   )
 
-  watch(
-    () => formModel.value.targetId,
-    async () => {
-      if (!show.value || resetting.value) return
-      formModel.value.contactId = ''
-      await loadContacts()
-    },
-  )
 
   return {
     show,
     saving,
     editing,
     targets,
-    contacts,
     fields,
     formModel,
     fieldRefs,
     targetLocked,
-    fieldFilter,
     open,
     save,
   }

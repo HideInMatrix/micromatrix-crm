@@ -220,7 +220,7 @@ test(
         [first.id, second.id].sort(),
       )
 
-      const builtinSourceTypes = ['CUSTOMER', 'CONTACT', 'CLUE'] as const
+      const builtinSourceTypes = ['CUSTOMER', 'CLUE'] as const
       const emptyOrganizationId = shortId('empty')
       for (const sourceType of builtinSourceTypes) {
         assert.deepEqual(

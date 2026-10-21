@@ -1,7 +1,7 @@
-import type { ContactVO, CustomerVO, LeadVO } from '@micromatrix/shared'
+import type { CustomerVO, LeadVO } from '@micromatrix/shared'
 import { computed, ref } from 'vue'
 import { getCustomerTabs, listCustomers } from '@/api/customers'
-import { contactApi, leadApi, resourcePoolApi } from '@/api/sales'
+import { leadApi, resourcePoolApi } from '@/api/sales'
 import { useAuthStore } from '@/stores/auth'
 
 export type GlobalSearchGroupKey =
@@ -9,7 +9,6 @@ export type GlobalSearchGroupKey =
   | 'leadPool'
   | 'customer'
   | 'customerPool'
-  | 'contact'
 
 export interface GlobalSearchItem {
   id: string
@@ -32,7 +31,6 @@ const groups = ref<Record<GlobalSearchGroupKey, GlobalSearchGroup>>({
   leadPool: { key: 'leadPool', label: '线索池', count: 0, items: [] },
   customer: { key: 'customer', label: '客户', count: 0, items: [] },
   customerPool: { key: 'customerPool', label: '公海', count: 0, items: [] },
-  contact: { key: 'contact', label: '联系人', count: 0, items: [] },
 })
 const searchedKeyword = ref('')
 const activeNames = ref<string[]>([])
@@ -59,13 +57,6 @@ function mapCustomer(item: CustomerVO, description?: string): GlobalSearchItem {
   }
 }
 
-function mapContact(item: ContactVO): GlobalSearchItem {
-  return {
-    id: item.id,
-    name: item.name,
-    description: [item.customerName, item.phone, item.ownerName].filter(Boolean).join(' · ') || undefined,
-  }
-}
 
 export function useGlobalSearch() {
   const auth = useAuthStore()
@@ -76,7 +67,6 @@ export function useGlobalSearch() {
     if (auth.hasPerm('leadPool:read')) keys.push('leadPool')
     if (auth.hasPerm('menu:customer')) keys.push('customer')
     if (auth.hasPerm('customerPool:read')) keys.push('customerPool')
-    if (auth.hasPerm('contact:read')) keys.push('contact')
     return keys
   })
 
@@ -173,20 +163,6 @@ export function useGlobalSearch() {
     }
   }
 
-  async function searchContacts(keyword: string) {
-    const { data: tabs } = await contactApi.tab()
-    const scopeView = tabs.all ? 'ALL' : tabs.dept ? 'DEPT' : 'SELF'
-    const { data } = await contactApi.page({
-      page: 1,
-      pageSize: ITEM_LIMIT,
-      keyword,
-      scopeView,
-    })
-    return {
-      count: data.total,
-      items: data.items.map(mapContact),
-    }
-  }
 
   const searchers: Record<
     GlobalSearchGroupKey,
@@ -196,7 +172,6 @@ export function useGlobalSearch() {
     leadPool: searchLeadPools,
     customer: searchCustomers,
     customerPool: searchCustomerPools,
-    contact: searchContacts,
   }
 
   async function search(rawKeyword: string) {

@@ -65,23 +65,12 @@ export interface CustomerMergePreviewVO {
   finalOwner: { id: string; name: string | null }
   counts: {
     customersToDelete: number
-    contacts: number
-    contactsWillMove: number
-    contactsWillSkip: number
     followUps: number
     followUpPlans: number
     attachments: number
     collaborations: number
     relationsToRemove: number
   }
-  contactConflicts: {
-    sourceContactId: string
-    sourceCustomerId: string
-    name: string
-    phone: string | null
-    matchedBy: ('name' | 'phone')[]
-    targetContactIds: string[]
-  }[]
 }
 
 /** 动态表单载荷：系统字段 + customData（cf_* 键） */

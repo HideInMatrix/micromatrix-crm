@@ -62,8 +62,6 @@ export interface FollowUpVO {
   targetId: string
   targetName?: string
   customerId?: string | null
-  contactId: string | null
-  contactName?: string | null
   type: string | null
   content: string
   followedAt: string | null
@@ -124,7 +122,6 @@ export const FOLLOW_UP_PLAN_SYSTEM_FIELD_KEYS = [
   'targetType',
   'targetId',
   'ownerId',
-  'contactId',
   'estimatedAt',
   'content',
   'method',
@@ -164,8 +161,6 @@ export interface FollowUpPlanVO {
   targetId: string
   targetName: string
   customerId: string | null
-  contactId: string | null
-  contactName: string | null
   content: string
   method: string | null
   estimatedAt: string | null
@@ -220,21 +215,6 @@ export interface OwnerHistoryVO {
   endedAt: string
 }
 
-export interface ContactVO {
-  id: string
-  customerId: string
-  customerName: string | null
-  ownerId: string | null
-  ownerName: string | null
-  deptId: string | null
-  name: string
-  phone: string | null
-  enable: boolean
-  disableReason: string | null
-  customData: Record<string, unknown>
-  createdAt: string
-  updatedAt: string
-}
 
 // ============ 公海/线索池规则 ============
 

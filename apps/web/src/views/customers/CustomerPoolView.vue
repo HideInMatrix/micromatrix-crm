@@ -314,7 +314,7 @@ function openDetail(row: CustomerVO) {
 
 async function handleDelete(row: CustomerVO) {
   const confirmed = await ElMessageBox.confirm(
-    `确定删除公海客户「${row.name}」吗？已关联联系人时会拒绝删除。`,
+    `确定删除公海客户「${row.name}」吗？`,
     '删除公海客户',
     { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
   ).catch(() => false)

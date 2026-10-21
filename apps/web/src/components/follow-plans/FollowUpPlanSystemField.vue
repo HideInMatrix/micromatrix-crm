@@ -16,7 +16,6 @@ const props = defineProps<{
   readonly: boolean
   loadingTargets: boolean
   targets: TargetOption[]
-  contacts: TargetOption[]
   members: MemberOption[]
 }>()
 
@@ -59,18 +58,6 @@ const stringValue = computed(() => (typeof props.modelValue === 'string' ? props
     <el-option v-for="item in targets" :key="item.id" :label="item.name" :value="item.id" />
   </el-select>
 
-  <el-select
-    v-else-if="field.key === 'contactId'"
-    :model-value="stringValue"
-    :disabled="readonly"
-    clearable
-    filterable
-    class="w-full"
-    placeholder="可选"
-    @update:model-value="update"
-  >
-    <el-option v-for="item in contacts" :key="item.id" :label="item.name" :value="item.id" />
-  </el-select>
 
   <el-date-picker
     v-else-if="field.key === 'estimatedAt'"

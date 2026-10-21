@@ -238,7 +238,6 @@ export class MembersService {
       .all()
     const [
       customers,
-      contacts,
       clues,
       followUps,
       collaborations,
@@ -246,10 +245,6 @@ export class MembersService {
       this.prisma.client.orm.public.Customer.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({ count: agg.count() }),
       ),
-      this.prisma.client.orm.public.CustomerContact.where({
-        organizationId,
-        owner: memberId,
-      }).aggregate((agg) => ({ count: agg.count() })),
       this.prisma.client.orm.public.Clue.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({
           count: agg.count(),
@@ -268,7 +263,6 @@ export class MembersService {
     ])
     const referenceCounts = [
       customers.count,
-      contacts.count,
       clues.count,
       followUps.count,
       collaborations.count,

@@ -51,7 +51,6 @@ const hasExportPermission = computed(() =>
   [
     'customer:export',
     'customerPool:export',
-    'contact:export',
     'lead:export',
     'leadPool:export',
   ].some((code) => auth.hasPerm(code)),

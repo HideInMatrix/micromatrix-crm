@@ -2,26 +2,24 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import MobileCustomerListPane from '@/components/customer/MobileCustomerListPane.vue'
-import MobileContactListPane from '@/components/customer/MobileContactListPane.vue'
 import MobileCustomerOpenSeaPane from '@/components/customer/MobileCustomerOpenSeaPane.vue'
 import { useAuthStore } from '@/stores/auth'
 
-type CustomerModuleTab = 'customer' | 'contact' | 'openSea'
+type CustomerModuleTab = 'customer' | 'openSea'
 
-const auth = useAuthStore()
 const route = useRoute()
+const auth = useAuthStore()
 const activeTab = ref<CustomerModuleTab>('customer')
 
 const tabs = computed<{ name: CustomerModuleTab; title: string }[]>(() => [
   { name: 'customer', title: '客户' },
-  ...(auth.hasPerm('contact:read') ? [{ name: 'contact' as const, title: '联系人' }] : []),
   ...(auth.hasPerm('customerPool:read') ? [{ name: 'openSea' as const, title: '公海' }] : []),
 ])
 
 watch(
   () => route.query.tab,
   (tab) => {
-    if (tab === 'customer' || tab === 'contact' || tab === 'openSea') activeTab.value = tab
+    if (tab === 'customer' || tab === 'openSea') activeTab.value = tab
   },
   { immediate: true },
 )
@@ -45,7 +43,6 @@ watch(
 
     <div class="min-h-0 flex-1 overflow-hidden">
       <MobileCustomerListPane v-if="activeTab === 'customer'" />
-      <MobileContactListPane v-else-if="activeTab === 'contact'" />
       <MobileCustomerOpenSeaPane v-else />
     </div>
   </div>

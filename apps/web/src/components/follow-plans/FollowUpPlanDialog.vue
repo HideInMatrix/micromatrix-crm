@@ -10,7 +10,7 @@ import {
 import { computed, ref, watch } from 'vue'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { contactApi, followUpPlanApi, leadApi } from '@/api/sales'
+import { followUpPlanApi, leadApi } from '@/api/sales'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import FollowUpPlanSystemField from '@/components/follow-plans/FollowUpPlanSystemField.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -40,7 +40,6 @@ const saving = ref(false)
 const loadingOptions = ref(false)
 const resetting = ref(false)
 const targets = ref<TargetOption[]>([])
-const contacts = ref<{ id: string; name: string }[]>([])
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
 const formProp = ref<ModuleFormProp>({})
@@ -76,10 +75,6 @@ function stringValue(key: string) {
   return typeof value === 'string' ? value : ''
 }
 
-function fieldFilter(field: FieldVO) {
-  if (field.key === 'contactId' && currentTargetType.value === 'lead') return false
-  return true
-}
 
 async function loadTargets() {
   if (targetLocked.value) {
@@ -102,18 +97,6 @@ async function loadTargets() {
   }
 }
 
-async function loadContacts() {
-  contacts.value = []
-  if (currentTargetType.value === 'lead') return
-  const customerId = currentTargetId.value
-  if (!customerId) return
-  try {
-    const { data } = await contactApi.list(customerId)
-    contacts.value = data.map((item) => ({ id: item.id, name: item.name }))
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
 
 function defaultFieldModel() {
   return Object.fromEntries(fields.value.map((field) => [field.key, field.config?.defaultValue]))
@@ -160,7 +143,6 @@ async function reset() {
       ...customValues(plan),
       targetType,
       targetId,
-      contactId: plan?.contactId ?? '',
       estimatedAt: plan?.estimatedAt ?? '',
       content: plan?.content ?? '',
       method: plan?.method ?? '电话',
@@ -168,7 +150,6 @@ async function reset() {
       status: plan?.status ?? 'PREPARED',
     }
     await loadTargets()
-    await loadContacts()
   } finally {
     resetting.value = false
   }
@@ -193,7 +174,6 @@ async function save() {
     const payload = {
       targetType: currentTargetType.value,
       targetId,
-      contactId: stringValue('contactId') || undefined,
       content,
       method: stringValue('method') || undefined,
       estimatedAt: stringValue('estimatedAt') || undefined,
@@ -223,16 +203,7 @@ watch(
   async () => {
     if (!visible.value || targetLocked.value || resetting.value) return
     formModel.value.targetId = ''
-    formModel.value.contactId = ''
     await loadTargets()
-  },
-)
-watch(
-  () => formModel.value.targetId,
-  async () => {
-    if (!visible.value || resetting.value) return
-    formModel.value.contactId = ''
-    await loadContacts()
   },
 )
 </script>
@@ -252,7 +223,6 @@ watch(
         :fields="fields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
-        :field-filter="fieldFilter"
         :form-prop="formProp"
       >
         <template #system-field="{ field, value, setValue }">
@@ -264,7 +234,6 @@ watch(
             :readonly="readonly"
             :loading-targets="loadingOptions"
             :targets="targets"
-            :contacts="contacts"
             :members="fieldRefs.members.value"
             @update:model-value="setValue"
           />

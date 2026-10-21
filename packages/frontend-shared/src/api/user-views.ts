@@ -5,7 +5,6 @@ export type UserViewModule =
   | 'lead'
   | 'lead_pool'
   | 'customer'
-  | 'contact'
   | 'customer_pool'
   | 'follow_record'
 
@@ -43,7 +42,6 @@ const RESOURCE_PATHS: Record<UserViewModule, string> = {
   lead: '/lead/view',
   lead_pool: '/pool/lead/view',
   customer: '/account/view',
-  contact: '/account/contact/view',
   customer_pool: '/pool/account/view',
   follow_record: '/follow/record/view',
 }

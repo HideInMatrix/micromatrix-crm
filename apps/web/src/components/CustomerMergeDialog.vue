@@ -74,9 +74,6 @@ function handleTargetChange() {
   }
 }
 
-function conflictLabels(matchedBy: ('name' | 'phone')[]) {
-  return matchedBy.map((key) => (key === 'name' ? '姓名' : '电话')).join('、')
-}
 
 async function loadOtherCustomers(keyword?: string) {
   if (form.targetMode !== 'other') return
@@ -138,10 +135,8 @@ async function generatePreview() {
 async function executeMerge() {
   const data = payload()
   if (!data || !preview.value) return
-  const skip = preview.value.counts.contactsWillSkip
-  const conflictText = skip > 0 ? `其中 ${skip} 个联系人会按唯一字段规则去重。` : ''
   const confirmed = await ElMessageBox.confirm(
-    `将删除 ${preview.value.counts.customersToDelete} 个被合并客户，操作不可回退。${conflictText}`,
+    `将删除 ${preview.value.counts.customersToDelete} 个被合并客户，操作不可回退。`,
     '确认合并客户',
     {
       type: 'warning',
@@ -264,7 +259,7 @@ watch(visible, (open) => {
       <div class="rounded border border-[var(--el-border-color-lighter)] p-4 text-sm leading-7">
         <div class="font-medium">合并规则</div>
         <div>1. 仅保留主客户的基本信息。</div>
-        <div>2. 联系人、跟进记录、跟进计划、客户附件和协作成员迁移到主客户。</div>
+        <div>2. 跟进记录、跟进计划、客户附件和协作成员迁移到主客户。</div>
         <div>3. 被合并客户负责人将作为主客户协作成员保留（与最终负责人相同者除外）。</div>
         <div>4. 被合并客户的集团/子公司关系会移除，主客户已有关系保留。</div>
       </div>
@@ -275,9 +270,6 @@ watch(visible, (open) => {
         <el-descriptions-item label="主客户">{{ preview.target.name }}</el-descriptions-item>
         <el-descriptions-item label="最终负责人">{{ preview.finalOwner.name ?? '-' }}</el-descriptions-item>
         <el-descriptions-item label="删除客户">{{ preview.counts.customersToDelete }} 个</el-descriptions-item>
-        <el-descriptions-item label="联系人">
-          {{ preview.counts.contactsWillMove }} 迁移 / {{ preview.counts.contactsWillSkip }} 唯一去重
-        </el-descriptions-item>
         <el-descriptions-item label="跟进">{{ preview.counts.followUps }}</el-descriptions-item>
         <el-descriptions-item label="跟进计划">{{ preview.counts.followUpPlans }}</el-descriptions-item>
         <el-descriptions-item label="客户附件">{{ preview.counts.attachments }}</el-descriptions-item>
@@ -287,27 +279,6 @@ watch(visible, (open) => {
         </el-descriptions-item>
       </el-descriptions>
 
-      <el-alert
-        v-if="preview.contactConflicts.length > 0"
-        type="warning"
-        :closable="false"
-        class="mb-3"
-        :title="`发现 ${preview.contactConflicts.length} 个命中联系人唯一字段规则的源联系人，将自动去重。`"
-      />
-      <el-table v-if="preview.contactConflicts.length > 0" :data="preview.contactConflicts" max-height="220">
-        <el-table-column prop="name" label="联系人" min-width="140" />
-        <el-table-column prop="phone" label="电话" width="140" />
-        <el-table-column label="冲突字段" width="120">
-          <template #default="{ row }">
-            {{ conflictLabels(row.matchedBy) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="处理" min-width="140">
-          <template #default>
-            不迁移（关联引用转挂）
-          </template>
-        </el-table-column>
-      </el-table>
 
       <el-alert
         type="error"

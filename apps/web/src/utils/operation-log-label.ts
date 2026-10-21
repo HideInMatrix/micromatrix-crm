@@ -1,7 +1,6 @@
 const MODULE_LABELS: Record<string, string> = {
   announcement: '公告',
   attachment: '附件',
-  contact: '联系人',
   'custom-form': '自定义表单',
   'custom-form-data': '自定义表单数据',
   'custom-form-view': '自定义表单视图',

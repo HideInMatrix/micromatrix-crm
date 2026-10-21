@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  type ContactVO,
   type CustomerVO,
   type FieldVO,
   type FollowUpVO,
@@ -25,10 +24,10 @@ import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileFollowUpPlanList from '@/components/MobileFollowUpPlanList.vue'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
-import { fetchFields, getCustomer, listCustomerContacts, pageFollowUps } from '@/api/mobile'
+import { fetchFields, getCustomer, pageFollowUps } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
-type DetailTab = 'info' | 'contact' | 'record' | 'plan' | 'header' | 'relation' | 'collaborator'
+type DetailTab = 'info' | 'record' | 'plan' | 'header' | 'relation' | 'collaborator'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,7 +38,6 @@ const activeTab = ref<DetailTab>('info')
 const loading = ref(false)
 const customer = ref<CustomerVO | null>(null)
 const fields = ref<FieldVO[]>([])
-const contacts = ref<ContactVO[]>([])
 const records = ref<FollowUpVO[]>([])
 const ownerHistory = ref<OwnerHistoryVO[]>([])
 const relations = ref<CustomerRelationVO[]>([])
@@ -88,7 +86,6 @@ const detailTabs = computed<{ name: DetailTab; title: string }[]>(() => {
   }
   return [
     { name: 'info', title: '客户信息' },
-    ...(auth.hasPerm('contact:read') ? [{ name: 'contact' as const, title: '联系人' }] : []),
     { name: 'record', title: '跟进记录' },
     { name: 'plan', title: '跟进计划' },
     { name: 'header', title: '负责人记录' },
@@ -133,10 +130,7 @@ async function load() {
     customer.value = detailRes.data
     fields.value = fieldRes.data
 
-    const [contactRes, followRes, historyRes, relationRes, teamRes] = await Promise.all([
-      !poolSource.value && auth.hasPerm('contact:read')
-        ? listCustomerContacts(customerId.value)
-        : Promise.resolve({ data: [] as ContactVO[] }),
+    const [followRes, historyRes, relationRes, teamRes] = await Promise.all([
       poolSource.value
         ? Promise.resolve({ data: { items: [] as FollowUpVO[] } })
         : pageFollowUps('customer', customerId.value),
@@ -148,7 +142,6 @@ async function load() {
         ? Promise.resolve({ data: [] as TeamMemberVO[] })
         : customerExtraApi.teamList(customerId.value),
     ])
-    contacts.value = contactRes.data
     records.value = followRes.data.items
     ownerHistory.value = historyRes.data
     relations.value = relationRes.data
@@ -357,14 +350,6 @@ onMounted(async () => {
               </van-cell-group>
             </template>
 
-            <template v-else-if="tab.name === 'contact'">
-              <van-empty v-if="contacts.length === 0" description="暂无联系人" />
-              <van-cell-group v-for="contact in contacts" :key="contact.id" inset class="!mt-3">
-                <van-cell :title="contact.name" :label="contact.phone ?? '未填写电话'">
-                  <template #value>{{ contact.ownerName ?? '-' }}</template>
-                </van-cell>
-              </van-cell-group>
-            </template>
 
             <template v-else-if="tab.name === 'record'">
               <div v-if="canWrite" class="px-4 pt-3">

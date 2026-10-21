@@ -481,12 +481,11 @@ export interface NotificationVO {
 
 // ============ 模块（业务对象）标识 ============
 
-export type ModuleKey = 'lead' | 'customer' | 'contact' | 'followPlan'
+export type ModuleKey = 'lead' | 'customer' | 'followPlan'
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   lead: '线索',
   customer: '客户',
-  contact: '联系人',
   followPlan: '跟进计划',
 }
 

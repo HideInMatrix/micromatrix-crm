@@ -28,7 +28,6 @@ function record(overrides: Partial<FollowUpRecord> = {}): FollowUpRecord {
     tenantId: user.tenantId,
     targetType: 'customer',
     targetId: 'customer-1',
-    contactId: null,
     type: '电话',
     content: '跟进记录',
     followedAt: instant('2026-09-06T03:00:00.000Z'),

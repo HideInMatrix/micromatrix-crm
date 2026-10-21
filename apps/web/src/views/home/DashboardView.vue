@@ -34,7 +34,6 @@ import {
   CalendarDays,
   BellRing,
   MessageCircleMore,
-  ContactRound,
   MessageSquareText,
   RefreshCw,
   Settings2,
@@ -441,7 +440,7 @@ function openPoolLeads() {
 // ===== 快捷入口 =====
 
 type QuickAccessKey =
-  'customer' | 'contact' | 'lead' | 'leadImport' | 'poolImport' | 'followRecord' | 'followPlan'
+  'customer' | 'lead' | 'leadImport' | 'poolImport' | 'followRecord' | 'followPlan'
 
 interface QuickAccessItem {
   key: QuickAccessKey
@@ -464,13 +463,6 @@ const quickAccessCatalog = computed<QuickAccessItem[]>(() => {
       label: '新建客户',
       icon: Building2,
       permissions: ['customer:create'],
-      moduleEnabled: () => moduleConfig.isEnabled('customer'),
-    },
-    {
-      key: 'contact',
-      label: '新建联系人',
-      icon: ContactRound,
-      permissions: ['contact:create'],
       moduleEnabled: () => moduleConfig.isEnabled('customer'),
     },
     {
@@ -592,7 +584,6 @@ function routeCreate(path: string) {
 
 function handleQuickAccess(key: QuickAccessKey) {
   if (key === 'customer') return routeCreate('/customers')
-  if (key === 'contact') return routeCreate('/contacts')
   if (key === 'lead') return routeCreate('/leads')
   if (key === 'leadImport') return void router.push({ path: '/leads', query: { import: '1' } })
   if (key === 'poolImport') return void router.push({ path: '/leads/pool', query: { import: '1' } })

@@ -4,7 +4,6 @@ import type { AuthUser } from '../../common/auth-user'
 import type { FieldVO } from '@micromatrix/shared'
 import ExcelJS from 'exceljs'
 import { CustomersService } from '../../customers/customers.service'
-import { ContactsService } from '../contacts/contacts.service'
 import { SpreadsheetService } from './spreadsheet.service'
 
 function field(key: string, label: string, extras: Partial<FieldVO> = {}): FieldVO {
@@ -85,7 +84,7 @@ function customerHarness() {
 const user = {
   id: 'user-a',
   tenantId: 'tenant-a',
-  permissions: ['contact:export'],
+  permissions: ['customer:export'],
 } as AuthUser
 
 test('客户导出总是首列唯一ID，修改后可作为 UPDATE 导入文件', async () => {
@@ -119,41 +118,5 @@ test('客户公海导出同样含唯一ID，更新模式忽略公海不可编辑
     customer.id,
     customerFields,
     ['owner', 'ownerId'],
-  )
-})
-
-test('联系人导出含唯一ID，含停用状态、原因及时间列也可重新导入更新', async () => {
-  const contactFields = [
-    field('name', '联系人姓名', { module: 'contact' }),
-    field('phone', '电话', { module: 'contact', type: 'phone' }),
-    field('enable', '是否启用', { module: 'contact', type: 'switch' }),
-  ]
-  const instance = Object.create(ContactsService.prototype) as Record<string, unknown>
-  instance['collectExportItems'] = async () => [
-    {
-      id: 'contact-a',
-      name: '联系人原名',
-      phone: '13800138000',
-      enable: false,
-      disableReason: '离职',
-      createdAt: '2026-10-13T01:00:00.000Z',
-      customData: {},
-    },
-  ]
-  instance['metadata'] = { listFields: async () => contactFields }
-  instance['spreadsheet'] = new SpreadsheetService()
-  const result = await (instance as unknown as ContactsService).buildQueuedExport(user, {
-    version: 1,
-    query: {},
-    input: {
-      headList: ['name', 'phone', 'enable', 'disableReason', 'createdAt'],
-    },
-  })
-  await verifyExport(
-    result.data,
-    ['唯一ID', '联系人姓名', '电话', '是否启用', '停用原因', '创建时间'],
-    'contact-a',
-    contactFields,
-    ['enable'],
   )
 })

@@ -128,19 +128,6 @@ const router = createRouter({
           },
         },
         {
-          path: 'contacts',
-          name: 'contacts',
-          component: () => import('@/views/contacts/ContactsView.vue'),
-          meta: {
-            title: '联系人',
-            perm: 'contact:read',
-            activeMenu: '/customers',
-            topMenuGroup: 'customer',
-            topMenuLabel: '联系人',
-            topMenuOrder: 20,
-          },
-        },
-        {
           path: 'customers/open-sea',
           name: 'customer-open-sea',
           component: () => import('@/views/customers/CustomerPoolView.vue'),

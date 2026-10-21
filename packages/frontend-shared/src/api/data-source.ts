@@ -13,7 +13,7 @@ import {
 } from '@micromatrix/shared'
 import { getCustomer, getCustomerModuleForm, listCustomers } from './customers'
 import { customFormApi } from './custom-form'
-import { contactApi, leadApi } from './sales'
+import { leadApi } from './sales'
 
 export interface DataSourcePageQuery {
   current?: number
@@ -79,8 +79,6 @@ async function fetchDataSourceFields(sourceType: DataSourceType): Promise<FieldV
   switch (sourceType) {
     case 'CUSTOMER':
       return (await getCustomerModuleForm()).data.fields
-    case 'CONTACT':
-      return (await contactApi.moduleForm()).data.fields
     case 'CLUE':
       return (await leadApi.moduleForm()).data.fields
   }
@@ -172,21 +170,6 @@ export async function loadDataSourcePage(
         pageSize: data.pageSize,
       }
     }
-    case 'CONTACT': {
-      const { data } = await contactApi.page({
-        page: current,
-        pageSize,
-        keyword,
-        filters: serializedFilters,
-        filterMode,
-      })
-      return {
-        list: optionsOf(data.items),
-        total: data.total,
-        current: data.page,
-        pageSize: data.pageSize,
-      }
-    }
     case 'CLUE': {
       const { data } = await leadApi.list({
         page: current,
@@ -213,8 +196,6 @@ async function loadBuiltinDataSourceOption(
     switch (sourceType) {
       case 'CUSTOMER':
         return optionOf((await getCustomer(id)).data)
-      case 'CONTACT':
-        return optionOf((await contactApi.get(id)).data)
       case 'CLUE':
         return optionOf((await leadApi.get(id)).data)
       default:
@@ -268,8 +249,6 @@ async function loadBuiltinDataSourceRaw(sourceType: DataSourceType, id: string):
   switch (sourceType) {
     case 'CUSTOMER':
       return (await getCustomer(id)).data
-    case 'CONTACT':
-      return (await contactApi.get(id)).data
     case 'CLUE':
       return (await leadApi.get(id)).data
     default:

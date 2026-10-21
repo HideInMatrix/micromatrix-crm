@@ -300,8 +300,8 @@ POST  /message-deliveries/{id}/retry
 
 客户协作使用 `customer_team_members.collaborationType`：
 
-- `READ_ONLY`：可读取客户详情和客户跟进记录，但不会获得客户主体修改权限，也不能新增客户跟进或联系人。
-- `COLLABORATION`：在没有普通客户数据范围时，可读取客户详情/跟进，并新增跟进；联系人仅能查看、创建、修改、删除自己负责的数据。
+- `READ_ONLY`：可读取客户详情和客户跟进记录，但不会获得客户主体修改权限，也不能新增客户跟进。
+- `COLLABORATION`：在没有普通客户数据范围时，可读取客户详情/跟进，并新增跟进。
 - 协作身份不会赋予客户主体 `update/delete/assign/team manage` 权限；这些操作仍要求正常客户数据范围，公海管理操作可由池管理员完成。
 - 客户集团关系属于 Cordys 的协作子域例外：`COLLABORATION` 在具备 `customer:update` 功能权限时可编辑关系；`READ_ONLY` 仍只能查看。该例外不会扩展到客户主体字段。
 
@@ -317,37 +317,13 @@ POST  /message-deliveries/{id}/retry
 
 - `collaborationType` 只有在当前访问依赖协作关系时返回 `READ_ONLY/COLLABORATION`；正常 owner/部门数据范围或公海访问为 `null`。
 - `canManageCustomer=true` 只表示当前用户通过正常客户数据范围拥有客户主体管理能力；协作关系不会把它提升为 true。
-- `canCollaborateWrite=true` 表示可写联系人/客户跟进子域；普通公海“可见”不会自动获得该能力，必须先领取或通过 `COLLABORATION` 获得协作写能力。
+- `canCollaborateWrite=true` 表示可写客户跟进子域；普通公海“可见”不会自动获得该能力，必须先领取或通过 `COLLABORATION` 获得协作写能力。
 
-### 联系人（R3，按 Cordys `/account/contact` 资源边界）
-
-```text
-POST /contacts/page                       独立联系人分页
-GET  /contacts/list/{customerId}          客户下联系人列表
-GET  /contacts/get/{id}                   联系人详情
-POST /contacts/add                        新增联系人
-POST /contacts/update                     更新联系人
-GET  /contacts/enable/{id}                启用联系人
-POST /contacts/disable/{id}               停用联系人（reason 必填）
-GET  /contacts/delete/{id}                删除联系人
-GET  /contacts/tab                        ALL/DEPT 数据视图显隐
-POST /contacts/batch/update               批量修改一个字段
-GET  /contacts/template/download          xlsx 导入模板
-POST /contacts/import/pre-check           xlsx 导入预校验
-POST /contacts/import                     xlsx 正式导入
-POST /contacts/export-all                 导出全部任务
-POST /contacts/export-select              导出选中任务
-```
-
-- Contact 核心固定字段按 Cordys 收口为 `customerId / ownerId / name / phone / enable / disableReason`；额外字段走 Metadata `customData`，不再保留早期页面驱动的固定 `position/email`。
-- 新增时 `ownerId` 可省略并默认当前用户；负责人变化同步 `deptId`。
-- 独立联系人页使用 Contact 自己的 owner/dept 数据范围；客户详情内嵌列表继续按客户资源访问语义处理。仅依靠 `COLLABORATION` 访问客户时，只能管理自己负责的联系人；`READ_ONLY` 不获得联系人子域写能力。
-- 联系人批量能力与 Cordys 一致，仅提供“导出选中 + 批量编辑”，不新增批量删除。
 
 ### 线索转换（R4，按 Cordys `/lead/*` 转换边界）
 
 ```text
-POST /lead/transform                     自动转换：创建/复用客户并创建联系人
+POST /lead/transform                     自动转换：创建/复用客户
 POST /lead/transition/account            使用客户新增表单新建客户并关联线索
 POST /lead/re-transition/account         一条/批量线索关联已有客户
 POST /lead/transition/account/page       关联客户全屏抽屉的候选客户分页
@@ -364,14 +340,13 @@ GET  /lead/get/{id}                      线索详情（含 transitionType/trans
 
 转换规则：
 
-- 自动转换只处理 Customer/Contact 与通用跟进资产，不再创建 Opportunity，也不接受 `oppCreated / oppName`。
+- 自动转换只处理 Customer 与通用跟进资产，不再创建交易资源，也不接受 `oppCreated / oppName`。
 - Lead 成功关联客户后写 `transitionType=CUSTOMER / transitionId=customerId`；旧 `convertedCustomerId` 与旧 `/api/leads` 转换入口已移除。
 - 客户 `name` 开启 Metadata `config.unique` 时，自动转换才复用同名客户；多条同名客户优先选择“不在公海且负责人=线索负责人”的记录，否则取第一条。未开启 unique 时同名仍创建新客户。
-- 联系人 `name/phone` 的 `config.unique` 分别决定是否执行姓名/电话唯一校验。按 Cordys 实际 SQL，唯一范围是当前租户而非单个客户；命中重复时跳过本次联系人创建。
 - 关联已有客户的候选范围为：正常客户数据范围 + 当前用户协作客户 + 当前用户可访问公海；`READ_ONLY` 协作客户会返回但 `selectable=false`，直接绕过 UI 调接口也会被 Service 拒绝。
 - 关联公海客户前先执行领取规则；领取失败则不继续转换。
 - 线索负责人不是客户负责人且尚未在团队中时，自动补 `COLLABORATION`；线索 FollowUpRecord 复制到客户且原记录保留，同时刷新客户 `lastFollowedAt`。
-- W3.4.2 已按 Cordys 三条路径拆分转换副作用：`/lead/transform` 与 `/lead/re-transition/account` 复制 FollowUpRecord/FollowUpPlan 并保留原线索记录/计划，`/lead/transition/account` 不复制 Follow、不额外创建 Collaboration；复制计划会映射新 Contact 与 `convertedRecordId`。Cordys `FormLinkScenario` 显式跨字段映射配置仍未实现，动态字段迁移不得用静态映射冒充。
+- 三条转换路径按当前业务边界复制必要的跟进记录、跟进计划与附件；动态字段迁移只按显式 `FormLinkScenario` 映射配置执行，不用静态映射冒充。
 
 ## Cordys 用户视图 UserView
 
@@ -381,7 +356,6 @@ GET  /lead/get/{id}                      线索详情（含 transitionType/trans
 /api/lead/view                 线索
 /api/pool/lead/view            线索池
 /api/account/view              客户
-/api/account/contact/view      联系人
 /api/pool/account/view         客户公海
 ```
 
@@ -416,7 +390,6 @@ PC 客户模块按 Cordys 拆为三个一级入口：
 
 ```text
 /customers            客户
-/contacts             联系人
 /customers/open-sea   客户公海
 ```
 
@@ -445,14 +418,13 @@ GET /customers?view=COLLABORATION
 PC 客户概览保留以下业务区域：
 
 - 客户 Metadata 字段；
-- 联系人；
 - 跟进记录；
 - 跟进计划；
 - 负责人记录；
 - 客户关系；
 - 协作人。
 
-Mobile `/customers` 继续使用 `客户 / 联系人 / 客户公海` 三页签；公海客户详情只提供当前公海场景允许的客户信息、跟进记录和负责人记录。客户及其子资源仍统一由 `CustomerAccessService` 和相应资源权限裁决。
+Mobile `/customers` 继续使用 `客户 / 客户公海` 两页签；公海客户详情只提供当前公海场景允许的客户信息、跟进记录和负责人记录。客户及其子资源仍统一由 `CustomerAccessService` 和相应资源权限裁决。
 
 ## 客户集团 / 子公司关系
 
@@ -509,25 +481,23 @@ POST /account/merge
 }
 ```
 
-Cordys 合并请求只有 `mergeIds / toMergeId / ownerId` 三个字段。联系人姓名或电话字段启用 unique 后，命中主客户已有唯一值的源联系人自动去重；跟进计划与附件会先转挂到匹配主联系人。
+Cordys 合并请求只有 `mergeIds / toMergeId / ownerId` 三个字段。跟进记录、跟进计划、附件与协作关系会迁移到主客户。
 
 负责人规则对齐 Cordys：
 
 - `toMergeId` 属于 `mergeIds`：最终负责人只能选择这批已选客户当前已有负责人。
 - `toMergeId` 不属于 `mergeIds`：表示使用其它可见客户作为主客户，`ownerId` 必须保持该主客户原负责人。
 
-preview 不修改任何数据，返回目标客户、源客户、最终负责人、联系人冲突以及影响计数：
+preview 不修改任何数据，返回目标客户、源客户、最终负责人以及影响计数：
 
 ```text
 target / sources / finalOwner
 counts.customersToDelete
-counts.contacts / contactsWillMove / contactsWillSkip
 counts.followUps / followUpPlans / attachments / collaborations
 counts.relationsToRemove
-contactConflicts[]
 ```
 
-正式 merge 与 preview 共用同一套范围、负责人、库容和联系人冲突计算逻辑。合并不可回退；Web 必须在 preview 后进行二次确认。
+正式 merge 与 preview 共用同一套范围、负责人和库容校验逻辑。合并不可回退；Web 必须在 preview 后进行二次确认。
 
 ## 池隐藏字段与负责人历史
 
@@ -572,7 +542,7 @@ POST /customers/batch/delete
 - fixed/custom 字段统一先解析元数据；hidden/formula 不允许批改。
 - `ownerId` 是特殊字段，会复用负责人分配链路，不会绕过库容、部门同步、负责人历史和通知。
 - 普通批量修改/删除先校验整批数据范围；任一记录无权操作时不会先写入其它记录。
-- Customer 删除前检查 Contact 引用；命中联系人引用时整批拒绝。跟进记录、跟进计划、附件、协作关系和客户关系等当前通用资源由删除事务统一清理。
+- Customer 删除事务会统一清理跟进记录、跟进计划、附件、协作关系和客户关系等当前通用资源。
 
 线索池 / 客户公海接口使用独立权限：
 

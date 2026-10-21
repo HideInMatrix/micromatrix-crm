@@ -72,7 +72,6 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
     primary: [
       { label: '客户表单设置', formModule: 'customer' },
       { label: '搜索设置', searchModule: 'customer' },
-      { label: '联系人表单设置', formModule: 'contact' },
       { label: '公海设置', drawer: 'customer-pool' },
     ],
     more: [

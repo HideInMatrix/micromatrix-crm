@@ -71,15 +71,12 @@ onMounted(load)
             <div class="font-semibold text-[var(--text-n1)]">快捷入口</div>
           </template>
         </van-cell>
-        <van-grid :border="false" :column-num="3" class="mt-3">
+        <van-grid :border="false" :column-num="2" class="mt-3">
           <van-grid-item text="新建线索" @click="router.push('/leads/create')">
             <template #icon><van-icon name="records-o" size="30" color="#ff9f0a" /></template>
           </van-grid-item>
           <van-grid-item text="新建客户" @click="router.push('/customers/create')">
             <template #icon><van-icon name="manager-o" size="30" color="#07c160" /></template>
-          </van-grid-item>
-          <van-grid-item text="新建联系人" @click="router.push('/contacts/create')">
-            <template #icon><van-icon name="friends-o" size="30" color="#3b82f6" /></template>
           </van-grid-item>
         </van-grid>
       </van-cell-group>

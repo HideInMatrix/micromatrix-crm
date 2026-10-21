@@ -12,7 +12,7 @@ import {
   getCustomer as getAccount,
   listCustomers as listAccounts,
 } from './customers'
-import { contactApi, leadApi } from './sales'
+import { leadApi } from './sales'
 
 export function fetchFields(module: string) {
   return http.get<FieldVO[]>(`/metadata/${module}/fields`)
@@ -26,9 +26,6 @@ export function getCustomer(id: string, pool = false) {
   return getAccount(id, pool)
 }
 
-export function listCustomerContacts(customerId: string) {
-  return contactApi.list(customerId)
-}
 
 export function createCustomer(data: Record<string, unknown>) {
   return createAccount(data)
@@ -59,7 +56,6 @@ export function transformLead(data: { clueId: string }) {
   return http.post<{
     clueId: string
     customerId: string
-    contactId: string | null
   }>('/lead/transform', data)
 }
 

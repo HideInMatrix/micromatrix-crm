@@ -61,7 +61,6 @@ function customerServices(options: {
     ) => ({ lead: { id: leadId }, customerCustomData }),
     convertResolvedLeadInTransaction: async () => ({
       customerId: 'customer-from-lead',
-      contactIds: [],
       createdCustomer: { id: 'customer-from-lead' },
     }),
     notifyResolvedLeadConversion: async () => undefined,
@@ -328,8 +327,7 @@ test(
         },
         convertResolvedLeadInTransaction: async () => ({
           customerId: 'customer-from-lead',
-          contactIds: [],
-          createdCustomer: { id: 'customer-from-lead' },
+              createdCustomer: { id: 'customer-from-lead' },
         }),
         notifyResolvedLeadConversion: async () => {
           notified++
