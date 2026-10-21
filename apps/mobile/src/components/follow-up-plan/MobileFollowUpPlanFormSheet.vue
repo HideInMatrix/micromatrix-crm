@@ -40,7 +40,10 @@ defineExpose({
         {{ form.editing.value ? '编辑跟进计划' : '新建跟进计划' }}
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto py-4" data-testid="mobile-follow-plan-dynamic-fields">
+      <div
+        class="min-h-0 flex-1 overflow-auto py-4"
+        data-testid="mobile-follow-plan-dynamic-fields"
+      >
         <MobileDynamicForm
           v-model="form.formModel.value"
           :fields="form.fields.value"
@@ -77,4 +80,3 @@ defineExpose({
     </div>
   </van-popup>
 </template>
-

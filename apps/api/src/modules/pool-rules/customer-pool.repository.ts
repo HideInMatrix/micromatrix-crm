@@ -7,7 +7,10 @@ import {
 import type { PrismaClient } from '../../prisma/db.js'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { PrismaService } from '../../prisma.service.js'
-import type { DirectCapacityConfigurationInput, DirectPoolConfigurationInput } from './pool-domain.types'
+import type {
+  DirectCapacityConfigurationInput,
+  DirectPoolConfigurationInput,
+} from './pool-domain.types'
 import {
   loadUserScopeTokensPrisma,
   parseStringArray,

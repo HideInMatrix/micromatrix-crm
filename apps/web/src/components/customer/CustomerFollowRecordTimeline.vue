@@ -26,7 +26,7 @@ function formatDate(value: string | null) {
 <template>
   <section v-loading="props.loading" class="min-h-[120px]">
     <h3
-      class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+      class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-none font-medium text-[#333333]"
     >
       <span
         aria-hidden="true"
@@ -55,11 +55,11 @@ function formatDate(value: string | null) {
               : 'bg-[#A9A9A9]'
           "
         />
-        <time class="block text-[14px] leading-5 text-[#999999]" :datetime="record.createdAt">
+        <time class="block text-[14px] leading-none text-[#999999]" :datetime="record.createdAt">
           {{ formatDate(record.createdAt) }}
         </time>
         <div
-          class="mt-[12px] whitespace-pre-wrap break-words text-[14px] leading-[22px] text-[#333333]"
+          class="mt-[12px] whitespace-pre-wrap break-words text-[14px] leading-none text-[#333333]"
         >
           {{ record.content }}
         </div>

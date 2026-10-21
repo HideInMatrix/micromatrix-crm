@@ -29,7 +29,7 @@ export function useLoginBranding(
       ? {
           backgroundImage: `url(${enterpriseUi.loginImageUrl})`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          backgroundPosition: 'left center',
         }
       : {},
   )

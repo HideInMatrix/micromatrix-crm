@@ -128,6 +128,12 @@ const router = createRouter({
           },
         },
         {
+          // 兼容旧链接：独立联系人模块已移除，旧入口统一返回客户列表。
+          path: 'contacts',
+          name: 'contacts-redirect',
+          redirect: { name: 'customers' },
+        },
+        {
           path: 'customers/open-sea',
           name: 'customer-open-sea',
           component: () => import('@/views/customers/CustomerPoolView.vue'),

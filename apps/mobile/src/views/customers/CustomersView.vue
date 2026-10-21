@@ -27,11 +27,7 @@ watch(
 
 <template>
   <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
-    <van-tabs
-      v-model:active="activeTab"
-      border
-      class="shrink-0"
-    >
+    <van-tabs v-model:active="activeTab" border class="shrink-0">
       <van-tab v-for="tab in tabs" :key="tab.name" :name="tab.name">
         <template #title>
           <div class="text-base" :class="activeTab === tab.name ? 'text-[var(--primary-8)]' : ''">

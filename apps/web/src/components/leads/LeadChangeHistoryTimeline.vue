@@ -65,7 +65,7 @@ onMounted(load)
 <template>
   <section v-loading="loading" class="min-h-[120px]">
     <h3
-      class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+      class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-none font-medium text-[#333333]"
     >
       <span
         aria-hidden="true"
@@ -99,11 +99,11 @@ onMounted(load)
               : 'bg-[#A9A9A9]'
           "
         />
-        <time class="block text-[14px] leading-5 text-[#999999]" :datetime="row.endedAt">
+        <time class="block text-[14px] leading-none text-[#999999]" :datetime="row.endedAt">
           {{ formatDate(row.endedAt) }}
         </time>
         <div
-          class="mt-[12px] whitespace-pre-wrap break-words text-[14px] leading-[22px] text-[#333333]"
+          class="mt-[12px] whitespace-pre-wrap break-words text-[14px] leading-none text-[#333333]"
         >
           负责人由 {{ ownerLabel(row) }} 变更为 {{ nextOwner(row) }}
         </div>

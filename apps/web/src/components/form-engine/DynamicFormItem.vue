@@ -32,6 +32,12 @@ const precision = computed(
   () => props.field.config?.precision ?? (props.field.type === 'currency' ? 2 : 0),
 )
 const stringValue = computed(() => (typeof model.value === 'string' ? model.value : undefined))
+const datetimePrecision = computed(() => props.field.config?.datetimePrecision ?? 'minute')
+const datetimePickerValue = computed(() => {
+  const value = stringValue.value
+  if (!value || datetimePrecision.value !== 'day') return value
+  return value.slice(0, 10)
+})
 const numberValue = computed(() => (typeof model.value === 'number' ? model.value : undefined))
 const stringArrayValue = computed(() =>
   Array.isArray(model.value)
@@ -100,9 +106,10 @@ const fieldOptions = computed(() => {
   />
   <el-date-picker
     v-else-if="field.type === 'datetime'"
-    :model-value="stringValue"
-    type="datetime"
-    value-format="YYYY-MM-DD HH:mm:ss"
+    :model-value="datetimePickerValue"
+    :type="datetimePrecision === 'day' ? 'date' : 'datetime'"
+    :format="datetimePrecision === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:mm'"
+    :value-format="datetimePrecision === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:mm:ss'"
     :placeholder="placeholder"
     class="!w-full"
     @update:model-value="model = $event"

@@ -39,6 +39,21 @@ html:not(.dark) {
   --el-fill-color-blank: var(--text-n10);
 }
 
+:root .el-input,
+:root .el-textarea {
+  --el-input-text-color: #000;
+}
+
+/* Element Plus 下拉框：分别覆盖可筛选输入文字变量与已选值的实际文字颜色。 */
+:root .el-select {
+  --el-input-text-color: #000;
+  --el-select-multiple-input-color: #000;
+}
+
+.el-select .el-select__wrapper {
+  color: #000;
+}
+
 .el-card {
   --el-card-border-radius: var(--border-radius-medium);
   --el-card-border-color: var(--el-border-color-light);
@@ -84,6 +99,9 @@ html:not(.dark) {
 
 .el-dialog {
   --el-dialog-border-radius: var(--border-radius-medium);
+  /* Element Plus Dialog 标题行高变量；同时设置外壳行高供未单独声明的内容继承。 */
+  --el-dialog-font-line-height: 1;
+  line-height: 1;
 }
 
 .el-dialog__header {
@@ -99,6 +117,20 @@ html:not(.dark) {
 }
 
 /* CRM PC 通用弹窗：只约束 CrmDialog 外壳，不影响抽屉、Popconfirm 和普通页面按钮。 */
+.crm-dialog.crm-resource-form-dialog {
+  --el-component-size: 38px;
+}
+
+.crm-dialog.crm-resource-form-dialog .el-dialog__body .crm-dynamic-form .el-input__wrapper,
+.crm-dialog.crm-resource-form-dialog .el-dialog__body .crm-dynamic-form .el-select__wrapper {
+  @apply h-[38px] min-h-[38px];
+}
+
+/* 新建线索 / 客户弹窗的表单字段行间距统一为 16px。 */
+.crm-dialog.crm-resource-form-dialog .el-dialog__body .crm-dynamic-form.el-form .el-row {
+  @apply gap-y-4;
+}
+
 .crm-dialog.el-dialog {
   --el-dialog-border-radius: 16px;
   --el-dialog-bg-color: #ffffff;

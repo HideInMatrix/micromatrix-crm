@@ -9,6 +9,7 @@ type LeadSystemColumn = {
   listWidth: number
   systemColumn: true
 }
+import LeadEmptyState from '@/components/leads/LeadEmptyState.vue'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useAuthStore } from '@/stores/auth'
 
@@ -120,6 +121,13 @@ function handleToPool(row: LeadVO) {
       class="lead-list-table__grid w-full"
       @selection-change="handleSelectionChange"
     >
+      <template #empty>
+        <LeadEmptyState
+          title="暂无线索"
+          :description="isPoolMode ? '可领取的线索会显示在这里' : '新的线索会显示在这里'"
+          data-testid="lead-list-empty"
+        />
+      </template>
       <el-table-column
         v-if="
           (!isPoolMode &&

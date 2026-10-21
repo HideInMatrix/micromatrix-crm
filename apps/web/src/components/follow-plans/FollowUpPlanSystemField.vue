@@ -111,10 +111,5 @@ const stringValue = computed(() => (typeof props.modelValue === 'string' ? props
     @update:model-value="update"
   />
 
-  <el-input
-    v-else
-    :model-value="stringValue"
-    :disabled="readonly"
-    @update:model-value="update"
-  />
+  <el-input v-else :model-value="stringValue" :disabled="readonly" @update:model-value="update" />
 </template>

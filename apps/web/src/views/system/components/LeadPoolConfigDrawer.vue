@@ -25,6 +25,7 @@ const dynamicOptions = [
   { label: '上月', value: 'LAST_MONTH' },
   { label: '过去 7 天', value: 'LAST_SEVEN' },
   { label: '过去 30 天', value: 'LAST_THIRTY' },
+  { label: '早于 7 天前', value: 'CUSTOM,7,BEFORE_DAY' },
   { label: '早于 30 天前', value: 'CUSTOM,30,BEFORE_DAY' },
   { label: '早于 90 天前', value: 'CUSTOM,90,BEFORE_DAY' },
 ]
@@ -64,8 +65,8 @@ function addCondition() {
   form.recycleConditions.push({
     column: 'storageTime',
     operator: 'DYNAMICS',
-    value: 'CUSTOM,30,BEFORE_DAY',
-    scope: ['Created', 'Picked'],
+    value: 'CUSTOM,7,BEFORE_DAY',
+    scope: ['Picked'],
     fixedRange: [],
   })
 }
@@ -103,7 +104,7 @@ async function save(continueCreate = false) {
     operator: condition.operator,
     value: condition.operator === 'FIXED' ? condition.fixedRange.join(',') : condition.value.trim(),
     ...(condition.column === 'storageTime'
-      ? { scope: condition.scope?.length ? condition.scope : ['Created', 'Picked'] }
+      ? { scope: condition.scope?.length ? condition.scope : ['Picked'] }
       : {}),
   })) as ResourcePoolRecycleCondition[]
   if (form.autoRecycle && (!conditions.length || conditions.some((item) => !item.value))) {
@@ -217,9 +218,14 @@ watch(visible, async (open) => {
             <el-date-picker v-else v-model="condition.fixedRange" type="datetimerange" value-format="x" class="!w-full" />
             <el-button link type="danger" @click="form.recycleConditions.splice(index, 1)">删除</el-button>
           </div>
-          <el-checkbox-group v-if="condition.column === 'storageTime'" v-model="condition.scope" class="mt-2">
-            <el-checkbox value="Created">创建时间</el-checkbox><el-checkbox value="Picked">最近领取时间</el-checkbox>
-          </el-checkbox-group>
+          <template v-if="condition.column === 'storageTime'">
+            <el-checkbox-group v-model="condition.scope" class="mt-2">
+              <el-checkbox value="Created">创建时间</el-checkbox><el-checkbox value="Picked">最近领取时间</el-checkbox>
+            </el-checkbox-group>
+            <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+              多选时，所有选中时间都需早于阈值才满足。按领取后超期回收时，建议仅勾选「最近领取时间」。
+            </div>
+          </template>
         </div>
       </template>
 

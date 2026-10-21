@@ -275,7 +275,7 @@ test(
         return {
           customerId: 'customer-created',
           createdCustomer: { id: 'customer-created' },
-            }
+        }
       },
       notifyResolvedLeadConversion: async () => undefined,
     } as unknown as LeadsService

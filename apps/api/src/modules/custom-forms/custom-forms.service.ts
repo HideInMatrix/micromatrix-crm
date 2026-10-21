@@ -1231,7 +1231,15 @@ export class CustomFormsService {
       const date = new Date(String(condition.value ?? ''))
       if (Number.isNaN(date.getTime()))
         throw new BadRequestException(`「${field.label}」日期筛选值不合法`)
-      const iso = date.toISOString()
+      const filterText = String(condition.value ?? '')
+      const isDateOnlyPrecision =
+        field.type === 'datetime' &&
+        field.config?.datetimePrecision === 'day' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(filterText)
+      const iso =
+        isDateOnlyPrecision && condition.op === 'lte'
+          ? `${filterText}T23:59:59.999Z`
+          : date.toISOString()
       if (condition.op === 'gte') {
         return existsNormal(
           client.raw.sql`field_value.field_value::timestamptz >= ${iso}::timestamptz`.returns(

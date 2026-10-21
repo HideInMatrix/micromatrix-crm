@@ -799,7 +799,7 @@ onMounted(async () => {
           :title="homeFilterSummary"
           type="info"
           show-icon
-          class="mb-4"
+          class="!mb-4"
           @close="clearHomeFilter"
         />
         <ModuleQuickSearch
@@ -827,7 +827,7 @@ onMounted(async () => {
         :title="homeFilterSummary"
         type="info"
         show-icon
-        class="mb-4"
+        class="!mb-4"
         @close="clearHomeFilter"
       />
 
@@ -903,6 +903,7 @@ onMounted(async () => {
 
       <CrmDialog
         v-model="dialogVisible"
+        class="crm-resource-form-dialog"
         :title="editingId ? '编辑线索' : '新建线索'"
         :width="formDialogWidth"
         destroy-on-close

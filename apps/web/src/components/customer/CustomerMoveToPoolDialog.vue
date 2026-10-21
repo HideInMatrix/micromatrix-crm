@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
+import CrmInfoAlert from '@/components/CrmInfoAlert.vue'
 import { computed, ref, watch } from 'vue'
-import {
-  batchMoveCustomersToPool,
-  moveCustomerToPool,
-} from '@/api/customers'
+import { batchMoveCustomersToPool, moveCustomerToPool } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
 import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
@@ -94,19 +92,16 @@ watch(visible, (open) => {
   <CrmDialog
     v-model="visible"
     :title="title"
-    width="520px"
+    width="max-content"
     destroy-on-close
     :close-on-click-modal="false"
     data-testid="customer-move-to-pool-dialog"
   >
     <div v-loading="loading">
-      <el-alert
-        class="mb-4"
-        type="warning"
-        :closable="false"
-        title="移入公海后客户负责人会被清空，并按目标公海的领取、库容与自动回收规则管理。"
-      />
-      <el-form label-width="110px">
+      <CrmInfoAlert>
+        移入公海后客户负责人会被清空，并按目标公海的领取、库容与自动回收规则管理。
+      </CrmInfoAlert>
+      <el-form class="mt-5" label-width="110px">
         <el-form-item label="客户公海" required>
           <el-select v-model="poolId" class="w-full" placeholder="请选择客户公海">
             <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />

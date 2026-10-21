@@ -71,6 +71,11 @@ export function formatFieldValue(
         : String(value)
     }
     case 'datetime': {
+      if (field.config?.datetimePrecision === 'day') {
+        const text = value instanceof Date ? value.toISOString() : String(value)
+        const dateOnly = text.match(/^(\d{4}-\d{2}-\d{2})/)
+        if (dateOnly?.[1]) return dateOnly[1]
+      }
       const date = value instanceof Date ? value : new Date(String(value))
       if (Number.isNaN(date.getTime())) return String(value).replace('T', ' ').slice(0, 16)
       const pad = (part: number) => String(part).padStart(2, '0')

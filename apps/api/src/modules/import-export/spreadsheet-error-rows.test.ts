@@ -63,7 +63,7 @@ test('拒绝无效、越界或为空的异常行号', async () => {
   }
 })
 
-test('客户、联系人等共享错误行下载接口只接受 JSON 数字行号数组', () => {
+test('客户等共享错误行下载接口只接受 JSON 数字行号数组', () => {
   const spreadsheet = new SpreadsheetService()
   assert.deepEqual(spreadsheet.parseErrorRowNumbers('[3,5,3]'), [3, 5, 3])
   for (const input of ['nope', '{}', 'null', '["3"]', '[3,null]', '[true]', '3']) {

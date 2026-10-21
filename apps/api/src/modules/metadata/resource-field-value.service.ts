@@ -1262,11 +1262,22 @@ export class ResourceFieldValueService {
       return condition.op === 'notIn' ? negate(matched) : matched
     }
 
-    const serialized =
+    let serialized =
       condition.op === 'contains' || condition.op === 'notContains'
         ? this.serializeContainsValue(field, condition.value)
         : this.serialize(field, condition.value)
     if (serialized === null) throw new BadRequestException('筛选值不能为空')
+    // A date-only datetime field represents the whole calendar day. An inclusive upper
+    // bound must therefore reach the end of that day, not midnight at its beginning.
+    const filterText = String(condition.value ?? '')
+    if (
+      field.type === 'datetime' &&
+      field.config?.datetimePrecision === 'day' &&
+      condition.op === 'lte' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(filterText)
+    ) {
+      serialized = `${filterText}T23:59:59.999Z`
+    }
     const storage = this.storageFor(field.type, serialized)
     let match: PrismaRawExpression
     if (condition.op === 'contains' || condition.op === 'notContains') {

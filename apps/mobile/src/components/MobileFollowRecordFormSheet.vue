@@ -172,11 +172,7 @@ watch(show, (open) => {
           <van-field label="关联对象" :model-value="plan.targetName" readonly />
           <MobileVantPickerField v-model="form.type" label="跟进方式" :options="typeOptions" />
           <MobileVantPickerField v-model="form.ownerId" label="负责人" :options="ownerOptions" />
-          <MobileVantDateTimeField
-            v-model="form.followedAt"
-            label="跟进时间"
-            format="local"
-          />
+          <MobileVantDateTimeField v-model="form.followedAt" label="跟进时间" format="local" />
           <van-field
             v-model="form.content"
             label="跟进内容"

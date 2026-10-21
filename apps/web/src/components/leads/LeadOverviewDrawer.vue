@@ -50,10 +50,11 @@ const descriptionFields = computed(() => props.fields.filter((field) => !field.h
 const isAdmissionsConfig = computed(() =>
   props.fields.some((field) => /(学员|学生|家长|招生)/.test(field.label)),
 )
-const stageLabel = computed(
-  () =>
-    props.leadStages?.find((stage) => stage.key === lead.value?.status)?.name ?? lead.value?.status,
+const currentStage = computed(() =>
+  props.leadStages?.find((stage) => stage.key === lead.value?.status),
 )
+const stageLabel = computed(() => currentStage.value?.name ?? lead.value?.status)
+const isFailureStage = computed(() => currentStage.value?.kind === 'FAILURE')
 
 function displayValue(field: FieldVO) {
   if (!lead.value) return '-'
@@ -136,7 +137,7 @@ watch(
       <header
         class="flex h-[58px] min-h-[58px] shrink-0 items-center justify-between bg-[#F7F8FA] px-5"
       >
-        <h2 class="m-0 text-[18px] leading-[26px] font-medium text-black">
+        <h2 class="m-0 text-[18px] leading-none font-medium text-black">
           {{ mode === 'pool' ? '线索池详情' : '线索详情' }}
         </h2>
         <button
@@ -152,7 +153,7 @@ watch(
       <div v-loading="loading" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <template v-if="lead">
           <div
-            class="m-5 flex min-h-[100px] shrink-0 items-center gap-3 rounded-[7px] bg-[#F7F8FA] px-[18px] py-[17px] max-sm:gap-[9px] max-sm:p-3"
+            class="mx-5 mt-5 mb-[10px] flex min-h-[100px] shrink-0 items-center gap-3 rounded-[7px] bg-[#F7F8FA] px-[18px] py-[17px] max-sm:gap-[9px] max-sm:p-3"
           >
             <div
               class="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-full bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
@@ -162,16 +163,21 @@ watch(
             </div>
             <div class="flex min-w-0 flex-1 flex-col gap-[6px]">
               <div class="flex min-w-0 items-center gap-2">
-                <strong class="truncate text-[20px] leading-[28px] font-medium text-[#000000]">{{
+                <strong class="truncate text-[20px] leading-none font-medium text-[#000000]">{{
                   lead.name
                 }}</strong>
                 <span
                   v-if="stageLabel"
-                  class="shrink-0 rounded-[4px] bg-[var(--el-color-primary-light-9)] px-2 py-[3px] text-[12px] leading-[18px] text-[var(--el-color-primary)]"
+                  class="shrink-0 rounded-[4px] px-2 py-[3px] text-[12px] leading-none"
+                  :class="
+                    isFailureStage
+                      ? 'bg-[#FEEDEC] text-[#F04438]'
+                      : 'bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]'
+                  "
                   >{{ stageLabel }}</span
                 >
               </div>
-              <div v-if="lead.phone" class="text-[14px] leading-5 text-[#999999]">
+              <div v-if="lead.phone" class="text-[14px] leading-none text-[#999999]">
                 {{ lead.phone }}
               </div>
             </div>
@@ -180,11 +186,11 @@ watch(
           <el-tabs v-model="activeTab" class="flex min-h-0 flex-1 flex-col">
             <el-tab-pane label="概览" name="overview">
               <div
-                class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5 [scrollbar-gutter:stable]"
+                class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[20px] pb-5 [scrollbar-gutter:stable]"
               >
                 <section v-if="descriptionFields.length">
                   <h3
-                    class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+                    class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-none font-medium text-[#333333]"
                   >
                     <span
                       aria-hidden="true"
@@ -194,9 +200,12 @@ watch(
                   </h3>
                   <div class="grid grid-cols-3 items-start gap-x-5 gap-y-5 text-left">
                     <template v-for="field in descriptionFields" :key="field.id">
-                      <section v-if="field.type === 'textarea'" class="col-span-3 min-w-0">
+                      <section
+                        v-if="field.type === 'textarea'"
+                        class="col-span-3 mt-[10px] min-w-0"
+                      >
                         <h3
-                          class="m-0 flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+                          class="m-0 flex items-center gap-[6px] text-[14px] leading-none font-medium text-[#333333]"
                         >
                           <span
                             aria-hidden="true"
@@ -205,17 +214,19 @@ watch(
                           {{ field.label }}
                         </h3>
                         <div
-                          class="mt-[13px] whitespace-pre-wrap break-words text-[14px] leading-5 font-normal text-[#333333]"
+                          class="mt-1 whitespace-pre-wrap break-words text-[14px] leading-none font-normal text-[#333333]"
                         >
                           {{ displayValue(field) }}
                         </div>
                       </section>
                       <div v-else class="min-w-0 text-left">
-                        <div class="break-words text-[14px] leading-5 font-normal text-[#999999]">
+                        <div
+                          class="break-words text-[14px] leading-none font-normal text-[#999999]"
+                        >
                           {{ field.label }}
                         </div>
                         <div
-                          class="mt-[13px] whitespace-pre-wrap break-words text-[14px] leading-5 text-[#333333]"
+                          class="mt-1 whitespace-pre-wrap break-words text-[14px] leading-none text-[#333333]"
                         >
                           {{ displayValue(field) }}
                         </div>

@@ -539,7 +539,7 @@ export class CustomersService {
     }
   }
 
-  /** 客户系统视图能力与线索、联系人共享同一业务数据范围。 */
+  /** 客户系统视图能力与线索共享同一业务数据范围。 */
   tab(user: AuthUser) {
     return this.dataScope.businessViewCapabilities(user)
   }

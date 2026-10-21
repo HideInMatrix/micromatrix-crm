@@ -37,7 +37,7 @@ export interface CustomerAccessContext {
 /**
  * 客户资源访问的单一裁决入口。
  *
- * Cordys 的客户详情、联系人和跟进分别有协作特例；MicroMatrix 将这些语义
+ * Cordys 的客户详情和跟进分别有协作特例；MicroMatrix 将这些语义
  * 收敛到一个上下文，避免 Controller/Service 各自拼接 teamMembers 查询导致越权。
  */
 @Injectable()

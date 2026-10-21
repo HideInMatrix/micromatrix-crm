@@ -120,8 +120,8 @@ function handlePersonalCommand(command: string) {
           v-if="enterpriseUi.platformLogoUrl"
           :src="enterpriseUi.platformLogoUrl"
           :alt="enterpriseUi.branding.title"
-          class="h-7 shrink-0 object-contain"
-          :class="sidebarCollapsed ? 'max-w-7' : 'max-w-[130px]'"
+          class="shrink-0 object-contain"
+          :class="sidebarCollapsed ? 'h-7 max-w-7' : 'h-[40px] w-[184px] max-w-none'"
         />
         <span v-else-if="!sidebarCollapsed" class="truncate text-[16px] font-semibold text-white">
           {{ enterpriseUi.branding.title }}
@@ -203,7 +203,7 @@ function handlePersonalCommand(command: string) {
           :collapse="sidebarCollapsed"
           :collapse-transition="false"
           router
-          class="min-h-0 flex-1 !w-full overflow-y-auto !border-r-0 !bg-transparent !pt-[50px] !pb-1 font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          class="min-h-0 flex-1 !w-full overflow-y-auto !border-r-0 !bg-transparent !pt-[30px] !pb-1 font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           :class="sidebarCollapsed ? '!px-[10px]' : '!px-4'"
           :style="{
             '--el-menu-bg-color': 'transparent',

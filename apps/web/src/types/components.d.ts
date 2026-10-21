@@ -114,6 +114,7 @@ declare module 'vue' {
     FollowUpPlanSystemField: typeof import('./../components/follow-plans/FollowUpPlanSystemField.vue')['default']
     FormAlert: typeof import('./../components/form-engine/FormAlert.vue')['default']
     LeadChangeHistoryTimeline: typeof import('./../components/leads/LeadChangeHistoryTimeline.vue')['default']
+    LeadEmptyState: typeof import('./../components/leads/LeadEmptyState.vue')['default']
     LeadListTable: typeof import('./../components/leads/LeadListTable.vue')['default']
     LeadListToolbar: typeof import('./../components/leads/LeadListToolbar.vue')['default']
     LeadMoveToPoolDialog: typeof import('./../components/leads/LeadMoveToPoolDialog.vue')['default']

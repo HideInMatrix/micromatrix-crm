@@ -10,8 +10,6 @@ import {
   type HomeAnalyticsVO,
   type HomeAnalyticsWidgetResult,
   type HomeWidgetPeriod,
-  type HomeDepartmentNode,
-  type HomeStatisticRequest,
   type NotificationVO,
 } from '@micromatrix/shared'
 import {
@@ -31,7 +29,6 @@ import {
   SquareCheckBig,
   PieChart,
   CalendarClock,
-  CalendarDays,
   BellRing,
   MessageCircleMore,
   MessageSquareText,
@@ -50,6 +47,7 @@ import { leadApi } from '@/api/sales'
 import { metadataApi } from '@/api/metadata'
 import { notificationApi } from '@/api/system'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
+import LeadEmptyState from '@/components/leads/LeadEmptyState.vue'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
 import PasswordFormFields from '@/components/personal/PasswordFormFields.vue'
 import EChart from '@/components/EChart.vue'
@@ -61,10 +59,7 @@ const auth = useAuthStore()
 const moduleConfig = useModuleConfigStore()
 const router = useRouter()
 
-const departmentTree = ref<HomeDepartmentNode[]>([])
-const activeDeptId = ref('SELF')
-const searchType = ref<HomeStatisticRequest['searchType']>('SELF')
-const selectedDeptIds = ref<string[]>([])
+const searchType = 'SELF' as const
 const statisticLoading = ref(false)
 const analytics = ref<HomeAnalyticsVO | null>(null)
 const widgetLoading = ref(false)
@@ -106,79 +101,10 @@ const stageLabel = (stage: string) =>
 
 const hasLeadRead = computed(() => auth.hasPerm('menu:lead'))
 
-interface DepartmentSelectNode {
-  value: string
-  label: string
-  children?: DepartmentSelectNode[]
-}
-
-function toDepartmentSelectNodes(nodes: HomeDepartmentNode[]): DepartmentSelectNode[] {
-  return nodes.map((node) => ({
-    value: node.id,
-    label: node.name,
-    ...(node.children?.length ? { children: toDepartmentSelectNodes(node.children) } : {}),
-  }))
-}
-
-const departmentOptions = computed<DepartmentSelectNode[]>(() => [
-  { value: 'SELF', label: '本人' },
-  ...toDepartmentSelectNodes(departmentTree.value),
-])
-
-function flattenDepartmentIds(nodes: HomeDepartmentNode[]): string[] {
-  return nodes.flatMap((node) => [node.id, ...flattenDepartmentIds(node.children ?? [])])
-}
-
-function findDepartment(nodes: HomeDepartmentNode[], id: string): HomeDepartmentNode | null {
-  for (const node of nodes) {
-    if (node.id === id) return node
-    const child = findDepartment(node.children ?? [], id)
-    if (child) return child
-  }
-  return null
-}
-
-async function loadDepartmentTree() {
-  try {
-    const { data } = await homeApi.departmentTree()
-    departmentTree.value = data
-    if (!data.length) {
-      activeDeptId.value = 'SELF'
-      searchType.value = 'SELF'
-      selectedDeptIds.value = []
-      return
-    }
-    activeDeptId.value = data[0].id
-    if (data.length === 1) {
-      searchType.value = 'ALL'
-      selectedDeptIds.value = flattenDepartmentIds(data)
-    } else {
-      searchType.value = 'DEPARTMENT'
-      selectedDeptIds.value = flattenDepartmentIds([data[0]])
-    }
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleDepartmentChange(value: string) {
-  if (value === 'SELF') {
-    searchType.value = 'SELF'
-    selectedDeptIds.value = []
-  } else {
-    const node = findDepartment(departmentTree.value, value)
-    const firstRootId = departmentTree.value[0]?.id
-    searchType.value =
-      value === firstRootId && departmentTree.value.length === 1 ? 'ALL' : 'DEPARTMENT'
-    selectedDeptIds.value = node ? flattenDepartmentIds([node]) : []
-  }
-  await loadStatistics()
-}
-
-function statisticRequest(): HomeStatisticRequest {
+function statisticRequest() {
   return {
-    searchType: searchType.value,
-    deptIds: selectedDeptIds.value,
+    searchType,
+    deptIds: [] as string[],
   }
 }
 
@@ -226,7 +152,6 @@ async function loadStatistics() {
 
 function openLeadAnalytics(
   options: {
-    searchType?: HomeStatisticRequest['searchType']
     period?: 'TODAY'
     filters?: FilterCondition[]
     leadStageKey?: string
@@ -237,10 +162,10 @@ function openLeadAnalytics(
   if (!hasLeadRead.value) return
   const key = storeHomeFilter({
     module: 'lead',
-    searchType: options.searchType ?? searchType.value,
-    deptIds: options.searchType === 'SELF' ? [] : selectedDeptIds.value,
     userField: 'OWNER',
     ...options,
+    searchType,
+    deptIds: [],
   })
   void router.push({ path: '/leads', query: { homeFilter: key } })
 }
@@ -744,13 +669,7 @@ const pageLoading = ref(true)
 onMounted(async () => {
   showDefaultPasswordMessage()
   try {
-    await Promise.all([
-      moduleConfig.load(),
-      loadDepartmentTree(),
-      loadMyLeads(),
-      loadPendingPools(),
-      loadNotifications(),
-    ])
+    await Promise.all([moduleConfig.load(), loadMyLeads(), loadPendingPools(), loadNotifications()])
     loadQuickAccess()
     await loadStatistics()
   } finally {
@@ -766,14 +685,6 @@ onBeforeUnmount(() => {
 <template>
   <div v-loading="pageLoading" class="min-h-full min-w-[1030px]" data-testid="home-page">
     <div class="mb-3 flex items-center justify-end gap-2" data-testid="home-toolbar">
-      <el-tree-select
-        v-model="activeDeptId"
-        :data="departmentOptions"
-        check-strictly
-        filterable
-        class="!w-44"
-        @change="handleDepartmentChange"
-      />
       <el-button
         data-testid="home-overview-refresh"
         :loading="statisticLoading"
@@ -895,46 +806,16 @@ onBeforeUnmount(() => {
               >
             </div>
           </div>
-          <el-button
-            link
-            type="primary"
-            :disabled="!hasLeadRead"
-            @click="openLeadAnalytics({ searchType: 'SELF' })"
-          >
+          <el-button link type="primary" :disabled="!hasLeadRead" @click="openLeadAnalytics()">
             查看全部 <ChevronRight :size="15" />
           </el-button>
         </div>
-        <div
+        <LeadEmptyState
           v-if="!myLeadsLoading && !myLeads.length"
-          class="flex min-h-[315px] flex-col items-center justify-center"
+          :title="hasLeadRead ? '暂无待跟进线索' : '暂无线索查看权限'"
+          :description="hasLeadRead ? '新的跟进任务会显示在这里' : '请联系管理员开通线索查看权限'"
           data-testid="home-my-leads-empty"
-        >
-          <div
-            class="relative flex h-[142px] w-[174px] items-center justify-center"
-            aria-hidden="true"
-          >
-            <span class="absolute top-6 right-2 h-3 w-3 rounded-full bg-[#D6FBE7]" />
-            <span class="absolute bottom-4 left-1 h-2.5 w-2.5 rounded-full bg-[#B6D0FF]" />
-            <div
-              class="relative flex h-[108px] w-[118px] items-center justify-center rounded-[24px] bg-[#EFF5FF]"
-            >
-              <CalendarDays :size="86" :stroke-width="1.5" class="text-[#5684FF]" />
-              <Clock3
-                :size="47"
-                :stroke-width="1.5"
-                class="absolute -right-2 -bottom-2 rounded-full bg-[#EFF5FF] text-[#5684FF]"
-              />
-            </div>
-          </div>
-          <div class="mt-4 flex flex-col items-center gap-[5px] text-center">
-            <span class="text-[16px] font-medium text-[#000000]">{{
-              hasLeadRead ? '暂无待跟进线索' : '暂无线索查看权限'
-            }}</span>
-            <span class="text-[14px] text-[#8A97AC]">{{
-              hasLeadRead ? '新的跟进任务会显示在这里' : '请联系管理员开通线索查看权限'
-            }}</span>
-          </div>
-        </div>
+        />
         <el-table
           v-else
           v-loading="myLeadsLoading"

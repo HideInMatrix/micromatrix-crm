@@ -35,7 +35,12 @@ export class ResourceRecycleConditionEvaluator {
     if (conditions.length === 0) return false
 
     const searchMode: SearchMode = mode === 'OR' ? 'OR' : 'AND'
-    const results = conditions.map((condition) => this.matchesCondition(condition, resource, now))
+    const canTreatMissingFollowUpAsNoFollowUp =
+      searchMode === 'AND' &&
+      conditions.some((condition) => this.isPickedStorageThreshold(condition, now))
+    const results = conditions.map((condition) =>
+      this.matchesCondition(condition, resource, now, canTreatMissingFollowUpAsNoFollowUp),
+    )
     return searchMode === 'AND' ? results.every(Boolean) : results.some(Boolean)
   }
 
@@ -43,24 +48,63 @@ export class ResourceRecycleConditionEvaluator {
     condition: ResourcePoolRecycleCondition,
     resource: RecycleTimeResource,
     now: Date,
+    canTreatMissingFollowUpAsNoFollowUp: boolean,
   ) {
     if (condition.column === 'storageTime') {
       const scope = condition.scope ?? []
       const created = scope.includes('Created')
       const picked = scope.includes('Picked')
-      if (created && !picked) return this.matchesTime(condition, resource.createdAt, now)
-      if (picked && !created) return this.matchesTime(condition, resource.collectedAt, now)
-      return (
-        this.matchesTime(condition, resource.createdAt, now) ||
-        this.matchesTime(condition, resource.collectedAt, now)
-      )
+      if (created && picked) {
+        // 同时勾选多个时间来源时，所有选中时间都必须满足条件，避免旧创建时间
+        // 覆盖近期领取时间而导致线索被提前回收。
+        return (
+          this.matchesTime(condition, resource.createdAt, now) &&
+          this.matchesTime(condition, resource.collectedAt, now)
+        )
+      }
+      if (created) return this.matchesTime(condition, resource.createdAt, now)
+      if (picked) return this.matchesTime(condition, resource.collectedAt, now)
+      return false
+    }
+    if (resource.lastFollowedAt === null) {
+      return canTreatMissingFollowUpAsNoFollowUp && this.matchesMissingFollowUp(condition, now)
     }
     return this.matchesTime(condition, resource.lastFollowedAt, now)
   }
 
+  private isPickedStorageThreshold(condition: ResourcePoolRecycleCondition, now: Date) {
+    if (
+      condition.column !== 'storageTime' ||
+      condition.operator !== 'DYNAMICS' ||
+      !condition.scope?.includes('Picked')
+    ) {
+      return false
+    }
+    const parts = condition.value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    return this.dynamicThreshold(parts, now)?.direction === 'before'
+  }
+
+  /**
+   * 没有跟进记录只表示“从未跟进”，不能命中“过去 7 天”等任意时间区间。
+   * 只有在 AND 规则中同时配置了“最近领取时间早于某个时间点”时，才视为满足
+   * “早于某个时间点”的跟进条件，避免仅配置跟进条件就立即回收从未跟进的线索。
+   */
+  private matchesMissingFollowUp(condition: ResourcePoolRecycleCondition, now: Date) {
+    if (condition.operator !== 'DYNAMICS') return false
+    const parts = condition.value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const threshold = this.dynamicThreshold(parts, now)
+    return threshold?.direction === 'before'
+  }
+
   private matchesTime(condition: ResourcePoolRecycleCondition, time: Date | null, now: Date) {
-    // 与 Cordys RecycleConditionUtils.matchTime 保持兼容：空时间也满足回收条件。
-    if (!time) return true
+    // 缺失时间不匹配普通时间条件，避免 null 被误判为符合任意回收规则。
+    if (!time) return false
 
     const parts = condition.value
       .split(',')

@@ -550,13 +550,12 @@ export class FollowUpsService {
     const canLeadPool = hasPermission(user.permissions, 'leadPool:read')
     const canCustomer = hasPermission(user.permissions, 'customer:read')
     const canCustomerPool = hasPermission(user.permissions, 'customerPool:read')
-    const [leadScope, customerScope, leadPoolOptions, customerPoolOptions] =
-      await Promise.all([
-        canLead ? this.dataScope.directOwnerFilter(user, 'menu:lead') : null,
-        canCustomer ? this.dataScope.directOwnerFilter(user, 'customer:read') : null,
-        canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
-        canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
-      ])
+    const [leadScope, customerScope, leadPoolOptions, customerPoolOptions] = await Promise.all([
+      canLead ? this.dataScope.directOwnerFilter(user, 'menu:lead') : null,
+      canCustomer ? this.dataScope.directOwnerFilter(user, 'customer:read') : null,
+      canLeadPool ? this.pools.options(user, 'lead') : Promise.resolve([]),
+      canCustomerPool ? this.pools.options(user, 'customer') : Promise.resolve([]),
+    ])
     const applyOwnerScope = <T extends ReturnType<typeof this.prisma.client.orm.public.Clue.where>>(
       query: T,
       scope: any,
@@ -593,36 +592,36 @@ export class FollowUpsService {
     const collaborationIds = collaborationRows.map((item) => String(item.customerId))
     const [directLeads, poolLeads, directCustomers, collaborativeCustomers, poolCustomers] =
       await Promise.all([
-      leadScope ? directLeadQuery.select('id').all() : Promise.resolve([]),
-      canLeadPool && leadPoolOptions.length
-        ? this.prisma.client.orm.public.Clue.where({
-            organizationId: user.tenantId,
-            inSharedPool: true,
-          })
-            .where((row) => row.poolId.in(leadPoolOptions.map((item) => String(item.id))))
-            .select('id')
-            .all()
-        : Promise.resolve([]),
-      customerScope ? directCustomerQuery.select('id').all() : Promise.resolve([]),
-      collaborationIds.length
-        ? this.prisma.client.orm.public.Customer.where({
-            organizationId: user.tenantId,
-            inSharedPool: false,
-          })
-            .where((row) => row.id.in(collaborationIds))
-            .select('id')
-            .all()
-        : Promise.resolve([]),
-      canCustomerPool && customerPoolOptions.length
-        ? this.prisma.client.orm.public.Customer.where({
-            organizationId: user.tenantId,
-            inSharedPool: true,
-          })
-            .where((row) => row.poolId.in(customerPoolOptions.map((item) => String(item.id))))
-            .select('id')
-            .all()
-        : Promise.resolve([]),
-    ])
+        leadScope ? directLeadQuery.select('id').all() : Promise.resolve([]),
+        canLeadPool && leadPoolOptions.length
+          ? this.prisma.client.orm.public.Clue.where({
+              organizationId: user.tenantId,
+              inSharedPool: true,
+            })
+              .where((row) => row.poolId.in(leadPoolOptions.map((item) => String(item.id))))
+              .select('id')
+              .all()
+          : Promise.resolve([]),
+        customerScope ? directCustomerQuery.select('id').all() : Promise.resolve([]),
+        collaborationIds.length
+          ? this.prisma.client.orm.public.Customer.where({
+              organizationId: user.tenantId,
+              inSharedPool: false,
+            })
+              .where((row) => row.id.in(collaborationIds))
+              .select('id')
+              .all()
+          : Promise.resolve([]),
+        canCustomerPool && customerPoolOptions.length
+          ? this.prisma.client.orm.public.Customer.where({
+              organizationId: user.tenantId,
+              inSharedPool: true,
+            })
+              .where((row) => row.poolId.in(customerPoolOptions.map((item) => String(item.id))))
+              .select('id')
+              .all()
+          : Promise.resolve([]),
+      ])
     const leadIds = [...new Set([...directLeads, ...poolLeads].map((item) => String(item.id)))]
     const customerIds = [
       ...new Set(
@@ -689,11 +688,7 @@ export class FollowUpsService {
             .all()
         : Promise.resolve([]),
     ])
-    return [
-      ...new Set(
-        [...direct, ...leadRecords, ...customerRecords].map((item) => item.id),
-      ),
-    ]
+    return [...new Set([...direct, ...leadRecords, ...customerRecords].map((item) => item.id))]
   }
 
   private async filterIds(
@@ -785,10 +780,7 @@ export class FollowUpsService {
             return condition.value.map((item) => String(item))
           })()
         : [String(condition.value)]
-    if (
-      key === 'targetType' &&
-      values.some((value) => !['lead', 'customer'].includes(value))
-    ) {
+    if (key === 'targetType' && values.some((value) => !['lead', 'customer'].includes(value))) {
       throw new BadRequestException('关联类型筛选值不合法')
     }
     const value = values[0]!

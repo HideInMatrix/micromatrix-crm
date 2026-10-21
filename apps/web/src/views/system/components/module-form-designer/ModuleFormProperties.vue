@@ -53,6 +53,14 @@ const typeLabel = computed(
     (field.value?.type === 'alert' ? 'Alert 提示' : '-'),
 )
 const config = computed<FieldConfig>(() => field.value?.config ?? {})
+const datetimePrecision = computed({
+  get: () => config.value.datetimePrecision ?? 'minute',
+  set: (value: 'day' | 'minute') => {
+    if (!field.value) return
+    field.value.config ??= {}
+    field.value.config.datetimePrecision = value
+  },
+})
 function defaultAlertBackgroundColor(): string {
   if (typeof document === 'undefined') return DEFAULT_ALERT_CONFIG.backgroundColor
   return (
@@ -241,6 +249,19 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
               <div>
                 <div class="mb-2 text-sm">背景颜色</div>
                 <el-color-picker v-model="alertBackgroundColor" />
+              </div>
+            </section>
+
+            <section v-if="field.type === 'datetime'">
+              <div class="mb-2 text-sm font-semibold text-[var(--el-text-color-primary)]">
+                日期精度
+              </div>
+              <el-radio-group v-model="datetimePrecision" class="w-full" size="small">
+                <el-radio-button value="day">精确到日</el-radio-button>
+                <el-radio-button value="minute">精确到分</el-radio-button>
+              </el-radio-group>
+              <div class="mt-1 text-xs leading-5 text-[var(--el-text-color-secondary)]">
+                控制填写、显示和搜索时使用日期，或日期与时间（精确到分钟）。
               </div>
             </section>
 

@@ -356,7 +356,9 @@ onMounted(async () => {
                     <el-button
                       link
                       type="primary"
-                      :disabled="(!action.formModule && !action.searchModule && !action.drawer) || !canUpdate"
+                      :disabled="
+                        (!action.formModule && !action.searchModule && !action.drawer) || !canUpdate
+                      "
                       @click="openAction(action)"
                     >
                       {{ action.label }}
@@ -474,7 +476,7 @@ onMounted(async () => {
   color: white;
 }
 
-:deep(.el-button.is-link){
+:deep(.el-button.is-link) {
   height: unset;
 }
 </style>

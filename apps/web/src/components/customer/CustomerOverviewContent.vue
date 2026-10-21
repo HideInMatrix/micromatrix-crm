@@ -198,7 +198,7 @@ onMounted(async () => {
     <header
       class="flex h-[58px] min-h-[58px] shrink-0 items-center justify-between bg-[#F7F8FA] px-5"
     >
-      <h2 class="m-0 text-[18px] leading-[26px] font-medium text-black">
+      <h2 class="m-0 text-[18px] leading-none font-medium text-black">
         {{ pool ? '公海客户详情' : isAdmissionsConfig ? '学员详情' : '客户详情' }}
       </h2>
       <button
@@ -214,7 +214,7 @@ onMounted(async () => {
     <div v-loading="loading" class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <template v-if="customer">
         <div
-          class="m-5 flex min-h-[100px] shrink-0 items-center gap-3 rounded-[7px] bg-[#F7F8FA] px-[18px] py-[17px] max-sm:gap-[9px] max-sm:p-3"
+          class="mx-5 mt-5 mb-[10px] flex min-h-[100px] shrink-0 items-center gap-3 rounded-[7px] bg-[#F7F8FA] px-[18px] py-[17px] max-sm:gap-[9px] max-sm:p-3"
         >
           <div
             class="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-full bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
@@ -223,7 +223,7 @@ onMounted(async () => {
             <UserRound :size="42" :stroke-width="1.65" />
           </div>
           <strong
-            class="min-w-0 flex-1 truncate text-[20px] leading-[28px] font-medium text-[#000000]"
+            class="min-w-0 flex-1 truncate text-[20px] leading-none font-medium text-[#000000]"
           >
             {{ customer.name }}
           </strong>
@@ -245,11 +245,11 @@ onMounted(async () => {
           >
             <div
               v-if="tab.name === 'overview'"
-              class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5 [scrollbar-gutter:stable]"
+              class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[20px] pb-5 [scrollbar-gutter:stable]"
             >
               <section v-if="descriptionFields.length">
                 <h3
-                  class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+                  class="m-0 mb-[13px] flex items-center gap-[6px] text-[14px] leading-none font-medium text-[#333333]"
                 >
                   <span
                     aria-hidden="true"
@@ -259,9 +259,9 @@ onMounted(async () => {
                 </h3>
                 <div class="grid grid-cols-3 items-start gap-x-5 gap-y-5 text-left">
                   <template v-for="field in descriptionFields" :key="field.id">
-                    <section v-if="field.type === 'textarea'" class="col-span-3 min-w-0">
+                    <section v-if="field.type === 'textarea'" class="col-span-3 mt-[10px] min-w-0">
                       <h3
-                        class="m-0 flex items-center gap-[6px] text-[14px] leading-5 font-medium text-[#333333]"
+                        class="m-0 flex items-center gap-[6px] text-[14px] leading-none font-medium text-[#333333]"
                       >
                         <span
                           aria-hidden="true"
@@ -270,17 +270,17 @@ onMounted(async () => {
                         {{ field.label }}
                       </h3>
                       <div
-                        class="mt-[13px] whitespace-pre-wrap break-words text-[14px] leading-5 font-normal text-[#333333]"
+                        class="mt-1 whitespace-pre-wrap break-words text-[14px] leading-none font-normal text-[#333333]"
                       >
                         {{ displayField(field) }}
                       </div>
                     </section>
                     <div v-else class="min-w-0 text-left">
-                      <div class="break-words text-[14px] leading-5 font-normal text-[#999999]">
+                      <div class="break-words text-[14px] leading-none font-normal text-[#999999]">
                         {{ field.label }}
                       </div>
                       <div
-                        class="mt-[13px] whitespace-pre-wrap break-words text-[14px] leading-5 text-[#333333]"
+                        class="mt-1 whitespace-pre-wrap break-words text-[14px] leading-none text-[#333333]"
                       >
                         {{ displayField(field) }}
                       </div>

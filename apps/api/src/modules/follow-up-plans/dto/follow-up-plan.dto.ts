@@ -15,12 +15,7 @@ import {
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto'
 
 export const FOLLOW_UP_PLAN_TARGET_TYPES = ['lead', 'customer'] as const
-export const FOLLOW_UP_PLAN_STATUSES = [
-  'PREPARED',
-  'UNDERWAY',
-  'COMPLETED',
-  'CANCELLED',
-] as const
+export const FOLLOW_UP_PLAN_STATUSES = ['PREPARED', 'UNDERWAY', 'COMPLETED', 'CANCELLED'] as const
 
 export class FollowUpPlanModuleFieldValueDto {
   @ApiProperty({ description: '动态字段 ID 或 key' })

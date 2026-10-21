@@ -61,7 +61,7 @@ watch(visible, (open) => {
   <CrmDialog
     v-model="visible"
     :title="title ?? '移入线索池'"
-    width="520px"
+    width="max-content"
     destroy-on-close
     :close-on-click-modal="false"
     data-testid="lead-move-to-pool-dialog"

@@ -20,7 +20,6 @@ const props = defineProps<{
   targetType: FollowTargetType
   targetId: string
   targetName?: string
-  customerId?: string | null
   sourcePlanId?: string
   recordId?: string
   appendToBody?: boolean
@@ -221,7 +220,7 @@ watch(
       <header
         class="flex h-[58px] min-h-[58px] shrink-0 items-center justify-between bg-[#F7F8FA] px-5"
       >
-        <h2 class="m-0 text-[18px] leading-[26px] font-medium text-black">
+        <h2 class="m-0 text-[18px] leading-none font-medium text-black">
           {{ recordId ? '编辑跟进记录' : sourcePlanId ? '计划转跟进记录' : '新建跟进记录' }}
         </h2>
         <button

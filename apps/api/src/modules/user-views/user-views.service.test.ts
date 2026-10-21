@@ -252,8 +252,8 @@ test('详情与列表按组织、用户和 resourceType 三重隔离，并还原
 test('编辑在同一事务中替换条件，不保留旧 SavedView JSON 契约', async () => {
   const { service, conditions } = createHarness()
   const created = await service.create(userA, 'CUSTOMER', {
-    name: '客户视图',
-    conditions: [{ name: 'level', operator: 'eq', value: 'A' }],
+    name: '客户视图编辑',
+    conditions: [{ name: 'phone', operator: 'contains', value: '138' }],
   })
   const updated = await service.update(userA, 'CUSTOMER', {
     id: created.id,

@@ -19,8 +19,9 @@ const countdown = ref(5)
 const result = ref<{ customerId: string } | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
 
-const canTransform = computed(() =>
-  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
+const canTransform = computed(
+  () =>
+    auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
 )
 
 function stopCountdown() {
@@ -104,12 +105,7 @@ onBeforeUnmount(stopCountdown)
     <template #footer>
       <div class="flex justify-end gap-3">
         <el-button :disabled="loading" @click="visible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="loading"
-          :disabled="!canTransform"
-          @click="confirm"
-        >
+        <el-button type="primary" :loading="loading" :disabled="!canTransform" @click="confirm">
           转换
         </el-button>
       </div>

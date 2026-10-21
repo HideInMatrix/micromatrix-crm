@@ -97,23 +97,18 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto px-4 pb-4">
-      <van-loading
-        v-if="globalSearch.loading.value"
-        class="!flex !justify-center !py-8"
-      />
+      <van-loading v-if="globalSearch.loading.value" class="!flex !justify-center !py-8" />
 
       <van-empty
-        v-else-if="keyword.trim() && globalSearch.visibleGroups.value.every((group) => group.count === 0)"
+        v-else-if="
+          keyword.trim() && globalSearch.visibleGroups.value.every((group) => group.count === 0)
+        "
         image-size="64"
         description="无搜索结果"
         class="!py-16"
       />
 
-      <van-collapse
-        v-else-if="keyword.trim()"
-        v-model="activeNames"
-        :border="false"
-      >
+      <van-collapse v-else-if="keyword.trim()" v-model="activeNames" :border="false">
         <van-collapse-item
           v-for="group in globalSearch.visibleGroups.value"
           :key="group.key"
@@ -159,4 +154,3 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
-

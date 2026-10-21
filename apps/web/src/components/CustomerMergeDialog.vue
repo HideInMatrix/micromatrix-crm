@@ -253,7 +253,6 @@ watch(visible, (open) => {
             已选客户作为主客户时，只能选择已选客户已有负责人；其它客户作为主客户时负责人保持不变。
           </div>
         </el-form-item>
-
       </el-form>
 
       <div class="rounded border border-[var(--el-border-color-lighter)] p-4 text-sm leading-7">
@@ -271,9 +270,15 @@ watch(visible, (open) => {
         <el-descriptions-item label="最终负责人">{{ preview.finalOwner.name ?? '-' }}</el-descriptions-item>
         <el-descriptions-item label="删除客户">{{ preview.counts.customersToDelete }} 个</el-descriptions-item>
         <el-descriptions-item label="跟进">{{ preview.counts.followUps }}</el-descriptions-item>
-        <el-descriptions-item label="跟进计划">{{ preview.counts.followUpPlans }}</el-descriptions-item>
-        <el-descriptions-item label="客户附件">{{ preview.counts.attachments }}</el-descriptions-item>
-        <el-descriptions-item label="协作关系">{{ preview.counts.collaborations }}</el-descriptions-item>
+        <el-descriptions-item label="跟进计划">{{
+          preview.counts.followUpPlans
+        }}</el-descriptions-item>
+        <el-descriptions-item label="客户附件">{{
+          preview.counts.attachments
+        }}</el-descriptions-item>
+        <el-descriptions-item label="协作关系">{{
+          preview.counts.collaborations
+        }}</el-descriptions-item>
         <el-descriptions-item label="将移除集团关系" :span="2">
           {{ preview.counts.relationsToRemove }} 条
         </el-descriptions-item>

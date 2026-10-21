@@ -60,10 +60,10 @@ export class DataScopeService {
   }
 
   /**
-   * 线索、客户、联系人共享的业务数据范围。
+   * 线索、客户共享的业务数据范围。
    *
    * DataScope 本身仍按权限计算，用于严格控制具体操作；业务资源的“可见范围”
-   * 则统一取线索/客户两大业务菜单角色的数据范围并集。联系人属于客户子资源，
+   * 则统一取线索/客户两大业务菜单角色的数据范围并集。
    * 列表与详情通过所属客户套用该范围。
    */
   async resolveBusinessScope(user: AuthUser) {
@@ -84,13 +84,12 @@ export class DataScopeService {
     const scope = await this.resolveRolesScope(user, roles)
     return {
       all: scope.all || roles.some((role) => role.dataScope === 'CUSTOM'),
-      dept: scope.all || roles.some((role) => ['DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
+      dept:
+        scope.all || roles.some((role) => ['DEPT_AND_CHILD', 'CUSTOM'].includes(role.dataScope)),
     }
   }
 
-  async businessOwnerFilter(
-    user: AuthUser,
-  ): Promise<{ owner?: string | { in: string[] } }> {
+  async businessOwnerFilter(user: AuthUser): Promise<{ owner?: string | { in: string[] } }> {
     const scope = await this.resolveBusinessScope(user)
     if (!scope.hasPermission) return { owner: '__permission_scope_denied__' }
     if (scope.all) return {}

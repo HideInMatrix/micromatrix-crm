@@ -12,6 +12,12 @@ import { ModuleFormsService } from './module-forms.service'
 
 const databaseUrl = process.env['DATABASE_URL']
 
+test('已移除的联系人模块不能被旧元数据接口重新创建', async () => {
+  const service = new ModuleFormsService({} as PrismaService)
+  await assert.rejects(service.getConfig('tenant', 'contact'), /联系人模块已移除/)
+  await assert.rejects(service.listFields('tenant', 'contact'), /联系人模块已移除/)
+})
+
 function toSaveField(field: FieldVO): SaveFormFieldDto {
   return {
     id: field.id,

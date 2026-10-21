@@ -25,10 +25,17 @@ function update(value: unknown) {
 }
 
 const fieldOptions = computed(() =>
-  (props.field.options ?? []).map((option) => ({ text: option.label, value: String(option.value) })),
+  (props.field.options ?? []).map((option) => ({
+    text: option.label,
+    value: String(option.value),
+  })),
 )
-const targetOptions = computed(() => props.targets.map((item) => ({ text: item.name, value: item.id })))
-const memberOptions = computed(() => props.members.map((item) => ({ text: item.name, value: item.id })))
+const targetOptions = computed(() =>
+  props.targets.map((item) => ({ text: item.name, value: item.id })),
+)
+const memberOptions = computed(() =>
+  props.members.map((item) => ({ text: item.name, value: item.id })),
+)
 </script>
 
 <template>
@@ -51,7 +58,6 @@ const memberOptions = computed(() => props.members.map((item) => ({ text: item.n
     :options="targetOptions"
     @update:model-value="update"
   />
-
 
   <MobileVantDateTimeField
     v-else-if="field.key === 'estimatedAt'"

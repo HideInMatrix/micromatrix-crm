@@ -101,15 +101,77 @@ test('FIXED 时间区间支持毫秒时间戳', () => {
   assert.equal(evaluator.matches('AND', conditions, resource(), now), true)
 })
 
-test('空跟进时间保持 Cordys 兼容语义：时间条件视为命中', () => {
-  const conditions = [
+test('从未跟进：不能单独触发回收，也不命中“过去 7 天”', () => {
+  const overdueCondition = [
     {
       column: 'followUpTime' as const,
       operator: 'DYNAMICS' as const,
       value: 'CUSTOM,7,BEFORE_DAY',
     },
   ]
-  assert.equal(evaluator.matches('AND', conditions, resource({ lastFollowedAt: null }), now), true)
+  const recentRangeCondition = [
+    {
+      column: 'followUpTime' as const,
+      operator: 'DYNAMICS' as const,
+      value: 'LAST_SEVEN',
+    },
+  ]
+  const neverFollowed = resource({ lastFollowedAt: null })
+  assert.equal(evaluator.matches('AND', overdueCondition, neverFollowed, now), false)
+  assert.equal(evaluator.matches('AND', recentRangeCondition, neverFollowed, now), false)
+})
+
+test('从未领取：最近领取时间为空时，不应因创建时间较早而命中领取超期条件', () => {
+  const conditions = [
+    {
+      column: 'storageTime' as const,
+      operator: 'DYNAMICS' as const,
+      value: 'CUSTOM,7,BEFORE_DAY',
+      scope: ['Picked'] as ('Created' | 'Picked')[],
+    },
+  ]
+  assert.equal(evaluator.matches('AND', conditions, resource({ collectedAt: null }), now), false)
+})
+
+test('全部满足：领取超过 7 天且从未跟进时回收，近期领取的线索不回收', () => {
+  const conditions = [
+    {
+      column: 'storageTime' as const,
+      operator: 'DYNAMICS' as const,
+      value: 'CUSTOM,7,BEFORE_DAY',
+      scope: ['Picked'] as ('Created' | 'Picked')[],
+    },
+    {
+      column: 'followUpTime' as const,
+      operator: 'DYNAMICS' as const,
+      value: 'CUSTOM,7,BEFORE_DAY',
+    },
+  ]
+  const neverFollowed = resource({
+    collectedAt: '2026-08-01T10:00:00+08:00',
+    lastFollowedAt: null,
+  })
+  const recentlyClaimed = resource({
+    collectedAt: '2026-08-16T10:00:00+08:00',
+    lastFollowedAt: null,
+  })
+  assert.equal(evaluator.matches('AND', conditions, neverFollowed, now), true)
+  assert.equal(evaluator.matches('AND', conditions, recentlyClaimed, now), false)
+})
+
+test('同时选择创建时间和最近领取时间时，近期领取不会被旧创建时间覆盖', () => {
+  const conditions = [
+    {
+      column: 'storageTime' as const,
+      operator: 'DYNAMICS' as const,
+      value: 'CUSTOM,7,BEFORE_DAY',
+      scope: ['Created', 'Picked'] as ('Created' | 'Picked')[],
+    },
+  ]
+  const recentlyClaimed = resource({ collectedAt: '2026-08-16T10:00:00+08:00' })
+  const overdueClaim = resource({ collectedAt: '2026-08-01T10:00:00+08:00' })
+  assert.equal(evaluator.matches('AND', conditions, recentlyClaimed, now), false)
+  assert.equal(evaluator.matches('AND', conditions, overdueClaim, now), true)
 })
 
 test('空条件不会退化为 AND 全量回收', () => {

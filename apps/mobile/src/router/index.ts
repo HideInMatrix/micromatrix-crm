@@ -316,10 +316,7 @@ router.beforeEach(async (to) => {
       })
       return mobileRouteFromReturnPath(data.returnPath || '/mobile/home')
     } catch (error) {
-      console.error(
-        '[WECOM-DEBUG][mobile-router][wecom-callback-failed]',
-        debugErrorSummary(error),
-      )
+      console.error('[WECOM-DEBUG][mobile-router][wecom-callback-failed]', debugErrorSummary(error))
       return {
         name: 'mobile-login',
         query: {

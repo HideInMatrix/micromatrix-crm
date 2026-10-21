@@ -55,7 +55,7 @@ function reset() {
       <el-select
         v-if="item.kind === 'preset_select'"
         v-model="values[item.id]"
-        class="module-quick-search__select"
+        class="module-quick-search__select h-[38px]"
         clearable
         :placeholder="item.placeholder || '全部'"
       >
@@ -70,7 +70,7 @@ function reset() {
       <el-select
         v-else-if="item.kind === 'field' && ['select', 'radio'].includes(fieldOf(item)?.type ?? '')"
         v-model="values[item.id]"
-        class="module-quick-search__select"
+        class="module-quick-search__select h-[38px]"
         clearable
         :placeholder="item.placeholder || '全部'"
       >
@@ -86,15 +86,28 @@ function reset() {
           item.kind === 'field' && ['date', 'datetime'].includes(fieldOf(item)?.type ?? '')
         "
         v-model="values[item.id]"
-        class="module-quick-search__date"
-        :type="fieldOf(item)?.type === 'datetime' ? 'datetime' : 'date'"
-        :value-format="fieldOf(item)?.type === 'datetime' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+        class="module-quick-search__date h-[38px]"
+        :type="
+          fieldOf(item)?.type === 'datetime' && fieldOf(item)?.config?.datetimePrecision !== 'day'
+            ? 'datetime'
+            : 'date'
+        "
+        :format="
+          fieldOf(item)?.type === 'datetime' && fieldOf(item)?.config?.datetimePrecision !== 'day'
+            ? 'YYYY-MM-DD HH:mm'
+            : 'YYYY-MM-DD'
+        "
+        :value-format="
+          fieldOf(item)?.type === 'datetime' && fieldOf(item)?.config?.datetimePrecision !== 'day'
+            ? 'YYYY-MM-DD HH:mm:ss'
+            : 'YYYY-MM-DD'
+        "
         :placeholder="item.placeholder || '选择日期'"
       />
       <el-input
         v-else
         v-model="values[item.id]"
-        class="module-quick-search__input"
+        class="module-quick-search__input h-[38px]"
         :placeholder="item.placeholder || '请输入'"
         clearable
         @keyup.enter="submit"
@@ -133,26 +146,24 @@ function reset() {
 .module-quick-search__input,
 .module-quick-search__date {
   width: 220px;
-  height: 36px;
   --el-input-border-color: #e4e7ed;
   --el-input-border-radius: 4px;
 }
 
 .module-quick-search__select {
   width: 160px;
-  height: 36px;
   --el-border-color: #e4e7ed;
 }
 
 .module-quick-search__input :deep(.el-input__wrapper),
 .module-quick-search__date :deep(.el-input__wrapper) {
-  height: 36px;
+  height: 38px;
   border-radius: 4px;
 }
 
 .module-quick-search__select :deep(.el-select__wrapper) {
-  min-height: 36px;
-  height: 36px;
+  height: 38px;
+  min-height: 38px;
   border-radius: 4px;
 }
 

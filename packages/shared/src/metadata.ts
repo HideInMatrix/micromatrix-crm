@@ -283,6 +283,8 @@ export interface FieldConfig {
   alertFontSize?: number
   alertBackgroundColor?: string
   placeholder?: string
+  /** datetime 字段的输入精度；day 仅选择日期，minute 选择日期和时间（精确到分钟）。 */
+  datetimePrecision?: 'day' | 'minute'
   defaultValue?: unknown
   /**
    * Mobile 端大候选集字段的选择交互。

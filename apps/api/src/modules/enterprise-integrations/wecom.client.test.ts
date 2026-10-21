@@ -371,8 +371,7 @@ test('企业微信通知卡片复用工作台 H5 OAuth 入口并跳转到移动�
   const originalFetch = globalThis.fetch
   const payloads: Record<string, unknown>[] = []
   const client = new WeComClient({
-    get: (key: string) =>
-      key === 'WEB_PUBLIC_URL' ? 'https://crm.shenquanedu.com' : undefined,
+    get: (key: string) => (key === 'WEB_PUBLIC_URL' ? 'https://crm.shenquanedu.com' : undefined),
   } as unknown as ConfigService)
   const base = {
     corpId: 'ww-a',
@@ -412,6 +411,12 @@ test('企业微信通知卡片复用工作台 H5 OAuth 入口并跳转到移动�
       '/mobile/customers/detail?id=customer-1',
     )
 
+    await client.sendTextMessage({ ...base, link: '/customers' })
+    const customersCard = payloads.at(-1)!['textcard'] as Record<string, string>
+    assert.equal(
+      new URL(customersCard.url).searchParams.get('target'),
+      '/mobile/customers',
+    )
 
     await client.sendTextMessage({ ...base, link: '/leads?id=lead-123', content: '<test>&' })
     const escapedCard = payloads.at(-1)!['textcard'] as Record<string, string>

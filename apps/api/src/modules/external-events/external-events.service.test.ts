@@ -327,7 +327,7 @@ test(
         },
         convertResolvedLeadInTransaction: async () => ({
           customerId: 'customer-from-lead',
-              createdCustomer: { id: 'customer-from-lead' },
+          createdCustomer: { id: 'customer-from-lead' },
         }),
         notifyResolvedLeadConversion: async () => {
           notified++

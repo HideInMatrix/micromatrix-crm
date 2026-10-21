@@ -111,6 +111,7 @@ export class ModuleFormsService {
   ) {}
 
   async getConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
+    if (formKey === 'contact') throw new BadRequestException('联系人模块已移除')
     if (this.cache) {
       return this.cache.remember({
         tenantId: organizationId,
@@ -133,7 +134,9 @@ export class ModuleFormsService {
       return {
         formKey,
         formProp: this.parseObject(blob?.prop),
-        fields: fields.map((field) => this.toVO(field, formKey)),
+        fields: fields
+          .filter((field) => this.isVisibleModuleField(formKey, field))
+          .map((field) => this.toVO(field, formKey)),
       }
     })
   }
@@ -149,7 +152,9 @@ export class ModuleFormsService {
   ): Promise<FieldVO[]> {
     const form = await this.ensureForm(tx, organizationId, formKey)
     const fields = await this.findFields(tx, form.id)
-    return fields.map((field) => this.toVO(field, formKey))
+    return fields
+      .filter((field) => this.isVisibleModuleField(formKey, field))
+      .map((field) => this.toVO(field, formKey))
   }
 
   async resolveFormLink(
@@ -660,6 +665,12 @@ export class ModuleFormsService {
     await this.invalidateForm(organizationId, formKey)
   }
 
+  private isVisibleModuleField(formKey: string, field: FieldWithBlob): boolean {
+    if (formKey !== 'followRecord' && formKey !== 'followPlan') return true
+    const prop = this.parseProp(field)
+    return (prop.key || field.internalKey || field.id) !== 'contactId'
+  }
+
   toVO(field: FieldWithBlob, formKey: string): FieldVO {
     const prop = this.parseProp(field)
     const key = prop.key || field.internalKey || field.id
@@ -762,6 +773,9 @@ export class ModuleFormsService {
     formKey: string,
     actorId = SYSTEM_ACTOR,
   ) {
+    if (formKey === 'contact') {
+      throw new BadRequestException('联系人模块已移除')
+    }
     const now = BigInt(Date.now())
     let created = false
     let form = await tx.orm.public.SysModuleForm.where({
@@ -1404,6 +1418,14 @@ export class ModuleFormsService {
   }
 
   private validateFieldSpecificConfig(type: FieldType, config?: FieldConfig | null): void {
+    if (config?.datetimePrecision !== undefined) {
+      if (type !== 'datetime') {
+        throw new BadRequestException('只有日期时间字段可以配置日期精度')
+      }
+      if (!['day', 'minute'].includes(config.datetimePrecision)) {
+        throw new BadRequestException('日期精度配置不正确')
+      }
+    }
     if (config?.mobileSelectMode !== undefined) {
       if (!supportsMobileSearchSelect(type)) {
         throw new BadRequestException('当前字段类型不支持配置移动端选择方式')

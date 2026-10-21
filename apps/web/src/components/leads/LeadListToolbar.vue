@@ -229,7 +229,7 @@ function openBatchPoolAssign() {
           </el-button>
           <el-button
             v-if="auth.hasPerm('lead:update')"
-            class="lead-table-toolbar-action lead-table-toolbar-action--outline"
+            class="lead-table-toolbar-action lead-table-toolbar-action--danger"
             :loading="batchInvalidLoading"
             @click="handleBatchInvalid"
           >
@@ -242,7 +242,7 @@ function openBatchPoolAssign() {
           </el-button>
           <el-button
             v-if="auth.hasPerm('lead:delete')"
-            class="lead-table-toolbar-action lead-table-toolbar-action--outline"
+            class="lead-table-toolbar-action lead-table-toolbar-action--danger"
             @click="emit('batchDelete')"
           >
             <Trash2 :size="14" :stroke-width="1.8" aria-hidden="true" />批量删除
@@ -345,6 +345,14 @@ function openBatchPoolAssign() {
   --el-button-hover-bg-color: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
   --el-button-hover-border-color: var(--el-color-primary);
   --el-button-hover-text-color: var(--el-color-primary);
+}
+.lead-table-primary-toolbar :deep(.lead-table-toolbar-action--danger.el-button) {
+  --el-button-bg-color: #feedec;
+  --el-button-border-color: #feedec;
+  --el-button-text-color: #f04438;
+  --el-button-hover-bg-color: #fbdad7;
+  --el-button-hover-border-color: #fbdad7;
+  --el-button-hover-text-color: #f04438;
 }
 .lead-table-primary-toolbar :deep(.lead-table-toolbar-action--primary.el-button) {
   --el-button-bg-color: var(--el-color-primary);

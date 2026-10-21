@@ -240,12 +240,7 @@ test('全局 page 在无可访问目标时返回空集合', async () => {
   }
   const scopedUser: AuthUser = {
     ...user,
-    permissions: [
-      'menu:lead',
-      'leadPool:read',
-      'customer:read',
-      'customerPool:read',
-    ],
+    permissions: ['menu:lead', 'leadPool:read', 'customer:read', 'customerPool:read'],
   }
   const service = baseDeps(prisma, {
     dataScope: { directOwnerFilter: async () => ({ owner: scopedUser.id }) },

@@ -16,8 +16,9 @@ const loading = ref(false)
 const showConvertedSuccess = ref(false)
 const successCustomerId = ref('')
 
-const canCreateCustomer = computed(() =>
-  auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
+const canCreateCustomer = computed(
+  () =>
+    auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'),
 )
 
 const cards = [{ key: 'customer', label: '客户', active: true, disabled: true }]

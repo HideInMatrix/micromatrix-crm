@@ -27,7 +27,7 @@ body {
     'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial,
     sans-serif;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 1;
   color: var(--el-text-color-primary);
   background: var(--el-bg-color-page);
   -webkit-font-smoothing: antialiased;
