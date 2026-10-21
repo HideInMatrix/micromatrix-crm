@@ -21448,6 +21448,13 @@
               "uniques": []
             },
             "module_configs": {
+              "checks": [
+                {
+                  "expression": "\"key\" IN ('home', 'lead', 'customer', 'system')",
+                  "name": "module_configs_supported_key_f71567dc",
+                  "prefix": "module_configs_supported_key"
+                }
+              ],
               "columns": {
                 "enabled": {
                   "codecId": "pg/bool@1",
@@ -23766,6 +23773,13 @@
               "uniques": []
             },
             "top_navigation_configs": {
+              "checks": [
+                {
+                  "expression": "\"key\" IN ('event', 'notify')",
+                  "name": "top_navigation_configs_supported_key_5e82199f",
+                  "prefix": "top_navigation_configs_supported_key"
+                }
+              ],
               "columns": {
                 "enabled": {
                   "codecId": "pg/bool@1",
@@ -24491,7 +24505,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "2c88c1204a08768aebd1ea09c360f4f4eaf0a4fc1f68daf4c3e73474faf6f68c"
+    "storageHash": "64049bfca7242c507d98c1aee2ef571b04780557fe299dff6b72299f54f0b105"
   },
   "execution": {
     "executionHash": "4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a",

@@ -518,7 +518,7 @@ export interface ModuleConfigVO {
 
 // ============ 顶部导航配置 ============
 
-export type TopNavigationKey = 'event' | 'notify' | 'about' | 'help'
+export type TopNavigationKey = 'event' | 'notify'
 
 export type TopNavigationCapabilityStatus = 'available' | 'planned' | 'excluded'
 
@@ -534,7 +534,6 @@ export interface TopNavigationDefinition {
 export const TOP_NAVIGATION_DEFINITIONS: TopNavigationDefinition[] = [
   { key: 'event', label: '记录/计划', defaultEnabled: true, status: 'available' },
   { key: 'notify', label: '消息通知', defaultEnabled: true, status: 'available' },
-  { key: 'help', label: '帮助中心', defaultEnabled: true, status: 'available' },
 ]
 
 export interface TopNavigationConfigVO {

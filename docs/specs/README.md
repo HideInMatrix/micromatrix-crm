@@ -27,7 +27,7 @@
 `admissions-crm-transformation` 下仍保留两份专项 audit：
 
 - `external-financial-integration-audit.md`：外部财务事件 API、幂等与安全边界审计。
-- `legacy-module-dependency-audit.md`：旧销售链物理删除和 destructive migration 依赖审计；正式环境 migration precheck 完成前必须保留。
+- `legacy-module-dependency-audit.md`：旧业务模块退出后的最终边界、元数据清理范围、Seed 约束及数据库迁移验收状态。
 
 ## 文档保留规则
 

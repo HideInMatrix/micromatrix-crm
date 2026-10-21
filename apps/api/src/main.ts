@@ -20,14 +20,14 @@ async function bootstrap() {
     }),
   )
 
-  // 内部系统：文档常开；如需关闭设置 SWAGGER_ENABLED=false
-  if (process.env.SWAGGER_ENABLED !== 'false') {
+  // 生产环境始终关闭 API 文档；开发环境需显式设置 SWAGGER_ENABLED=true 才启用。
+  if (process.env.NODE_ENV !== 'production' && process.env.SWAGGER_ENABLED === 'true') {
     setupSwagger(app)
   }
 
   const port = Number(process.env.PORT ?? 3000)
   await app.listen(port)
-  console.log(`API 已启动: http://localhost:${port}/api  文档: http://localhost:${port}/api/docs`)
+  console.log(`API 已启动: http://localhost:${port}/api`)
 }
 
 void bootstrap()

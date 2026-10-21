@@ -4,10 +4,11 @@
 
 | 地址                                | 用途                           |
 | ----------------------------------- | ------------------------------ |
-| http://localhost:3000/api/docs      | Swagger UI 在线文档与调试      |
-| http://localhost:3000/api/docs-json | OpenAPI 3.0 JSON（供工具导入） |
+| http://localhost:3000/api/docs      | Swagger UI（需显式启用）      |
+| http://localhost:3000/api/docs-json | OpenAPI 3.0 JSON（需显式启用） |
 
-文档默认常开（内部系统）；如需关闭，环境变量 `SWAGGER_ENABLED=false`。
+Swagger 默认关闭，避免在部署环境暴露交互式 API 文档。仅在确有需要的开发/排障环境设置 `SWAGGER_ENABLED=true` 后，以上地址才会注册；未启用时返回 404。
+
 
 ## 在线调试步骤
 

@@ -2,9 +2,7 @@ import type { NavigationModuleKey, TopNavigationKey } from '@micromatrix/shared'
 import {
   Bell,
   CalendarDays,
-  CircleHelp,
   House,
-  Info,
   Settings,
   Users,
   Waypoints,
@@ -21,8 +19,6 @@ const MODULE_ICONS: Record<NavigationModuleKey, Component> = {
 const TOP_NAVIGATION_ICONS: Record<TopNavigationKey, Component> = {
   event: CalendarDays,
   notify: Bell,
-  about: Info,
-  help: CircleHelp,
 }
 
 export function moduleIconOf(moduleKey: NavigationModuleKey) {

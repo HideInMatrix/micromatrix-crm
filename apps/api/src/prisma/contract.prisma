@@ -1517,6 +1517,7 @@ namespace public {
 
     @@index([tenantId, key], map: "module_configs_tenantId_key_key", unique: true)
     @@index([tenantId, sort], map: "module_configs_tenantId_sort_idx")
+    @@check(expression: "\"key\" IN ('home', 'lead', 'customer', 'system')", name: "module_configs_supported_key")
     @@map("module_configs")
   }
 
@@ -1844,6 +1845,7 @@ namespace public {
 
     @@index([tenantId, key], map: "top_navigation_configs_tenantId_key_key", unique: true)
     @@index([tenantId, sort], map: "top_navigation_configs_tenantId_sort_idx")
+    @@check(expression: "\"key\" IN ('event', 'notify')", name: "top_navigation_configs_supported_key")
     @@map("top_navigation_configs")
   }
 

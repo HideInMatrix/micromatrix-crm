@@ -1,0 +1,135 @@
+[
+  {
+    "id": "legacy-module-metadata.cleanup",
+    "label": "Remove metadata for retired CRM modules",
+    "operationClass": "data",
+    "target": {
+      "id": "public.sys_module_form",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "sys_module_form"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Delete saved views and conditions for retired resources",
+        "sql": "DELETE FROM \"public\".\"sys_user_view_condition\"\nWHERE \"sys_user_view_id\" IN (\n  SELECT \"id\" FROM \"public\".\"sys_user_view\"\n  WHERE upper(\"resource_type\") IN (\n    'CUSTOMER_CONTACT', 'CONTACT', 'OPPORTUNITY', 'OPPORTUNITY_QUOTATION',\n    'QUOTE', 'QUOTATION', 'CONTRACT', 'CONTRACT_PAYMENT_PLAN',\n    'CONTRACT_PAYMENT_RECORD', 'CONTRACT_INVOICE', 'INVOICE', 'BUSINESS_TITLE',\n    'PRODUCT', 'PRODUCT_PRICE', 'ORDER', 'SALES_ORDER', 'BIDDING', 'APPROVAL'\n  )\n);\nDELETE FROM \"public\".\"sys_user_view\"\nWHERE upper(\"resource_type\") IN (\n  'CUSTOMER_CONTACT', 'CONTACT', 'OPPORTUNITY', 'OPPORTUNITY_QUOTATION',\n  'QUOTE', 'QUOTATION', 'CONTRACT', 'CONTRACT_PAYMENT_PLAN',\n  'CONTRACT_PAYMENT_RECORD', 'CONTRACT_INVOICE', 'INVOICE', 'BUSINESS_TITLE',\n  'PRODUCT', 'PRODUCT_PRICE', 'ORDER', 'SALES_ORDER', 'BIDDING', 'APPROVAL'\n);"
+      },
+      {
+        "description": "Delete retired module form metadata and cascading field definitions",
+        "sql": "DELETE FROM \"public\".\"sys_module_form\"\nWHERE lower(\"form_key\") IN (\n  'contact', 'customercontact', 'customer_contact',\n  'opportunity', 'opportunityquotation', 'opportunity_quotation',\n  'product', 'productprice', 'product_price',\n  'quote', 'quotation', 'contract', 'contractpaymentplan', 'contract_payment_plan',\n  'contractpaymentrecord', 'contract_payment_record', 'contractinvoice', 'contract_invoice',\n  'invoice', 'businesstitle', 'business_title', 'order', 'salesorder', 'sales_order',\n  'bidding', 'approval'\n);"
+      },
+      {
+        "description": "Remove unsupported retired-module data-source selectors while preserving other field configuration",
+        "sql": "UPDATE \"public\".\"sys_module_field_blob\"\nSET \"prop\" = (\"prop\"::jsonb #- '{config,dataSourceType}')::text\nWHERE \"prop\" IS NOT NULL\n  AND CASE\n    WHEN pg_input_is_valid(\"prop\", 'jsonb') THEN\n      jsonb_typeof(\"prop\"::jsonb -> 'config') = 'object'\n      AND upper(COALESCE(\"prop\"::jsonb #>> '{config,dataSourceType}', '')) IN (\n        'CONTACT', 'CUSTOMER_CONTACT', 'OPPORTUNITY', 'OPPORTUNITY_QUOTATION',\n        'PRODUCT', 'PRODUCT_PRICE', 'QUOTE', 'QUOTATION', 'CONTRACT',\n        'CONTRACT_PAYMENT_PLAN', 'CONTRACT_PAYMENT_RECORD', 'CONTRACT_INVOICE',\n        'INVOICE', 'BUSINESS_TITLE', 'ORDER', 'SALES_ORDER', 'BIDDING', 'APPROVAL'\n      )\n    ELSE FALSE\n  END;"
+      },
+      {
+        "description": "Remove form-link sources and scenarios that reference retired modules",
+        "sql": "UPDATE \"public\".\"sys_module_form_blob\" AS blob\nSET \"prop\" = jsonb_set(\n  blob.\"prop\"::jsonb,\n  '{linkProp}',\n  COALESCE((\n    SELECT jsonb_object_agg(\n      source_key,\n      CASE\n        WHEN jsonb_typeof(source_scenarios) = 'array' THEN COALESCE((\n          SELECT jsonb_agg(scenario.item ORDER BY scenario.ordinality)\n          FROM jsonb_array_elements(source_scenarios) WITH ORDINALITY AS scenario(item, ordinality)\n          WHERE upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%CONTACT%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%OPPORTUNITY%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%PRODUCT%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%CONTRACT%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%QUOTATION%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%INVOICE%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%BUSINESS_TITLE%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%SALES_ORDER%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%BIDDING%'\n            AND upper(COALESCE(scenario.item ->> 'key', '')) NOT LIKE '%APPROVAL%'\n        ), '[]'::jsonb)\n        ELSE source_scenarios\n      END\n    )\n    FROM jsonb_each(\n      CASE\n        WHEN jsonb_typeof(blob.\"prop\"::jsonb -> 'linkProp') = 'object'\n          THEN blob.\"prop\"::jsonb -> 'linkProp'\n        ELSE '{}'::jsonb\n      END\n    ) AS source(source_key, source_scenarios)\n    WHERE lower(source_key) NOT IN (\n      'contact', 'customercontact', 'customer_contact',\n      'opportunity', 'opportunityquotation', 'opportunity_quotation',\n      'product', 'productprice', 'product_price', 'quote', 'quotation',\n      'contract', 'contractpaymentplan', 'contract_payment_plan',\n      'contractpaymentrecord', 'contract_payment_record', 'contractinvoice',\n      'contract_invoice', 'invoice', 'businesstitle', 'business_title',\n      'order', 'salesorder', 'sales_order', 'bidding', 'approval'\n    )\n  ), '{}'::jsonb),\n  false\n)::text\nWHERE blob.\"prop\" IS NOT NULL\n  AND CASE\n    WHEN pg_input_is_valid(blob.\"prop\", 'jsonb') THEN\n      jsonb_typeof(blob.\"prop\"::jsonb -> 'linkProp') = 'object'\n      AND (\n        blob.\"prop\"::jsonb::text ILIKE ANY (ARRAY[\n          '%contact%', '%opportunity%', '%product%', '%contract%', '%quotation%',\n          '%invoice%', '%business_title%', '%sales_order%', '%bidding%', '%approval%'\n        ])\n      )\n    ELSE FALSE\n  END;"
+      },
+      {
+        "description": "Delete retired business dictionaries and stage-transition rules",
+        "sql": "DELETE FROM \"public\".\"sys_dict_config\"\nWHERE upper(\"module\") IN (\n  'OPPORTUNITY_FAIL_RS', 'OPPORTUNITY', 'OPPORTUNITY_STAGE', 'CONTRACT_STAGE',\n  'CONTRACT', 'PRODUCT', 'PRODUCT_PRICE', 'BUSINESS_TITLE', 'BIDDING',\n  'QUOTE', 'QUOTATION', 'INVOICE', 'ORDER'\n);\nDELETE FROM \"public\".\"sys_dict\"\nWHERE upper(\"module\") IN (\n  'OPPORTUNITY_FAIL_RS', 'OPPORTUNITY', 'OPPORTUNITY_STAGE', 'CONTRACT_STAGE',\n  'CONTRACT', 'PRODUCT', 'PRODUCT_PRICE', 'BUSINESS_TITLE', 'BIDDING',\n  'QUOTE', 'QUOTATION', 'INVOICE', 'ORDER'\n);\nDELETE FROM \"public\".\"stage_advanced_config\"\nWHERE upper(\"module_type\") IN ('OPPORTUNITY', 'CONTRACT', 'QUOTE', 'ORDER', 'PRODUCT');"
+      },
+      {
+        "description": "Delete stale navigation configuration rows before enforcing supported keys",
+        "sql": "DELETE FROM \"public\".\"module_configs\"\nWHERE lower(\"key\") NOT IN ('home', 'lead', 'customer', 'system');\nDELETE FROM \"public\".\"top_navigation_configs\"\nWHERE lower(\"key\") NOT IN ('event', 'notify');"
+      },
+      {
+        "description": "Remove permissions for retired business modules from existing roles",
+        "sql": "UPDATE \"public\".\"roles\" AS role_row\nSET \"permissions\" = ARRAY(\n  SELECT entry.permission\n  FROM unnest(role_row.\"permissions\") WITH ORDINALITY AS entry(permission, ordinality)\n  WHERE lower(entry.permission) !~ '^(contact|customer_contact|opportunity|opportunity_quotation|product|price|quote|quotation|contract|contract_payment_plan|contractpaymentplan|contract_payment_record|contractpaymentrecord|contract_invoice|contractinvoice|contract_business_title|business_title|invoice|order|sales_order|bidding|approval):'\n    AND lower(entry.permission) NOT IN (\n      'menu:contact', 'menu:contacts', 'menu:customer-contact', 'menu:about', 'menu:help', 'menu:api-docs',\n      'menu:opportunity', 'menu:opportunityquotation', 'menu:opportunity-stage',\n      'menu:product', 'menu:quote', 'menu:quotation', 'menu:contract',\n      'menu:invoice', 'menu:order', 'menu:sales-order', 'menu:bidding',\n      'menu:approval', 'menu:business-title', 'menu:contract-payment-plan',\n      'menu:contract-payment-record', 'menu:contract-invoice'\n    )\n  ORDER BY entry.ordinality\n)\nWHERE role_row.\"permissions\" IS NOT NULL\n  AND EXISTS (\n    SELECT 1\n    FROM unnest(role_row.\"permissions\") AS entry(permission)\n    WHERE lower(entry.permission) ~ '^(contact|customer_contact|opportunity|opportunity_quotation|product|price|quote|quotation|contract|contract_payment_plan|contractpaymentplan|contract_payment_record|contractpaymentrecord|contract_invoice|contractinvoice|contract_business_title|business_title|invoice|order|sales_order|bidding|approval):'\n       OR lower(entry.permission) IN (\n         'menu:contact', 'menu:contacts', 'menu:customer-contact', 'menu:about', 'menu:help', 'menu:api-docs',\n         'menu:opportunity', 'menu:opportunityquotation', 'menu:opportunity-stage',\n         'menu:product', 'menu:quote', 'menu:quotation', 'menu:contract',\n         'menu:invoice', 'menu:order', 'menu:sales-order', 'menu:bidding',\n         'menu:approval', 'menu:business-title', 'menu:contract-payment-plan',\n         'menu:contract-payment-record', 'menu:contract-invoice'\n       )\n  );"
+      },
+      {
+        "description": "Delete obsolete notification settings and retire pending exports for removed modules",
+        "sql": "DELETE FROM \"public\".\"message_task_settings\"\nWHERE upper(\"module\") NOT IN ('CLUE', 'CUSTOMER')\n   OR upper(\"event\") LIKE ANY (ARRAY[\n     '%CONTACT%', '%OPPORTUNITY%', '%PRODUCT%', '%CONTRACT%', '%QUOTATION%',\n     '%QUOTE%', '%INVOICE%', '%PAYMENT_PLAN%', '%PAYMENT_RECORD%',\n     '%BUSINESS_TITLE%', '%BIDDING%', '%APPROVAL%', '%SALES_ORDER%'\n   ])\n   OR upper(\"event\") IN ('CUSTOMER_CONCAT_ADD', 'CLUE_CONVERT_BUSINESS');\nUPDATE \"public\".\"export_tasks\"\nSET \"status\" = 'FAILED',\n    \"errorMessage\" = '模块已移除，任务不再支持执行',\n    \"completedAt\" = COALESCE(\"completedAt\", CURRENT_TIMESTAMP)\nWHERE lower(\"module\") IN (\n  'contact', 'customer_contact', 'opportunity', 'product', 'price', 'quote',\n  'quotation', 'contract', 'invoice', 'order', 'sales_order', 'bidding', 'approval'\n)\n  AND upper(\"status\") IN ('PENDING', 'PROCESSING', 'RUNNING');"
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "checkConstraint.module_configs.module_configs_supported_key_f71567dc",
+    "label": "Add check constraint \"module_configs_supported_key_f71567dc\" on \"module_configs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "module_configs_supported_key_f71567dc",
+        "table": "module_configs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"module_configs_supported_key_f71567dc\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "module_configs_supported_key_f71567dc",
+          "public",
+          "\"public\".\"module_configs\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"module_configs_supported_key_f71567dc\"",
+        "sql": "ALTER TABLE \"public\".\"module_configs\" ADD CONSTRAINT \"module_configs_supported_key_f71567dc\" CHECK (\"key\" IN ('home', 'lead', 'customer', 'system'))"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"module_configs_supported_key_f71567dc\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "module_configs_supported_key_f71567dc",
+          "public",
+          "\"public\".\"module_configs\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.top_navigation_configs.top_navigation_configs_supported_key_5e82199f",
+    "label": "Add check constraint \"top_navigation_configs_supported_key_5e82199f\" on \"top_navigation_configs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "top_navigation_configs_supported_key_5e82199f",
+        "table": "top_navigation_configs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"top_navigation_configs_supported_key_5e82199f\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "top_navigation_configs_supported_key_5e82199f",
+          "public",
+          "\"public\".\"top_navigation_configs\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"top_navigation_configs_supported_key_5e82199f\"",
+        "sql": "ALTER TABLE \"public\".\"top_navigation_configs\" ADD CONSTRAINT \"top_navigation_configs_supported_key_5e82199f\" CHECK (\"key\" IN ('event', 'notify'))"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"top_navigation_configs_supported_key_5e82199f\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "top_navigation_configs_supported_key_5e82199f",
+          "public",
+          "\"public\".\"top_navigation_configs\""
+        ]
+      }
+    ]
+  }
+]
