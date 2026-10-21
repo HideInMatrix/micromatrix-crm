@@ -123,12 +123,13 @@ html:not(.dark) {
 
 .crm-dialog.crm-resource-form-dialog .el-dialog__body .crm-dynamic-form .el-input__wrapper,
 .crm-dialog.crm-resource-form-dialog .el-dialog__body .crm-dynamic-form .el-select__wrapper {
-  @apply h-[38px] min-h-[38px];
+  height: 38px;
+  min-height: 38px;
 }
 
 /* 新建线索 / 客户弹窗的表单字段行间距统一为 16px。 */
 .crm-dialog.crm-resource-form-dialog .el-dialog__body .crm-dynamic-form.el-form .el-row {
-  @apply gap-y-4;
+  row-gap: 1rem;
 }
 
 .crm-dialog.el-dialog {
