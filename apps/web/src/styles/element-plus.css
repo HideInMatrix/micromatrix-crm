@@ -208,7 +208,7 @@ html:not(.dark) {
 }
 
 .crm-dialog .crm-dialog-actions .el-button {
-  width: 88px;
+  min-width: 88px;
   height: 36px;
   border-radius: 4px;
   font-size: 14px;

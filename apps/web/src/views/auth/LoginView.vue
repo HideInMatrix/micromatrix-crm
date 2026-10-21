@@ -121,10 +121,10 @@ async function handleSubmit() {
 
 <template>
   <div
-    class="h-full flex items-center justify-end bg-[var(--el-bg-color-page)] bg-no-repeat px-6 sm:px-10 lg:px-16 xl:px-24"
+    class="h-full flex items-center justify-end bg-[var(--el-bg-color-page)] bg-no-repeat pl-6 pr-[clamp(24px,21.875vw,420px)]"
     :style="loginPageStyle"
   >
-    <el-card class="w-96" shadow="hover">
+    <el-card class="w-96 max-w-full" shadow="hover">
       <div class="text-center mb-6">
         <img
           v-if="enterpriseUi.loginLogoUrl"

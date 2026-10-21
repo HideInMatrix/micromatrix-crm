@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
-import type { CustomerVO } from '@micromatrix/shared'
+import FormAlert from '@/components/form-engine/FormAlert.vue'
+import { createAlertField, type CustomerVO } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
 import {
   listCustomers,
@@ -14,6 +15,26 @@ import { extractErrorMessage } from '@/api/http'
 const props = defineProps<{
   selectedRows: CustomerVO[]
 }>()
+
+const mergeWarningAlert = createAlertField({
+  id: 'customer-merge-warning',
+  position: 0,
+  icon: 'triangle-alert',
+  text: '合并后不可回退：仅保留主客户基本信息，其它已选客户将被移除；关联业务数据会迁移到主客户。',
+  color: '#409eff',
+  fontSize: 14,
+  backgroundColor: '#ecf5ff',
+}, 'customer')
+
+const mergeConfirmAlert = createAlertField({
+  id: 'customer-merge-confirm-warning',
+  position: 0,
+  icon: 'triangle-alert',
+  text: '确认后将删除被合并客户，操作不可回退。请确认主客户、负责人和影响预览无误。',
+  color: '#f04438',
+  fontSize: 14,
+  backgroundColor: '#fef0f0',
+}, 'customer')
 
 const visible = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ merged: [targetId: string] }>()
@@ -172,12 +193,7 @@ watch(visible, (open) => {
     </el-steps>
 
     <template v-if="step === 0">
-      <el-alert
-        type="warning"
-        :closable="false"
-        class="mb-4"
-        title="合并后不可回退：仅保留主客户基本信息，其它已选客户将被移除；关联业务数据会迁移到主客户。"
-      />
+      <FormAlert :field="mergeWarningAlert" class="mb-4" />
 
       <el-form label-width="110px">
         <el-form-item label="已选客户">
@@ -249,7 +265,7 @@ watch(visible, (open) => {
             :model-value="currentOtherTarget?.ownerName ?? '未选择主客户'"
             disabled
           />
-          <div class="text-xs text-[var(--el-text-color-secondary)] mt-1">
+          <div class="text-xs text-[var(--el-text-color-secondary)] my-1">
             已选客户作为主客户时，只能选择已选客户已有负责人；其它客户作为主客户时负责人保持不变。
           </div>
         </el-form-item>
@@ -285,12 +301,7 @@ watch(visible, (open) => {
       </el-descriptions>
 
 
-      <el-alert
-        type="error"
-        :closable="false"
-        class="mt-4"
-        title="确认后将删除被合并客户，操作不可回退。请确认主客户、负责人和影响预览无误。"
-      />
+      <FormAlert :field="mergeConfirmAlert" class="mt-4 merge-confirm-alert" />
     </template>
 
     <template #footer>
@@ -305,3 +316,10 @@ watch(visible, (open) => {
     </template>
   </CrmDialog>
 </template>
+
+
+<style scoped>
+.merge-confirm-alert {
+  border-color: #fecdca;
+}
+</style>

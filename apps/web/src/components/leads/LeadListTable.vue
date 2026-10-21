@@ -222,6 +222,8 @@ function handleToPool(row: LeadVO) {
               v-if="auth.hasPerm('leadPool:delete')"
               link
               type="danger"
+              class="table-delete-action hover:!bg-[#feedec]"
+              :style="{ color: '#f04438' }"
               @click="handleDelete(row as LeadVO)"
             >
               删除
@@ -263,6 +265,8 @@ function handleToPool(row: LeadVO) {
                   </el-dropdown-item>
                   <el-dropdown-item
                     v-if="auth.hasPerm('lead:delete')"
+                    class="table-delete-dropdown-item"
+                    :style="{ color: '#f04438', '--el-dropdown-menuItem-hover-fill': '#feedec' }"
                     :divided="
                       canManualConvert ||
                       auth.hasPerm('lead:recycle') ||

@@ -987,6 +987,7 @@ onMounted(async () => {
       <LeadMoveToPoolDialog
         v-model="moveToPoolVisible"
         :title="moveToPoolBatch ? '批量移入线索池' : '移入线索池'"
+        :width="moveToPoolBatch ? '540px' : 'max-content'"
         :description="
           moveToPoolBatch
             ? `确定将已选择的 ${selectedRows.length} 条线索移入线索池？`

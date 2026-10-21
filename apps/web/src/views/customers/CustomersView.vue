@@ -10,7 +10,7 @@ import {
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
 } from '@micromatrix/shared'
-import { Columns3, Download, FolderInput, Plus, Upload, UserRoundCog } from 'lucide-vue-next'
+import { Columns3, Download, FolderInput, GitMerge, Plus, Upload, UserRoundCog } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -35,6 +35,7 @@ import MemberSelectDialog from '@/components/MemberSelectDialog.vue'
 import SavedViewBar from '@/components/SavedViewBar.vue'
 import ModuleQuickSearch from '@/components/ModuleQuickSearch.vue'
 import CustomerMoveToPoolDialog from '@/components/customer/CustomerMoveToPoolDialog.vue'
+import CustomerMergeDialog from '@/components/CustomerMergeDialog.vue'
 import CustomerOverviewDrawer from '@/components/customer/CustomerOverviewDrawer.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
@@ -86,6 +87,7 @@ const followTarget = ref<CustomerVO | null>(null)
 const assignVisible = ref(false)
 const assignTarget = ref<CustomerVO | null>(null)
 const batchTransferVisible = ref(false)
+const mergeVisible = ref(false)
 const moveToPoolVisible = ref(false)
 const moveToPoolIds = ref<string[]>([])
 const moveToPoolName = ref('')
@@ -269,6 +271,11 @@ function handleSelectionChange(rows: CustomerVO[]) {
 function clearSelection() {
   customerTableRef.value?.clearSelection()
   selectedRows.value = []
+}
+
+function handleCustomerMerged() {
+  clearSelection()
+  void loadData()
 }
 
 function openBatchTransfer() {
@@ -581,6 +588,13 @@ onMounted(async () => {
               <FolderInput :size="14" :stroke-width="1.8" aria-hidden="true" />批量移入公海
             </el-button>
             <el-button
+              v-if="auth.hasPerm('customer:merge')"
+              class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
+              @click="mergeVisible = true"
+            >
+              <GitMerge :size="14" :stroke-width="1.8" aria-hidden="true" />合并客户
+            </el-button>
+            <el-button
               v-if="canExport"
               class="crm-data-list-toolbar__action crm-data-list-toolbar__outline"
               @click="openExport('selected')"
@@ -714,6 +728,7 @@ onMounted(async () => {
                     </el-dropdown-item>
                     <el-dropdown-item
                       v-if="auth.hasPerm('customer:delete')"
+                      :style="{ color: '#f04438', '--el-dropdown-menuItem-hover-fill': '#feedec' }"
                       :divided="
                         auth.hasPerm('customer:transfer') || auth.hasPerm('customer:recycle')
                       "
@@ -778,6 +793,12 @@ onMounted(async () => {
         :title="`批量转移客户（${selectedRows.length}）`"
         :members="fieldRefs.members.value"
         @confirm="handleBatchTransferConfirm"
+      />
+
+      <CustomerMergeDialog
+        v-model="mergeVisible"
+        :selected-rows="selectedRows"
+        @merged="handleCustomerMerged"
       />
 
       <CustomerMoveToPoolDialog

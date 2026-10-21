@@ -348,10 +348,10 @@ function openBatchPoolAssign() {
 }
 .lead-table-primary-toolbar :deep(.lead-table-toolbar-action--danger.el-button) {
   --el-button-bg-color: #feedec;
-  --el-button-border-color: #feedec;
+  --el-button-border-color: #f04438;
   --el-button-text-color: #f04438;
   --el-button-hover-bg-color: #fbdad7;
-  --el-button-hover-border-color: #fbdad7;
+  --el-button-hover-border-color: #f04438;
   --el-button-hover-text-color: #f04438;
 }
 .lead-table-primary-toolbar :deep(.lead-table-toolbar-action--primary.el-button) {

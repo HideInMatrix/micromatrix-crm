@@ -37,7 +37,7 @@ function readSidebarCollapsed() {
 }
 
 const sidebarCollapsed = ref(readSidebarCollapsed())
-const sidebarWidth = computed(() => (sidebarCollapsed.value ? '64px' : '256px'))
+const sidebarWidth = computed(() => (sidebarCollapsed.value ? '64px' : '200px'))
 const userRoleLabel = computed(
   () => auth.user?.roles.map((role) => role.name).join('、') || '未分配角色',
 )
@@ -112,7 +112,7 @@ function handlePersonalCommand(command: string) {
       class="h-16 shrink-0 flex bg-[var(--el-bg-color)] shadow-[inset_0_-1px_0_var(--el-border-color-light)]"
     >
       <div
-        class="h-full shrink-0 flex items-center justify-center overflow-hidden border-r border-white/10 bg-[#223270] text-white transition-[width] duration-[160ms] ease-in-out"
+        class="h-full shrink-0 flex items-center justify-center overflow-hidden border-r border-white/10 bg-[#223270] text-white transition-[width,padding] duration-[240ms] ease-[cubic-bezier(0.2,0,0,1)]"
         :class="sidebarCollapsed ? 'px-0' : 'px-4'"
         :style="{ width: sidebarWidth }"
       >
@@ -195,13 +195,13 @@ function handlePersonalCommand(command: string) {
 
     <div class="min-h-0 flex flex-1">
       <aside
-        class="min-h-0 shrink-0 flex flex-col overflow-hidden bg-[#262D40] text-white transition-[width] duration-[160ms] ease-in-out"
+        class="min-h-0 shrink-0 flex flex-col overflow-hidden bg-[#262D40] text-white transition-[width,padding] duration-[240ms] ease-[cubic-bezier(0.2,0,0,1)]"
         :style="{ width: sidebarWidth }"
       >
         <el-menu
           :default-active="activeMenu"
           :collapse="sidebarCollapsed"
-          :collapse-transition="false"
+          :collapse-transition="true"
           router
           class="min-h-0 flex-1 !w-full overflow-y-auto !border-r-0 !bg-transparent !pt-[30px] !pb-1 font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           :class="sidebarCollapsed ? '!px-[10px]' : '!px-4'"

@@ -54,6 +54,6 @@ const backgroundColor = computed(
       :stroke-width="1.8"
       aria-hidden="true"
     />
-    <span class="min-w-0 flex-1 whitespace-pre-wrap break-words leading-6">{{ text }}</span>
+    <span class="min-w-0 flex-1 whitespace-pre-wrap break-words">{{ text }}</span>
   </div>
 </template>

@@ -587,6 +587,8 @@ onMounted(async () => {
                 v-if="auth.hasPerm('customerPool:delete')"
                 link
                 type="danger"
+                class="hover:!bg-[#feedec]"
+                :style="{ color: '#f04438' }"
                 @click="handleDelete(row as CustomerVO)"
               >
                 删除
