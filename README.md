@@ -97,7 +97,7 @@ pnpm db:status
 pnpm db:verify
 ```
 
-当前 API rules 基线为 **362/362 pass**。Mobile build/typecheck 会同时执行 Vant + UnoCSS 规范门禁。
+当前 API rules 基线为 **391/391 pass**。Mobile build/typecheck 会同时执行 Vant + UnoCSS 规范门禁。
 
 ## Docker Release
 

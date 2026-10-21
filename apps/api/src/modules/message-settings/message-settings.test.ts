@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
+import { MESSAGE_TASK_DEFINITIONS } from '@micromatrix/shared'
 import type { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { createPrismaTestTenant, openPrismaTestDatabase } from '../../testing/prisma-test-db'
@@ -63,16 +64,17 @@ test(
       assert.equal(gate.available, true)
       assert.equal(gate.enabled, true)
 
+      const expectedEventCount = MESSAGE_TASK_DEFINITIONS.length
       const groups = await service.batchUpdate(tenant.id, { systemEnabled: true })
-      assert.equal(groups.flatMap((group) => group.items).length, 26)
+      assert.equal(groups.flatMap((group) => group.items).length, expectedEventCount)
       assert.ok(groups.flatMap((group) => group.items).every((item) => item.systemEnabled))
       const allRows = await prismaClient.orm.public.MessageTaskSettings.where({
         tenantId: tenant.id,
       })
         .select('systemEnabled')
         .all()
-      assert.equal(allRows.length, 26)
-      assert.equal(allRows.filter((item) => item.systemEnabled).length, 26)
+      assert.equal(allRows.length, expectedEventCount)
+      assert.equal(allRows.filter((item) => item.systemEnabled).length, expectedEventCount)
     } finally {
       if (tenantId) {
         await prismaClient.orm.public.MessageTaskSettings.where({ tenantId }).deleteAll()

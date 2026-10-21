@@ -2,7 +2,7 @@
 set -eu
 
 run_migrate() {
-  node ./prisma-orm.mjs db migrate
+  node ./prisma-orm.mjs db migrate --yes
 }
 
 run_seed() {

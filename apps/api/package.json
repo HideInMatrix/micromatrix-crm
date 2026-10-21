@@ -11,7 +11,7 @@
     "test:prisma": "prisma contract emit && node --import dotenv/config --import tsx --test src/prisma/*.test.ts",
     "prisma:generate": "prisma contract emit",
     "prisma:migrate": "prisma contract emit && prisma migration plan",
-    "prisma:deploy": "prisma db migrate --advance-ref db",
+    "prisma:deploy": "prisma db migrate --advance-ref db --yes",
     "prisma:status": "prisma migration status",
     "prisma:verify": "prisma db verify",
     "prisma:migration-check": "prisma migration check",

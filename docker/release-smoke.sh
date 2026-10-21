@@ -61,7 +61,7 @@ grep -Fq 'COPY apps/api/src/prisma/contract.prisma apps/api/src/prisma/contract.
 grep -Fq 'COPY apps/api/src/common/tenant-slug.ts apps/api/src/common/tenant-slug.ts' docker/migrate.Dockerfile
 grep -Fq '/workspace/apps/api/src/common/tenant-slug.ts ./src/common/tenant-slug.ts' docker/migrate.Dockerfile
 grep -Fq 'RUN node ./prisma-orm.mjs contract emit' docker/migrate.Dockerfile
-grep -Fq 'node ./prisma-orm.mjs db migrate' docker/release-init.sh
+grep -Fq 'node ./prisma-orm.mjs db migrate --yes' docker/release-init.sh
 grep -Fq 'tsx src/prisma/seed.ts' docker/release-init.sh
 grep -Fq 'ENTRYPOINT ["./release-init.sh"]' docker/migrate.Dockerfile
 
