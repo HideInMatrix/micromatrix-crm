@@ -276,7 +276,7 @@ function handleHomeRefresh() {
 }
 
 function formatPercentage(value: number | null | undefined) {
-  if (value === null || value === undefined) return '暂无昨日对比'
+  if (value === null || value === undefined) return '0'
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
 }
 
@@ -712,7 +712,7 @@ onBeforeUnmount(() => {
           <GitPullRequest :size="35" :stroke-width="2.4" aria-hidden="true" />
         </span>
         <span class="min-w-0 flex flex-col gap-1">
-          <span class="text-[16px] text-[#333333]">今日新增线索</span>
+          <span class="text-[16px] text-[#333333]">今日新增</span>
           <strong class="text-[32px] leading-9 tabular-nums text-[#171C26] font-[DingBold]">
             {{ formatCount(todayStatistic?.todayClue.value) }}
           </strong>
