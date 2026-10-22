@@ -64,15 +64,20 @@ onBeforeUnmount(() => {
 <template>
   <el-popover placement="bottom-end" width="340" trigger="click">
     <template #reference>
-      <el-badge :is-dot="unread > 0" :hidden="unread === 0" class="cursor-pointer">
-        <button
-          type="button"
-          class="h-[38px] w-[38px] flex-center rounded-full border-0 bg-[#F5F7FA] p-0 text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[#E9EDF5]"
-          aria-label="消息中心"
-        >
+      <button
+        type="button"
+        class="h-[38px] w-[38px] flex-center rounded-full border-0 bg-[#F5F7FA] p-0 text-[var(--el-text-color-regular)] cursor-pointer hover:bg-[#E9EDF5]"
+        aria-label="消息中心"
+      >
+        <span class="relative inline-flex h-[18px] w-[18px] items-center justify-center">
           <Bell :size="18" :stroke-width="1.8" aria-hidden="true" />
-        </button>
-      </el-badge>
+          <span
+            v-if="unread > 0"
+            class="absolute -right-[2px] -top-[2px] h-[7px] w-[7px] rounded-full bg-[#F04438]"
+            aria-hidden="true"
+          />
+        </span>
+      </button>
     </template>
 
     <div class="flex-between mb-2">
