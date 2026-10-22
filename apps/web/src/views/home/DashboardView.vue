@@ -763,7 +763,7 @@ onBeforeUnmount(() => {
           <strong class="text-[32px] leading-9 tabular-nums text-[#171C26] font-[DingBold]">
             {{ formatCount(pendingPoolCount) }}
           </strong>
-          <span aria-hidden="true" class="invisible h-[22px] shrink-0" />
+          <span class="text-[12px] text-[#6B7A99]">可进行领取线索</span>
         </span>
       </button>
       <button
@@ -977,7 +977,7 @@ onBeforeUnmount(() => {
           data-testid="home-message-list"
         >
           <button
-            v-for="item in notifications.slice(0, 5)"
+            v-for="item in notifications.slice(0, 4)"
             :key="item.id"
             type="button"
             class="flex w-full cursor-pointer items-center gap-3 rounded-lg border-0 bg-[#F6F8FB] px-3 py-2 text-left transition-colors hover:bg-[#EEF3FD]"
