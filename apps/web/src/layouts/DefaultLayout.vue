@@ -152,7 +152,7 @@ function handlePersonalCommand(command: string) {
               class="flex items-center gap-3 rounded-lg border-0 bg-transparent px-2 py-1 text-left cursor-pointer hover:bg-[var(--el-fill-color-light)]"
               data-testid="personal-menu-trigger"
             >
-              <el-avatar :size="40" :src="auth.user?.avatarUrl ?? undefined" class="shrink-0">
+              <el-avatar :size="40" src="/images/user.png" class="shrink-0">
                 {{ auth.user?.name?.slice(0, 1) ?? '?' }}
               </el-avatar>
               <span class="min-w-0 max-w-48 flex flex-col gap-0.5">
@@ -294,6 +294,6 @@ function handlePersonalCommand(command: string) {
 
 <style scoped>
 .crm-layout-main {
-  --el-main-padding: 16px 20px;
+  --el-main-padding: 20px;
 }
 </style>

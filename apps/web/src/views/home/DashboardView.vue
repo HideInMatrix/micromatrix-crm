@@ -32,7 +32,6 @@ import {
   BellRing,
   MessageCircleMore,
   MessageSquareText,
-  RefreshCw,
   Settings2,
 } from 'lucide-vue-next'
 import { ElButton } from 'element-plus'
@@ -272,6 +271,10 @@ async function refreshHome() {
   await Promise.all([loadStatistics(), loadMyLeads(), loadPendingPools(), loadNotifications()])
 }
 
+function handleHomeRefresh() {
+  void refreshHome()
+}
+
 function formatPercentage(value: number | null | undefined) {
   if (value === null || value === undefined) return '暂无昨日对比'
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
@@ -374,7 +377,7 @@ interface QuickAccessItem {
   permissions: string[]
   moduleEnabled: () => boolean
   description?: string
-  theme?: 'blue' | 'green' | 'purple'
+  theme?: 'blue' | 'green' | 'purple' | 'orange'
 }
 
 function hasAnyPermission(permissions: string[]) {
@@ -387,6 +390,7 @@ const quickAccessCatalog = computed<QuickAccessItem[]>(() => {
       key: 'customer',
       label: '新建客户',
       icon: Building2,
+      theme: 'orange',
       permissions: ['customer:create'],
       moduleEnabled: () => moduleConfig.isEnabled('customer'),
     },
@@ -667,6 +671,7 @@ const chartPalette = [
 const pageLoading = ref(true)
 
 onMounted(async () => {
+  window.addEventListener('crm:home-refresh', handleHomeRefresh)
   showDefaultPasswordMessage()
   try {
     await Promise.all([moduleConfig.load(), loadMyLeads(), loadPendingPools(), loadNotifications()])
@@ -678,26 +683,24 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('crm:home-refresh', handleHomeRefresh)
   defaultPasswordMessage?.close()
 })
 </script>
 
 <template>
-  <div v-loading="pageLoading" class="min-h-full min-w-[1030px]" data-testid="home-page">
-    <div class="mb-3 flex items-center justify-end gap-2" data-testid="home-toolbar">
-      <el-button
-        data-testid="home-overview-refresh"
-        :loading="statisticLoading"
-        @click="refreshHome"
-      >
-        <RefreshCw :size="16" aria-hidden="true" />
-      </el-button>
-    </div>
-
-    <div class="mb-3 grid grid-cols-3 gap-3" data-testid="home-kpi-row">
+  <div
+    v-loading="pageLoading"
+    class="home-dashboard flex min-h-full min-w-[1030px] flex-col"
+    data-testid="home-page"
+  >
+    <div
+      class="mb-3 grid h-[130px] shrink-0 grid-cols-6 items-stretch gap-3"
+      data-testid="home-kpi-row"
+    >
       <button
         type="button"
-        class="flex min-h-[128px] cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
+        class="col-span-1 flex h-full min-h-0 cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
         style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #ffffff 100%)"
         :disabled="!hasLeadRead"
         data-testid="home-kpi-today"
@@ -744,7 +747,7 @@ onBeforeUnmount(() => {
       </button>
       <button
         type="button"
-        class="flex min-h-[128px] cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
+        class="col-span-1 flex h-full min-h-0 cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
         style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #ffffff 100%)"
         :disabled="!canAccessPool"
         data-testid="home-kpi-pending"
@@ -765,7 +768,7 @@ onBeforeUnmount(() => {
       </button>
       <button
         type="button"
-        class="flex min-h-[128px] cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
+        class="col-span-1 flex h-full min-h-0 cursor-pointer items-center gap-5 rounded-[10px] border-0 p-5 text-left shadow-[0_3px_12px_rgba(42,88,149,0.055)]"
         style="background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, #ffffff 100%)"
         :disabled="!hasLeadRead"
         data-testid="home-kpi-overdue"
@@ -784,11 +787,73 @@ onBeforeUnmount(() => {
           <span class="text-[12px] text-[#6B7A99]">超过未跟进</span>
         </span>
       </button>
+
+      <section
+        class="col-span-3 h-full min-h-0 min-w-0 rounded-xl bg-white px-5 py-4"
+        data-testid="home-quick-access"
+      >
+        <div class="mb-4 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <Send :size="18" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
+            <span class="text-[18px] font-semibold text-[#1D2129]">快捷入口</span>
+          </div>
+          <el-button
+            v-if="quickAccessCatalog.length"
+            link
+            data-testid="home-quick-settings"
+            @click="openQuickAccessSettings"
+          >
+            <Settings2 :size="15" class="mr-1" aria-hidden="true" />自定义
+          </el-button>
+        </div>
+        <div
+          class="grid min-h-[56px] grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3"
+          data-testid="home-quick-actions"
+        >
+          <div
+            v-for="item in displayedQuickAccess"
+            :key="item.key"
+            class="min-w-0"
+            :data-testid="`home-quick-${item.key}`"
+          >
+            <button
+              type="button"
+              class="flex min-h-[56px] w-full min-w-0 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 px-2 py-3 text-center transition-colors"
+              :class="
+                item.theme === 'green'
+                  ? 'border-[#7AD8B2] bg-[#F1FBF7] text-[#1CB785] hover:bg-[#E8F8F1]'
+                  : item.theme === 'purple'
+                    ? 'border-[#B999FF] bg-[#F8F4FF] text-[#8B61F6] hover:bg-[#F0E9FF]'
+                    : item.theme === 'orange'
+                      ? 'border-[#FFA48C] bg-[#FFF6F3] text-[#F0784D] hover:bg-[#FFF0EB]'
+                      : 'border-[#91A8FF] bg-[#F5F7FF] text-[#4C6FFF] hover:bg-[#EDF1FF]'
+              "
+              :data-testid="`home-quick-action-${item.key}`"
+              @click="handleQuickAccess(item.key)"
+            >
+              <component
+                :is="item.icon"
+                :size="18"
+                :stroke-width="2"
+                class="shrink-0"
+                aria-hidden="true"
+              />
+              <span class="truncate text-[14px] font-semibold">{{ item.label }}</span>
+            </button>
+          </div>
+          <div
+            v-if="!displayedQuickAccess.length"
+            class="col-span-full flex items-center justify-center text-sm text-[#99A4B4]"
+          >
+            当前账号暂无可用快捷操作
+          </div>
+        </div>
+      </section>
     </div>
 
-    <div class="mb-3 grid grid-cols-2 items-stretch gap-3">
+    <div class="mb-3 grid h-[343px] shrink-0 grid-cols-2 items-stretch gap-3">
       <section
-        class="min-h-[390px] min-w-0 rounded-xl bg-white px-5 py-4"
+        class="h-full min-h-0 min-w-0 rounded-xl bg-white px-5 py-4"
         data-testid="home-my-leads"
       >
         <div class="mb-4 flex items-center justify-between gap-2">
@@ -886,7 +951,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section
-        class="min-h-[390px] min-w-0 rounded-xl bg-white px-5 py-4"
+        class="h-full min-h-0 min-w-0 rounded-xl bg-white px-5 py-4"
         data-testid="home-message-center"
       >
         <div class="mb-4 flex items-center justify-between gap-2">
@@ -965,91 +1030,14 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div class="grid grid-cols-2 items-stretch gap-3" data-testid="home-bottom-grid">
-      <section class="min-w-0 rounded-xl bg-white px-5 py-4" data-testid="home-quick-access">
-        <div class="mb-4 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <Send :size="18" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
-            <span class="text-[18px] font-semibold text-[#1D2129]">快捷入口</span>
-          </div>
-          <el-button
-            v-if="quickAccessCatalog.length"
-            link
-            data-testid="home-quick-settings"
-            @click="openQuickAccessSettings"
-          >
-            <Settings2 :size="15" class="mr-1" aria-hidden="true" />自定义
-          </el-button>
-        </div>
-        <div class="grid min-h-[256px] grid-cols-3 gap-3">
-          <div
-            v-for="item in displayedQuickAccess"
-            :key="item.key"
-            class="flex min-w-0 flex-col items-center justify-center rounded-xl border px-3 py-7 text-center"
-            :class="
-              item.theme === 'green'
-                ? 'border-[#D9F4E9] bg-[#F0FBF7]'
-                : item.theme === 'purple'
-                  ? 'border-[#EAE2FF] bg-[#F7F4FF]'
-                  : 'border-[#E7EEFF] bg-[#F3F6FF]'
-            "
-            :data-testid="`home-quick-${item.key}`"
-          >
-            <span
-              class="flex h-15 w-15 items-center justify-center rounded-full"
-              :class="
-                item.theme === 'green'
-                  ? 'bg-[#DDF9EE] text-[#1CB785]'
-                  : item.theme === 'purple'
-                    ? 'bg-[#EEE4FF] text-[#8B61F6]'
-                    : 'bg-[#E5ECFF] text-[#5379F9]'
-              "
-            >
-              <component :is="item.icon" :size="30" :stroke-width="2" aria-hidden="true" />
-            </span>
-            <div class="mt-[22px] flex min-w-0 flex-col items-center gap-2">
-              <div class="text-[16px] font-semibold leading-[24px] text-[#1D2939]">
-                {{ item.label }}
-              </div>
-              <div
-                class="max-w-full truncate text-[12px] font-normal leading-[18px] text-[#8A97AC]"
-              >
-                {{ item.description || '快速进入相关功能' }}
-              </div>
-            </div>
-            <el-button
-              class="mt-7 !h-[36px] !w-[96px] !rounded-[4px] !border !border-solid !bg-white !px-[20px] !py-[8px] !text-[14px] !font-medium !leading-[18px]"
-              :class="
-                item.theme === 'green'
-                  ? '!border-[#CDF1E3] !text-[#1CB785]'
-                  : item.theme === 'purple'
-                    ? '!border-[#E7DCFF] !text-[#8B61F6]'
-                    : '!border-[#DCE5FF] !text-[#4C6FFF]'
-              "
-              :data-testid="`home-quick-action-${item.key}`"
-              @click="handleQuickAccess(item.key)"
-              >{{
-                item.key === 'lead' || item.key === 'customer'
-                  ? '立即创建'
-                  : item.key.includes('Import')
-                    ? '选择文件'
-                    : '立即进入'
-              }}</el-button
-            >
-          </div>
-          <div
-            v-if="!displayedQuickAccess.length"
-            class="col-span-3 flex items-center justify-center text-sm text-[#99A4B4]"
-          >
-            当前账号暂无可用快捷操作
-          </div>
-        </div>
-      </section>
-
+    <div
+      class="grid h-[336px] shrink-0 grid-cols-2 items-stretch gap-3"
+      data-testid="home-bottom-grid"
+    >
       <section
         v-for="widget in analytics?.widgets ?? []"
         :key="widget.config.id"
-        class="min-w-0 rounded-xl bg-white px-5 py-4"
+        class="h-full min-h-0 min-w-0 rounded-xl bg-white px-5 py-4"
         :data-testid="`home-statistic-widget-${widget.config.id}`"
       >
         <div class="mb-3 flex items-center justify-between gap-2">
@@ -1129,7 +1117,7 @@ onBeforeUnmount(() => {
       </section>
       <section
         v-if="!analytics?.widgets?.length"
-        class="min-w-0 rounded-xl bg-white px-5 py-4"
+        class="h-full min-h-0 min-w-0 rounded-xl bg-white px-5 py-4"
         data-testid="home-widgets-empty"
       >
         <div class="mb-3 flex items-center gap-2">

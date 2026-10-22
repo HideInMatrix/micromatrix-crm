@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FieldVO, LeadStageConfig, LeadVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
-import { UserRound, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import { extractErrorMessage } from '@/api/http'
 import { leadApi } from '@/api/sales'
 import FollowRecordPanel from '@/components/follow-records/FollowRecordPanel.vue'
@@ -155,12 +155,12 @@ watch(
           <div
             class="mx-5 mt-5 mb-[10px] flex min-h-[100px] shrink-0 items-center gap-3 rounded-[7px] bg-[#F7F8FA] px-[18px] py-[17px] max-sm:gap-[9px] max-sm:p-3"
           >
-            <div
-              class="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-full bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
+            <img
+              src="/images/client.png"
+              alt=""
               aria-hidden="true"
-            >
-              <UserRound :size="42" :stroke-width="1.65" />
-            </div>
+              class="h-[62px] w-[62px] shrink-0 rounded-full object-cover"
+            />
             <div class="flex min-w-0 flex-1 flex-col gap-[6px]">
               <div class="flex min-w-0 items-center gap-2">
                 <strong class="truncate text-[20px] leading-none font-medium text-[#000000]">{{

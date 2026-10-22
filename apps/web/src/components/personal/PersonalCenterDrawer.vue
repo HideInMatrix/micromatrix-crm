@@ -193,7 +193,7 @@ watch([visible, activeTab], ([show, tab], [wasOpen, previousTab]) => {
         >
           <el-avatar
             :size="62"
-            :src="info?.avatarUrl ?? undefined"
+            src="/images/user.png"
             class="shrink-0 bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]"
           >
             <UserRound v-if="initials === '?'" :size="36" :stroke-width="1.65" />
