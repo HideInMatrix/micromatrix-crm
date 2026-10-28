@@ -151,7 +151,7 @@ export class ClueController {
   @LogOperation('lead', 'toPool')
   @ApiOperation({ summary: '移入线索池' })
   toPool(@CurrentUser() user: AuthUser, @Body() dto: ClueToPoolDto) {
-    return this.service.moveToPool(user, dto.id, dto.poolId, dto.reasonId)
+    return this.service.moveToPool(user, dto.id, dto.poolId, dto.reasonId, dto.note)
   }
 
   @Get('tab')

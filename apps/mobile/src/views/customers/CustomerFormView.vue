@@ -18,11 +18,6 @@ const draftKey = computed(() =>
   customerId.value ? 'customer-edit:' + customerId.value : 'customer-create',
 )
 
-async function cancel() {
-  searchSelect.clearDraft(draftKey.value)
-  await router.back()
-}
-
 async function submit() {
   try {
     await customerFormRef.value?.validate()
@@ -58,13 +53,14 @@ onBeforeRouteLeave((to) => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n10)]">
-    <div class="min-h-0 flex-1 overflow-auto bg-[var(--text-n10)] py-4">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#F5F5F5]">
+    <div class="min-h-0 flex-1 overflow-y-auto pb-[20px]">
       <van-loading v-if="form.loading.value" class="!flex !justify-center !py-10" />
       <MobileCustomerForm
         v-else
         ref="customerFormRef"
         v-model="form.model.value"
+        appearance="create"
         :fields="form.fields.value"
         :form-prop="form.formProp.value"
         :members="form.fieldRefs.members.value"
@@ -74,11 +70,15 @@ onBeforeRouteLeave((to) => {
     </div>
 
     <div
-      class="flex shrink-0 gap-4 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] p-4 pb-[calc(16px+env(safe-area-inset-bottom))]"
+      class="shrink-0 border-t-[0.5px] border-[#EAEAEA] bg-white px-[20px] pt-[8px] pb-[calc(8px+env(safe-area-inset-bottom))]"
+      style="
+        --van-button-default-height: 44px;
+        --van-button-border-radius: 8px;
+        --van-button-normal-font-size: 17px;
+      "
     >
-      <van-button block :disabled="form.saving.value" @click="cancel">取消</van-button>
       <van-button type="primary" block :loading="form.saving.value" @click="submit">
-        {{ form.submitText.value }}
+        {{ form.editing.value ? '保存修改' : '保存客户' }}
       </van-button>
     </div>
   </div>

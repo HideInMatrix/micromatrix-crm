@@ -4,60 +4,49 @@ import {
   type FieldVO,
   type FollowUpVO,
   type OwnerHistoryVO,
-  type TeamMemberVO,
 } from '@micromatrix/shared'
+import { Pencil, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
-import {
-  listCustomerOptions,
-  listCustomerRelations,
-  removeCustomer,
-  replaceCustomerRelations,
-  type CustomerRelationVO,
-} from '@/api/customers'
+import { removeCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import { customerExtraApi } from '@/api/sales'
+import defaultAvatar from '../../../../web/public/images/avatar.png'
+import homeBackground from '../../../../web/public/images/home-background.png'
+import { customerExtraApi, resourcePoolApi } from '@/api/sales'
+import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
-import MobileFollowUpPlanList from '@/components/MobileFollowUpPlanList.vue'
+import MobileLeadOperationSheet from '@/components/MobileLeadOperationSheet.vue'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
 import { fetchFields, getCustomer, pageFollowUps } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
-type DetailTab = 'info' | 'record' | 'plan' | 'header' | 'relation' | 'collaborator'
+type DetailTab = 'record' | 'change'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
 
-const activeTab = ref<DetailTab>('info')
+const activeTab = ref<DetailTab>('record')
 const loading = ref(false)
 const customer = ref<CustomerVO | null>(null)
 const fields = ref<FieldVO[]>([])
 const records = ref<FollowUpVO[]>([])
 const ownerHistory = ref<OwnerHistoryVO[]>([])
-const relations = ref<CustomerRelationVO[]>([])
-const collaborators = ref<TeamMemberVO[]>([])
 
 const followShow = ref(false)
-const moreShow = ref(false)
 const transferShow = ref(false)
-const relationShow = ref(false)
-const collaboratorShow = ref(false)
-
-const relationEditingId = ref<string | null>(null)
-const relationType = ref<'GROUP' | 'SUBSIDIARY'>('SUBSIDIARY')
-const relationCustomerId = ref('')
-const relationOptions = ref<{ id: string; name: string }[]>([])
-
-const collaboratorEditingId = ref<string | null>(null)
-const collaboratorUserId = ref('')
-const collaborationType = ref<'READ_ONLY' | 'COLLABORATION'>('COLLABORATION')
-
+const transferSubmitting = ref(false)
+const moveShow = ref(false)
+const moveLoading = ref(false)
+const moveSubmitting = ref(false)
+const poolOptions = ref<{ id: string; name: string }[]>([])
+const moveReasonEnabled = ref(false)
+const moveReasons = ref<DictionaryItemVO[]>([])
 const customerId = computed(() => String(route.query.id ?? ''))
 const poolSource = computed(() => route.query.source === 'openSea')
 const canWrite = computed(
@@ -69,42 +58,43 @@ const canMainAction = computed(
     customer.value.inSea !== true &&
     !customer.value.collaborationType,
 )
-const canEditRelations = computed(
-  () =>
-    auth.hasPerm('customer:update') &&
-    (customer.value?.canManageCustomer === true ||
-      customer.value?.collaborationType === 'COLLABORATION'),
+const canEdit = computed(
+  () => auth.hasPerm('customer:update') && (canMainAction.value || canWrite.value),
 )
-const detailTabs = computed<{ name: DetailTab; title: string }[]>(() => {
-  if (customer.value?.inSea) {
-    return [
-      { name: 'info', title: '客户信息' },
-      { name: 'record', title: '跟进记录' },
-      { name: 'plan', title: '跟进计划' },
-      { name: 'header', title: '负责人记录' },
-    ]
-  }
-  return [
-    { name: 'info', title: '客户信息' },
-    { name: 'record', title: '跟进记录' },
-    { name: 'plan', title: '跟进计划' },
-    { name: 'header', title: '负责人记录' },
-    { name: 'relation', title: '客户关系' },
-    ...(!customer.value?.collaborationType
-      ? [{ name: 'collaborator' as const, title: '协作人' }]
-      : []),
-  ]
-})
-
-const descriptionFields = computed(() => fields.value.filter((field) => !field.hidden))
-
-const relationColumns = computed(() =>
-  relationOptions.value
-    .filter((item) => item.id !== customerId.value)
-    .map((item) => ({ text: item.name, value: item.id })),
+const canDelete = computed(() => canMainAction.value && auth.hasPerm('customer:delete'))
+const canTransfer = computed(() => canMainAction.value && auth.hasPerm('customer:transfer'))
+const canMove = computed(() => canMainAction.value && auth.hasPerm('customer:recycle'))
+const showFooter = computed(
+  () => Boolean(customer.value?.phone) || canMove.value || canTransfer.value || canWrite.value,
 )
-const memberColumns = computed(() =>
-  fieldRefs.members.value.map((item) => ({ text: item.name, value: item.id })),
+const detailTabs: { name: DetailTab; title: string }[] = [
+  { name: 'record', title: '跟进记录' },
+  { name: 'change', title: '变更记录' },
+]
+
+const descriptionFields = computed(() =>
+  fields.value
+    .filter(
+      (field) =>
+        !field.hidden &&
+        field.mobile !== false &&
+        field.key !== 'name' &&
+        field.type !== 'sub_product' &&
+        field.type !== 'alert',
+    )
+    .sort((a, b) => a.sort - b.sort),
+)
+const sortedRecords = computed(() =>
+  [...records.value].sort(
+    (a, b) =>
+      new Date(b.followedAt ?? b.createdAt).getTime() -
+      new Date(a.followedAt ?? a.createdAt).getTime(),
+  ),
+)
+const sortedHistory = computed(() =>
+  [...ownerHistory.value].sort(
+    (a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime(),
+  ),
 )
 
 function displayField(field: FieldVO) {
@@ -113,6 +103,39 @@ function displayField(field: FieldVO) {
     memberMap: fieldRefs.memberMap.value,
     deptMap: fieldRefs.deptMap.value,
   })
+}
+
+function formatDate(value: string | null) {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--'
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function historyOwner(row: OwnerHistoryVO) {
+  return row.ownerName ?? row.ownerId ?? '原负责人'
+}
+
+function nextOwner(row: OwnerHistoryVO) {
+  const successor = ownerHistory.value.find(
+    (item) => item.id !== row.id && item.collectedAt === row.endedAt,
+  )
+  if (successor) return historyOwner(successor)
+  if (customer.value?.collectedAt === row.endedAt && customer.value.ownerId) {
+    return (
+      customer.value.ownerName ??
+      fieldRefs.memberMap.value.get(customer.value.ownerId) ??
+      '新负责人'
+    )
+  }
+  return '未分配'
+}
+
+function callCustomer() {
+  const phone = customer.value?.phone?.replace(/[^\d+]/g, '')
+  if (!phone) return showFailToast('暂无可联系的手机号')
+  window.location.href = `tel:${phone}`
 }
 
 async function load() {
@@ -130,22 +153,14 @@ async function load() {
     customer.value = detailRes.data
     fields.value = fieldRes.data
 
-    const [followRes, historyRes, relationRes, teamRes] = await Promise.all([
+    const [followRes, historyRes] = await Promise.all([
       poolSource.value
         ? Promise.resolve({ data: { items: [] as FollowUpVO[] } })
         : pageFollowUps('customer', customerId.value),
       customerExtraApi.ownerHistory(customerId.value),
-      poolSource.value
-        ? Promise.resolve({ data: [] as CustomerRelationVO[] })
-        : listCustomerRelations(customerId.value),
-      poolSource.value || customer.value.collaborationType
-        ? Promise.resolve({ data: [] as TeamMemberVO[] })
-        : customerExtraApi.teamList(customerId.value),
     ])
     records.value = followRes.data.items
     ownerHistory.value = historyRes.data
-    relations.value = relationRes.data
-    collaborators.value = teamRes.data
   } catch (error) {
     showFailToast(extractErrorMessage(error))
     router.replace('/customers')
@@ -158,47 +173,76 @@ async function reloadRecords() {
   try {
     const { data } = await pageFollowUps('customer', customerId.value)
     records.value = data.items
+    activeTab.value = 'record'
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
 
 function goEdit() {
-  router.push(`/customers/${customerId.value}/edit`)
+  if (canEdit.value) void router.push(`/customers/${customerId.value}/edit`)
 }
 
-async function transferOwner({ selectedValues }: { selectedValues: string[] }) {
-  const userId = selectedValues[0]
-  if (!userId) return
+async function transferOwner(value: { ownerId?: string }) {
+  if (!canTransfer.value || !value.ownerId || transferSubmitting.value) return
+  transferSubmitting.value = true
   try {
-    await customerExtraApi.assign(customerId.value, userId)
+    await customerExtraApi.assign(customerId.value, value.ownerId)
     showSuccessFeedback('客户已转移')
     transferShow.value = false
-    moreShow.value = false
     await load()
   } catch (error) {
     showFailToast(extractErrorMessage(error))
+  } finally {
+    transferSubmitting.value = false
   }
 }
 
-async function moveToSea() {
-  moreShow.value = false
-  const confirmed = await showActionConfirm({
-    title: '移入客户公海',
-    message: `确认将「${customer.value?.name ?? ''}」移入客户公海？`,
-  })
-  if (!confirmed) return
+async function openMove() {
+  if (!canMove.value) return
+  moveShow.value = true
+  moveLoading.value = true
   try {
-    await customerExtraApi.toSea(customerId.value)
-    showSuccessFeedback('已移入客户公海')
-    router.replace('/customers')
+    const [poolRes, reasonRes] = await Promise.all([
+      resourcePoolApi.options('customer'),
+      dictionaryApi.config('CUSTOMER_POOL_RS'),
+    ])
+    if (!moveShow.value) return
+    poolOptions.value = poolRes.data
+    moveReasonEnabled.value = reasonRes.data.enable
+    moveReasons.value = reasonRes.data.dictList.filter((item) => item.id !== 'system')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
+  } finally {
+    moveLoading.value = false
+  }
+}
+
+async function confirmMove(value: { poolId?: string; reasonId?: string }) {
+  if (!canMove.value || moveLoading.value || moveSubmitting.value) return
+  if (!value.poolId || !poolOptions.value.some((pool) => pool.id === value.poolId)) {
+    showFailToast('请选择有效的客户公海')
+    return
+  }
+  if (moveReasonEnabled.value && !value.reasonId) {
+    showFailToast('请选择移入客户公海原因')
+    return
+  }
+  moveSubmitting.value = true
+  try {
+    await customerExtraApi.toSea(customerId.value, value.poolId, value.reasonId)
+    moveShow.value = false
+    showSuccessFeedback('已移入客户公海')
+    await router.replace('/customers')
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    moveSubmitting.value = false
   }
 }
 
 async function handleDelete() {
-  moreShow.value = false
+  if (!canDelete.value) return
   const confirmed = await showActionConfirm({
     title: '删除客户',
     message: `确认删除「${customer.value?.name ?? ''}」？`,
@@ -214,269 +258,234 @@ async function handleDelete() {
   }
 }
 
-async function openRelationEditor(relation?: CustomerRelationVO) {
-  try {
-    if (relationOptions.value.length === 0) {
-      const { data } = await listCustomerOptions()
-      relationOptions.value = data
-    }
-    relationEditingId.value = relation?.id ?? null
-    relationType.value = relation?.relationType ?? 'SUBSIDIARY'
-    relationCustomerId.value = relation?.customerId ?? ''
-    relationShow.value = true
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
-function selectRelationCustomer({ selectedValues }: { selectedValues: string[] }) {
-  relationCustomerId.value = selectedValues[0] ?? ''
-}
-
-async function saveRelation() {
-  if (!relationCustomerId.value) {
-    showFailToast('请选择关联客户')
-    return
-  }
-  const next = relations.value
-    .filter((item) => item.id !== relationEditingId.value)
-    .map((item) => ({ relationType: item.relationType, customerId: item.customerId }))
-  next.push({ relationType: relationType.value, customerId: relationCustomerId.value })
-  try {
-    const { data } = await replaceCustomerRelations(customerId.value, next)
-    relations.value = data
-    relationShow.value = false
-    showSuccessFeedback(relationEditingId.value ? '客户关系已更新' : '客户关系已添加')
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
-async function deleteRelation(relation: CustomerRelationVO) {
-  try {
-    const next = relations.value
-      .filter((item) => item.id !== relation.id)
-      .map((item) => ({ relationType: item.relationType, customerId: item.customerId }))
-    const { data } = await replaceCustomerRelations(customerId.value, next)
-    relations.value = data
-    showSuccessFeedback('客户关系已删除')
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
-function openCollaboratorEditor(member?: TeamMemberVO) {
-  collaboratorEditingId.value = member?.id ?? null
-  collaboratorUserId.value = member?.userId ?? ''
-  collaborationType.value = member?.collaborationType ?? 'COLLABORATION'
-  collaboratorShow.value = true
-}
-
-function selectCollaborator({ selectedValues }: { selectedValues: string[] }) {
-  collaboratorUserId.value = selectedValues[0] ?? ''
-}
-
-async function saveCollaborator() {
-  if (!collaboratorUserId.value) {
-    showFailToast('请选择协作人')
-    return
-  }
-  try {
-    if (collaboratorEditingId.value) {
-      await customerExtraApi.teamUpdate(
-        customerId.value,
-        collaboratorEditingId.value,
-        collaborationType.value,
-      )
-    } else {
-      await customerExtraApi.teamAdd(
-        customerId.value,
-        collaboratorUserId.value,
-        undefined,
-        collaborationType.value,
-      )
-    }
-    const { data } = await customerExtraApi.teamList(customerId.value)
-    collaborators.value = data
-    collaboratorShow.value = false
-    showSuccessFeedback(collaboratorEditingId.value ? '协作设置已更新' : '协作人已添加')
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
-async function deleteCollaborator(member: TeamMemberVO) {
-  try {
-    await customerExtraApi.teamRemove(customerId.value, member.id)
-    collaborators.value = collaborators.value.filter((item) => item.id !== member.id)
-    showSuccessFeedback('协作人已移除')
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
 onMounted(async () => {
   await load()
   if (!customer.value) return
-  if (
-    route.query.action === 'transfer' &&
-    canMainAction.value &&
-    auth.hasPerm('customer:transfer')
-  ) {
+  if (route.query.action === 'transfer' && canTransfer.value) {
     transferShow.value = true
   }
 })
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-[var(--mobile-page-background)]">
-    <van-loading v-if="loading" class="py-16 text-center" />
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#F3F5F8]">
+    <van-loading v-if="loading" class="!flex !justify-center !py-16" />
     <template v-else-if="customer">
-      <van-tabs
-        v-model:active="activeTab"
-        border
-        class="min-h-0 flex-1 [&_.van-tabs__content]:h-full [&_.van-tabs__content]:overflow-hidden [&_.van-tab__panel]:h-full"
+      <div
+        class="min-h-0 flex-1 overflow-y-auto bg-[#F4F6F9] bg-top bg-no-repeat p-[12px]"
+        :style="{ backgroundImage: 'url(' + homeBackground + ')', backgroundSize: '100% auto' }"
       >
-        <van-tab v-for="tab in detailTabs" :key="tab.name" :name="tab.name" :title="tab.title">
-          <div class="h-full overflow-auto pb-4">
-            <template v-if="tab.name === 'info'">
-              <van-cell-group inset class="!mt-4">
-                <van-cell
-                  v-for="field in descriptionFields"
-                  :key="field.id"
-                  :title="field.label"
-                  :value="displayField(field)"
-                />
-              </van-cell-group>
-            </template>
-
-
-            <template v-else-if="tab.name === 'record'">
-              <div v-if="canWrite" class="px-4 pt-3">
-                <van-button type="primary" plain block size="small" @click="followShow = true"
-                  >新增跟进</van-button
-                >
-              </div>
-              <van-empty v-if="records.length === 0" description="暂无跟进记录" />
-              <van-cell-group v-for="record in records" :key="record.id" inset class="!mt-3">
-                <van-cell :title="record.type ?? '其他'" :label="record.content">
-                  <template #value>{{ new Date(record.createdAt).toLocaleDateString() }}</template>
-                </van-cell>
-              </van-cell-group>
-            </template>
-
-            <MobileFollowUpPlanList
-              v-else-if="tab.name === 'plan'"
-              target-type="customer"
-              :target-id="customerId"
-              :target-name="customer.name"
-              :can-write="canWrite"
+        <section class="rounded-[8px] bg-white/80 p-[12px]" aria-label="客户信息">
+          <div class="flex items-center gap-[10px]">
+            <van-image
+              :src="defaultAvatar"
+              round
+              fit="cover"
+              width="48"
+              height="48"
+              class="shrink-0"
             />
-
-            <template v-else-if="tab.name === 'header'">
-              <van-empty v-if="ownerHistory.length === 0" description="暂无负责人记录" />
-              <van-cell-group v-for="item in ownerHistory" :key="item.id" inset class="!mt-3">
-                <van-cell
-                  :title="item.ownerName ?? '未知负责人'"
-                  :value="item.departmentName ?? '-'"
-                />
-                <van-cell
-                  title="归属开始"
-                  :value="item.collectedAt ? new Date(item.collectedAt).toLocaleString() : '-'"
-                />
-                <van-cell title="归属结束" :value="new Date(item.endedAt).toLocaleString()" />
-                <van-cell title="回收原因" :value="item.reasonName ?? '-'" />
-                <van-cell title="操作人" :value="item.operatorName ?? '-'" />
-              </van-cell-group>
-            </template>
-
-            <template v-else-if="tab.name === 'relation'">
-              <div v-if="canEditRelations" class="px-4 pt-3">
-                <van-button type="primary" plain block size="small" @click="openRelationEditor()"
-                  >添加客户关系</van-button
-                >
-              </div>
-              <van-empty v-if="relations.length === 0" description="暂无客户关系" />
-              <van-cell-group v-for="relation in relations" :key="relation.id" inset class="!mt-3">
-                <van-cell :title="relation.customerName ?? '-'">
-                  <template #label>{{
-                    relation.relationType === 'GROUP' ? '集团客户' : '子公司'
-                  }}</template>
-                  <template v-if="canEditRelations" #value>
-                    <span
-                      class="text-[var(--van-primary-color)] mr-3"
-                      @click="openRelationEditor(relation)"
-                      >编辑</span
-                    >
-                    <span class="text-red-500" @click="deleteRelation(relation)">删除</span>
-                  </template>
-                </van-cell>
-              </van-cell-group>
-            </template>
-
-            <template v-else-if="tab.name === 'collaborator'">
-              <div v-if="auth.hasPerm('customer:update')" class="px-4 pt-3">
-                <van-button
-                  type="primary"
-                  plain
-                  block
-                  size="small"
-                  @click="openCollaboratorEditor()"
-                  >添加协作人</van-button
-                >
-              </div>
-              <van-empty v-if="collaborators.length === 0" description="暂无协作人" />
-              <van-cell-group v-for="member in collaborators" :key="member.id" inset class="!mt-3">
-                <van-cell :title="member.userName" :label="member.role ?? '未设置角色'">
-                  <template #value>
-                    <van-tag
-                      plain
-                      :type="member.collaborationType === 'READ_ONLY' ? 'default' : 'primary'"
-                    >
-                      {{ member.collaborationType === 'READ_ONLY' ? '只读' : '协作' }}
-                    </van-tag>
-                  </template>
-                </van-cell>
-                <van-cell v-if="auth.hasPerm('customer:update')">
-                  <template #value>
-                    <span
-                      class="text-[var(--van-primary-color)] mr-4"
-                      @click="openCollaboratorEditor(member)"
-                      >编辑</span
-                    >
-                    <span class="text-red-500" @click="deleteCollaborator(member)">移除</span>
-                  </template>
-                </van-cell>
-              </van-cell-group>
-            </template>
+            <div class="min-w-0 flex-1">
+              <h1 class="m-0 truncate text-[18px] leading-[24px] font-semibold text-[#000000]">
+                {{ customer.name || '未命名客户' }}
+              </h1>
+            </div>
+            <div v-if="canEdit || canDelete" class="flex shrink-0 items-center gap-[18px]">
+              <van-button
+                v-if="canEdit"
+                class="!h-auto !shrink-0 !border-0 !bg-transparent !p-0 !text-[var(--van-primary-color)]"
+                @click="goEdit"
+              >
+                <span class="flex flex-col items-center gap-[3px] text-[12px]">
+                  <Pencil :size="18" aria-hidden="true" />编辑
+                </span>
+              </van-button>
+              <van-button
+                v-if="canDelete"
+                class="!h-auto !shrink-0 !border-0 !bg-transparent !p-0 !text-[#888888]"
+                @click="handleDelete"
+              >
+                <span class="flex flex-col items-center gap-[3px] text-[12px]">
+                  <Trash2 :size="18" aria-hidden="true" />删除
+                </span>
+              </van-button>
+            </div>
           </div>
-        </van-tab>
-      </van-tabs>
+
+          <div
+            v-if="descriptionFields.length"
+            class="mt-[20px] grid grid-cols-2 gap-x-[12px] gap-y-[15px]"
+          >
+            <div
+              v-for="field in descriptionFields"
+              :key="field.id"
+              class="min-w-0"
+              :class="
+                ['textarea', 'multiselect', 'attachment'].includes(field.type) ? 'col-span-2' : ''
+              "
+            >
+              <div class="text-[14px] leading-[20px] text-[#999999]">{{ field.label }}</div>
+              <div class="mt-[3px] break-words text-[14px] leading-[20px] text-[#333333]">
+                {{ displayField(field) }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="mt-[12px] min-h-[180px] rounded-[8px] bg-white p-[12px]"
+          aria-label="客户记录"
+        >
+          <div class="flex h-[24px] items-center gap-[20px] overflow-x-auto whitespace-nowrap">
+            <van-button
+              v-for="tab in detailTabs"
+              :key="tab.name"
+              class="relative !h-[24px] !flex-none !rounded-none !border-0 !bg-transparent !p-0 !leading-[24px]"
+              :class="
+                activeTab === tab.name
+                  ? '!text-[16px] !font-semibold !text-[var(--van-primary-color)]'
+                  : '!text-[14px] !font-normal !text-[#666666]'
+              "
+              @click="activeTab = tab.name"
+            >
+              {{ tab.title }}
+              <span
+                v-if="activeTab === tab.name"
+                class="absolute inset-x-0 bottom-0 h-[2px] rounded-[2px] bg-[var(--van-primary-color)]"
+              />
+            </van-button>
+          </div>
+
+          <template v-if="activeTab === 'record'">
+            <van-empty
+              v-if="sortedRecords.length === 0"
+              image-size="68"
+              description="暂无跟进记录"
+            />
+            <ol v-else class="m-0 ml-[8px] mt-[12px] list-none p-0 pl-[16px]">
+              <li
+                v-for="(record, index) in sortedRecords"
+                :key="record.id"
+                class="relative pb-[24px] last:pb-0"
+              >
+                <span
+                  v-if="index < sortedRecords.length - 1"
+                  class="pointer-events-none absolute -bottom-[9px] -left-[17px] w-[2px] bg-[#CCCCCC]"
+                  :class="index === 0 ? 'top-[8px]' : 'top-[9px]'"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="index === 0"
+                  class="absolute top-0 -left-[24px] h-[16px] w-[16px] rounded-full bg-[color-mix(in_srgb,var(--van-primary-color)_12%,white)]"
+                  aria-hidden="true"
+                />
+                <span
+                  v-else
+                  class="absolute top-[5px] -left-[20px] h-[8px] w-[8px] rounded-full bg-[#999999]"
+                  aria-hidden="true"
+                />
+                <time
+                  class="block text-[12px] leading-[17px] text-[#999999]"
+                  :datetime="record.followedAt ?? record.createdAt"
+                  >{{ formatDate(record.followedAt ?? record.createdAt) }}</time
+                >
+                <p
+                  class="mt-[5px] mb-0 whitespace-pre-wrap break-words text-[14px] leading-[20px] text-[#333333]"
+                >
+                  {{ record.content || record.type || '跟进记录' }}
+                </p>
+                <span
+                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                  >{{ record.ownerName ? '操作人：' + record.ownerName : '操作人：-' }}</span
+                >
+              </li>
+            </ol>
+          </template>
+
+          <template v-else-if="activeTab === 'change'">
+            <van-empty
+              v-if="sortedHistory.length === 0"
+              image-size="68"
+              description="暂无变更记录"
+            />
+            <ol v-else class="m-0 ml-[8px] mt-[12px] list-none p-0 pl-[16px]">
+              <li
+                v-for="(item, index) in sortedHistory"
+                :key="item.id"
+                class="relative pb-[24px] last:pb-0"
+              >
+                <span
+                  v-if="index < sortedHistory.length - 1"
+                  class="pointer-events-none absolute -bottom-[9px] -left-[17px] w-[2px] bg-[#CCCCCC]"
+                  :class="index === 0 ? 'top-[8px]' : 'top-[9px]'"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="index === 0"
+                  class="absolute top-0 -left-[24px] h-[16px] w-[16px] rounded-full bg-[color-mix(in_srgb,var(--van-primary-color)_12%,white)]"
+                  aria-hidden="true"
+                />
+                <span
+                  v-else
+                  class="absolute top-[5px] -left-[20px] h-[8px] w-[8px] rounded-full bg-[#999999]"
+                  aria-hidden="true"
+                />
+                <time
+                  class="block text-[12px] leading-[17px] text-[#999999]"
+                  :datetime="item.endedAt"
+                >
+                  {{ formatDate(item.endedAt) }}
+                </time>
+                <p class="mt-[5px] mb-0 break-words text-[14px] leading-[20px] text-[#333333]">
+                  负责人由 {{ historyOwner(item) }} 变更为 {{ nextOwner(item) }}
+                  <span v-if="item.reasonName">（{{ item.reasonName }}）</span>
+                </p>
+                <p
+                  v-if="item.collectedAt || item.departmentName"
+                  class="mt-[5px] mb-0 text-[12px] leading-[17px] text-[#999999]"
+                >
+                  <span v-if="item.departmentName">归属部门：{{ item.departmentName }}</span>
+                  <span v-if="item.collectedAt" class="ml-[8px]"
+                    >归属开始：{{ formatDate(item.collectedAt) }}</span
+                  >
+                </p>
+                <span
+                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                  >操作人：{{ item.operatorName ?? '系统' }}</span
+                >
+              </li>
+            </ol>
+          </template>
+        </section>
+      </div>
 
       <div
-        v-if="
-          activeTab === 'info' &&
-          canMainAction &&
-          (auth.hasPerm('customer:update') ||
-            auth.hasPerm('customer:transfer') ||
-            auth.hasPerm('customer:recycle') ||
-            auth.hasPerm('customer:delete'))
-        "
-        class="flex shrink-0 gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
+        v-if="showFooter"
+        class="flex shrink-0 flex-nowrap items-center justify-end gap-[8px] bg-white px-[12px] pt-[10px] pb-[calc(12px+env(safe-area-inset-bottom))]"
       >
-        <van-button v-if="auth.hasPerm('customer:update')" block type="primary" @click="goEdit"
-          >编辑</van-button
+        <van-button
+          v-if="customer.phone"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          @click="callCustomer"
+          >电话联系</van-button
         >
         <van-button
-          v-if="
-            auth.hasPerm('customer:transfer') ||
-            auth.hasPerm('customer:recycle') ||
-            auth.hasPerm('customer:delete')
-          "
-          block
-          plain
-          @click="moreShow = true"
-          >更多</van-button
+          v-if="canMove"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          @click="openMove"
+          >移入客户公海</van-button
+        >
+        <van-button
+          v-if="canTransfer"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          @click="transferShow = true"
+          >转移</van-button
+        >
+        <van-button
+          v-if="canWrite"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-[var(--van-primary-color)] !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-white"
+          @click="followShow = true"
+          >写跟进</van-button
         >
       </div>
     </template>
@@ -488,78 +497,26 @@ onMounted(async () => {
       :target-name="customer?.name"
       @followed="reloadRecords"
     />
-
-    <van-action-sheet v-model:show="moreShow" title="更多操作">
-      <div class="p-4 space-y-3">
-        <van-button v-if="auth.hasPerm('customer:transfer')" block @click="transferShow = true"
-          >转移</van-button
-        >
-        <van-button v-if="auth.hasPerm('customer:recycle')" block @click="moveToSea"
-          >移入客户公海</van-button
-        >
-        <van-button
-          v-if="auth.hasPerm('customer:delete')"
-          block
-          type="danger"
-          plain
-          @click="handleDelete"
-          >删除</van-button
-        >
-      </div>
-    </van-action-sheet>
-
-    <van-popup v-model:show="transferShow" position="bottom" round>
-      <van-picker
-        :columns="memberColumns"
-        @confirm="transferOwner"
-        @cancel="transferShow = false"
-      />
-    </van-popup>
-
-    <van-popup v-model:show="relationShow" position="bottom" round>
-      <div class="p-4">
-        <div class="text-center font-medium mb-3">
-          {{ relationEditingId ? '编辑客户关系' : '添加客户关系' }}
-        </div>
-        <van-radio-group v-model="relationType" direction="horizontal" class="mb-3 justify-center">
-          <van-radio name="GROUP">集团客户</van-radio>
-          <van-radio name="SUBSIDIARY">子公司</van-radio>
-        </van-radio-group>
-        <van-picker
-          :columns="relationColumns"
-          @change="selectRelationCustomer"
-          @confirm="selectRelationCustomer"
-        />
-        <van-button type="primary" block class="mt-3" @click="saveRelation">保存</van-button>
-      </div>
-    </van-popup>
-
-    <van-popup v-model:show="collaboratorShow" position="bottom" round>
-      <div class="p-4">
-        <div class="text-center font-medium mb-3">
-          {{ collaboratorEditingId ? '编辑协作设置' : '添加协作人' }}
-        </div>
-        <van-radio-group
-          v-model="collaborationType"
-          direction="horizontal"
-          class="mb-3 justify-center"
-        >
-          <van-radio name="COLLABORATION">协作</van-radio>
-          <van-radio name="READ_ONLY">只读</van-radio>
-        </van-radio-group>
-        <van-picker
-          v-if="!collaboratorEditingId"
-          :columns="memberColumns"
-          @change="selectCollaborator"
-          @confirm="selectCollaborator"
-        />
-        <van-cell
-          v-else
-          title="协作人"
-          :value="fieldRefs.memberMap.value.get(collaboratorUserId) ?? '-'"
-        />
-        <van-button type="primary" block class="mt-3" @click="saveCollaborator">保存</van-button>
-      </div>
-    </van-popup>
+    <MobileLeadOperationSheet
+      v-model="transferShow"
+      resource="customer"
+      mode="transfer"
+      :target-name="customer?.name"
+      :members="fieldRefs.members.value"
+      :submitting="transferSubmitting"
+      @confirm="transferOwner"
+    />
+    <MobileLeadOperationSheet
+      v-model="moveShow"
+      resource="customer"
+      mode="move"
+      :target-name="customer?.name"
+      :pools="poolOptions"
+      :reason-enabled="moveReasonEnabled"
+      :reasons="moveReasons"
+      :loading="moveLoading"
+      :submitting="moveSubmitting"
+      @confirm="confirmMove"
+    />
   </div>
 </template>

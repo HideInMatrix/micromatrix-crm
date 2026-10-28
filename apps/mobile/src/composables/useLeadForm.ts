@@ -6,6 +6,7 @@ import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@micromatrix/frontend-shared/api/metadata'
 import { leadApi } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useAuthStore } from '@/stores/auth'
 import { showSuccessFeedback, wait } from '@/utils/feedback'
 import {
   createLeadFormModel,
@@ -16,6 +17,7 @@ import {
 
 export function useLeadForm(leadId: Readonly<Ref<string | undefined>>) {
   const fieldRefs = useFieldRefs()
+  const auth = useAuthStore()
   const fields = ref<FieldVO[]>([])
   const formProp = ref<ModuleFormProp>({})
   const model = ref<Record<string, unknown>>({})
@@ -42,6 +44,14 @@ export function useLeadForm(leadId: Readonly<Ref<string | undefined>>) {
       model.value = detail
         ? leadToFormModel(detail.data, fields.value)
         : createLeadFormModel(fields.value)
+      if (
+        !detail &&
+        fields.value.some((field) => field.key === 'owner') &&
+        !model.value.owner &&
+        auth.user?.id
+      ) {
+        model.value.owner = auth.user.id
+      }
     } catch (error) {
       showFailToast(extractErrorMessage(error))
       throw error

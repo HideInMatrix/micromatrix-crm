@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import MobileCalendarPopup from './MobileCalendarPopup.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -8,6 +9,7 @@ const props = withDefaults(
     rules?: Array<{ required?: boolean; message?: string }>
     placeholder?: string
     required?: boolean
+    inputAlign?: 'left' | 'right'
     disabled?: boolean
     format?: 'iso' | 'space' | 'local'
   }>(),
@@ -17,67 +19,53 @@ const props = withDefaults(
     rules: () => [],
     placeholder: '请选择',
     required: false,
+    inputAlign: 'left',
     disabled: false,
     format: 'iso',
   },
 )
 
 const model = defineModel<string>({ required: true })
-const showPicker = ref(false)
-const currentDate = ref<string[]>([])
-const currentTime = ref<string[]>([])
+const showCalendar = ref(false)
 
-function parseValue(value: string) {
-  if (!value) return new Date()
+function parseValue(value: string): Date | null {
+  if (!value) return null
   const normalized = value.includes(' ') ? value.replace(' ', 'T') : value
   const date = new Date(normalized)
-  return Number.isNaN(date.getTime()) ? new Date() : date
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
-function syncPicker() {
-  const date = parseValue(model.value)
+function formatLocalDay(date: Date): string {
   const yyyy = String(date.getFullYear())
   const mm = String(date.getMonth() + 1).padStart(2, '0')
   const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
-  currentDate.value = [yyyy, mm, dd]
-  currentTime.value = [hh, min]
+  return `${yyyy}-${mm}-${dd}`
 }
 
 const displayValue = computed(() => {
-  if (!model.value) return ''
   const date = parseValue(model.value)
-  const yyyy = String(date.getFullYear())
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}`
+  return date ? formatLocalDay(date) : ''
 })
 
 function openPicker() {
   if (props.disabled) return
-  syncPicker()
-  showPicker.value = true
+  showCalendar.value = true
 }
 
-function onConfirm() {
-  const datePart = currentDate.value.join('-')
-  const timePart = currentTime.value.join(':')
-  const local = `${datePart}T${timePart}:00`
-  if (props.format === 'space') model.value = `${datePart} ${timePart}:00`
-  else if (props.format === 'local') model.value = `${datePart}T${timePart}`
+function onCalendarConfirm(date: string) {
+  // Datetime fields keep their API serialization contract, but only expose a
+  // calendar to users. A selected day is normalized to local midnight.
+  const local = `${date}T00:00:00`
+  if (props.format === 'space') model.value = `${date} 00:00:00`
+  else if (props.format === 'local') model.value = `${date}T00:00`
   else model.value = new Date(local).toISOString()
-  showPicker.value = false
 }
-
-watch(model, syncPicker, { immediate: true })
 </script>
 
 <template>
   <van-field
     :model-value="displayValue"
+    :input-align="inputAlign"
     :name="name"
     :rules="rules"
     :label="label || undefined"
@@ -91,22 +79,10 @@ watch(model, syncPicker, { immediate: true })
     @clear="model = ''"
   />
 
-  <van-popup
-    v-model:show="showPicker"
-    position="bottom"
-    round
-    destroy-on-close
-    safe-area-inset-bottom
-  >
-    <van-picker-group
-      title="选择日期时间"
-      :tabs="['日期', '时间']"
-      next-step-text="下一步"
-      @confirm="onConfirm"
-      @cancel="showPicker = false"
-    >
-      <van-date-picker v-model="currentDate" :columns-type="['year', 'month', 'day']" />
-      <van-time-picker v-model="currentTime" :columns-type="['hour', 'minute']" />
-    </van-picker-group>
-  </van-popup>
+  <MobileCalendarPopup
+    v-model:show="showCalendar"
+    :label="label || '选择日期'"
+    :value="displayValue"
+    @confirm="onCalendarConfirm"
+  />
 </template>

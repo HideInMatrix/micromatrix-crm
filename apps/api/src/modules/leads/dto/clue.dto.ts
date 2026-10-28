@@ -243,6 +243,12 @@ export class ClueToPoolDto {
   @IsString()
   @IsOptional()
   reasonId?: string
+
+  @ApiPropertyOptional({ description: '补充说明（选填，最多500字）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string
 }
 
 export class TransformClueDto {

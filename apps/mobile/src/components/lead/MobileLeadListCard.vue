@@ -3,21 +3,56 @@ import type { FieldVO, LeadVO } from '@micromatrix/shared'
 import { formatFieldValue } from '@micromatrix/frontend-shared/field-display'
 import { computed } from 'vue'
 
-const props = defineProps<{
-  lead: LeadVO
-  fields: FieldVO[]
-  memberMap: Map<string, string>
-  deptMap: Map<string, string>
+const emit = defineEmits<{
+  open: []
+  call: []
+  follow: []
+  assign: []
+  claim: []
 }>()
+const props = withDefaults(
+  defineProps<{
+    lead: LeadVO
+    fields: FieldVO[]
+    memberMap: Map<string, string>
+    deptMap: Map<string, string>
+    stageNames?: Record<string, string>
+    mode?: 'mine' | 'pool'
+    canFollow?: boolean
+    canAssign?: boolean
+    canClaim?: boolean
+  }>(),
+  { mode: 'mine', canFollow: false, canAssign: false, canClaim: false, stageNames: () => ({}) },
+)
 
-const primaryField = computed(
-  () => props.fields.find((field) => field.key === 'name') ?? props.fields[0],
+// 字段由 PC 表单配置决定：列表显示、移动端显示、字段顺序同时生效。
+// 卡片头部取配置顺序的前两个字段，其余字段仍按相同顺序展示。
+const visibleFields = computed(() =>
+  props.fields
+    .filter(
+      (field) =>
+        field.showInList &&
+        field.mobile !== false &&
+        !field.hidden &&
+        !['alert', 'sub_product'].includes(field.type),
+    )
+    .sort((a, b) => a.sort - b.sort),
 )
-const detailFields = computed(() =>
-  props.fields.filter((field) => field.id !== primaryField.value?.id),
-)
+const heading = computed(() => visibleFields.value[0] ?? null)
+const subtitle = computed(() => visibleFields.value[1] ?? null)
+const detailFields = computed(() => visibleFields.value.slice(2))
+const showActions = computed(() => props.mode === 'mine' || props.canAssign || props.canClaim)
 
 function displayValue(field: FieldVO) {
+  if (field.key === 'stage' || field.key === 'status')
+    return props.stageNames?.[props.lead.status] ?? props.lead.status
+  if (field.key === 'lastFollowedAt') {
+    const value = props.lead.lastFollowedAt
+    if (!value) return '-'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '-'
+    return `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
   return formatFieldValue(field, props.lead as unknown as Record<string, unknown>, {
     memberMap: props.memberMap,
     deptMap: props.deptMap,
@@ -26,29 +61,67 @@ function displayValue(field: FieldVO) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 rounded-[6px] bg-[var(--text-n10)] px-5 py-4">
-    <div class="flex min-w-0 items-start justify-between gap-3">
-      <div class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-n1)]">
-        {{ primaryField ? displayValue(primaryField) : lead.name }}
-      </div>
-      <slot name="extra" />
-    </div>
-
-    <div v-if="detailFields.length" class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-      <div v-for="field in detailFields" :key="field.id" class="min-w-0">
-        <div class="truncate text-[var(--text-n4)]">{{ field.label }}</div>
-        <div class="mt-0.5 break-all text-[var(--text-n1)]">{{ displayValue(field) }}</div>
-      </div>
-    </div>
-
-    <template v-if="$slots.actions">
-      <van-divider class="!my-0" />
-      <div
-        class="flex w-full items-center justify-between gap-2 [&_.van-button]:min-w-0 [&_.van-button]:flex-1 [&_.van-button]:!px-1"
+  <article class="rounded-[8px] bg-white p-[12px]" @click="emit('open')">
+    <div v-if="heading" class="flex min-w-0 items-center justify-between gap-[8px]">
+      <span class="min-w-0 truncate text-[15px] leading-[18px] font-medium text-[#000000]">
+        <span v-if="heading.key !== 'name'">{{ heading.label }}：</span>{{ displayValue(heading) }}
+      </span>
+      <span
+        v-if="subtitle"
+        class="max-w-[64%] shrink-0 truncate whitespace-nowrap text-[12px] leading-[18px] text-[#666666]"
       >
-        <slot name="actions" />
+        {{ subtitle.label }}：<span class="text-[#333333]">{{ displayValue(subtitle) }}</span>
+      </span>
+    </div>
+    <div v-else class="text-[15px] leading-[18px] font-medium text-[#333333]">查看线索</div>
+    <div
+      v-if="detailFields.length"
+      class="mt-[12px] grid grid-cols-2 gap-x-[8px] gap-y-[12px] text-[12px] leading-[16px]"
+    >
+      <div v-for="field in detailFields" :key="field.id" class="min-w-0 truncate">
+        <span class="text-[#666666]">{{ field.label }}：</span
+        ><span class="text-[#333333]">{{ displayValue(field) }}</span>
       </div>
-    </template>
-  </div>
+    </div>
+    <div
+      v-if="showActions"
+      class="mt-[16px] flex items-center justify-end gap-[12px]"
+      style="
+        --van-button-small-height: 28px;
+        --van-button-small-padding: 0 18px;
+        --van-button-small-font-size: 12px;
+        --van-button-round-radius: 14px;
+        --van-button-border-width: 0px;
+        --van-button-plain-background: color-mix(in srgb, var(--van-primary-color) 8%, white);
+      "
+      @click.stop
+    >
+      <template v-if="mode === 'mine'">
+        <van-button v-if="lead.phone" size="small" type="primary" plain round @click="emit('call')">
+          电话联系
+        </van-button>
+        <van-button size="small" type="primary" plain round @click="emit('open')">
+          详情
+        </van-button>
+        <van-button v-if="canFollow" size="small" type="primary" round @click="emit('follow')">
+          写跟进
+        </van-button>
+      </template>
+      <template v-else>
+        <van-button
+          v-if="canAssign"
+          size="small"
+          type="primary"
+          plain
+          round
+          @click="emit('assign')"
+        >
+          分配
+        </van-button>
+        <van-button v-if="canClaim" size="small" type="primary" round @click="emit('claim')">
+          领取
+        </van-button>
+      </template>
+    </div>
+  </article>
 </template>
-

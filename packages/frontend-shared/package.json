@@ -8,6 +8,7 @@
     "./api/*": "./src/api/*.ts",
     "./device": "./src/device.ts",
     "./field-display": "./src/field-display.ts",
+    "./quick-search-query": "./src/quick-search-query.ts",
     "./http": "./src/http.ts",
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./token-storage": "./src/token-storage.ts"

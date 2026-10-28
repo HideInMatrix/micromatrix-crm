@@ -10,9 +10,5 @@ defineEmits<{
 </script>
 
 <template>
-  <van-nav-bar
-    :title="title"
-    :left-arrow="leftArrow"
-    @click-left="$emit('back')"
-  />
+  <van-nav-bar :title="title" :left-arrow="leftArrow" @click-left="$emit('back')" />
 </template>

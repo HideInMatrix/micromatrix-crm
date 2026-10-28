@@ -1,55 +1,88 @@
 <script setup lang="ts">
 import type { FieldVO, FollowUpVO, LeadVO, OwnerHistoryVO } from '@micromatrix/shared'
+import { formatFieldValue } from '@micromatrix/frontend-shared/field-display'
+import { Pencil, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
+import defaultAvatar from '../../../../web/public/images/avatar.png'
+import homeBackground from '../../../../web/public/images/home-background.png'
 import { extractErrorMessage } from '@/api/http'
 import { fetchFields, pageFollowUps } from '@/api/mobile'
 import { leadApi } from '@/api/sales'
-import { formatFieldValue } from '@/components/form-engine/field-display'
-import MobileFollowUpPlanList from '@/components/MobileFollowUpPlanList.vue'
+import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
+import MobileLeadOperationSheet from '@/components/MobileLeadOperationSheet.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
 
-type DetailTab = 'info' | 'record' | 'plan' | 'header'
+type HistoryTab = 'record' | 'change'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
 
-const activeTab = ref<DetailTab>('info')
+const activeTab = ref<HistoryTab>('record')
 const loading = ref(false)
 const lead = ref<LeadVO | null>(null)
 const fields = ref<FieldVO[]>([])
 const records = ref<FollowUpVO[]>([])
 const ownerHistory = ref<OwnerHistoryVO[]>([])
 const followShow = ref(false)
-const moreShow = ref(false)
+const transferShow = ref(false)
+const moveShow = ref(false)
+const moveLoading = ref(false)
+const moveSubmitting = ref(false)
+const transferSubmitting = ref(false)
+const poolOptions = ref<{ id: string; name: string }[]>([])
+const moveReasonEnabled = ref(false)
+const moveReasons = ref<DictionaryItemVO[]>([])
 
 const leadId = computed(() => String(route.query.id ?? ''))
 const poolSource = computed(() => route.name === 'mobile-lead-pool-detail')
-const canWrite = computed(() => !poolSource.value && auth.hasPerm('lead:update'))
-const canConvert = computed(() => !poolSource.value && auth.hasPerm('lead:convert') && auth.hasPerm('lead:update') && auth.hasPerm('customer:create'))
-const descriptionFields = computed(() =>
-  fields.value.filter((field) => !field.hidden && field.mobile !== false),
+const isConverted = computed(() => lead.value?.transitionType === 'CUSTOMER')
+const canWrite = computed(
+  () => !poolSource.value && !isConverted.value && auth.hasPerm('lead:update'),
 )
-const detailTabs = computed<{ name: DetailTab; title: string }[]>(() =>
-  poolSource.value
-    ? [
-        { name: 'info', title: '线索信息' },
-        { name: 'record', title: '跟进记录' },
-        { name: 'header', title: '负责人记录' },
-      ]
-    : [
-        { name: 'info', title: '线索信息' },
-        { name: 'record', title: '跟进记录' },
-        { name: 'plan', title: '跟进计划' },
-        { name: 'header', title: '负责人记录' },
-      ],
+const canEdit = canWrite
+const canDelete = computed(
+  () => !poolSource.value && !isConverted.value && auth.hasPerm('lead:delete'),
+)
+const canMove = computed(
+  () => !poolSource.value && !isConverted.value && auth.hasPerm('lead:recycle'),
+)
+const canTransfer = computed(
+  () => !poolSource.value && !isConverted.value && auth.hasPerm('lead:transfer'),
+)
+const showFooter = computed(
+  () => Boolean(lead.value?.phone) || canMove.value || canTransfer.value || canWrite.value,
+)
+const descriptionFields = computed(() =>
+  fields.value
+    .filter(
+      (field) =>
+        !field.hidden &&
+        field.mobile !== false &&
+        field.key !== 'name' &&
+        field.type !== 'sub_product' &&
+        field.type !== 'alert',
+    )
+    .sort((a, b) => a.sort - b.sort),
+)
+const sortedRecords = computed(() =>
+  [...records.value].sort(
+    (a, b) =>
+      new Date(b.followedAt ?? b.createdAt).getTime() -
+      new Date(a.followedAt ?? a.createdAt).getTime(),
+  ),
+)
+const sortedHistory = computed(() =>
+  [...ownerHistory.value].sort(
+    (a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime(),
+  ),
 )
 
 function displayField(field: FieldVO) {
@@ -60,12 +93,34 @@ function displayField(field: FieldVO) {
   })
 }
 
+function formatDate(value: string | null) {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--'
+  const pad = (num: number) => String(num).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function historyOwner(row: OwnerHistoryVO) {
+  return row.ownerName ?? row.ownerId ?? '原负责人'
+}
+
+function nextOwner(row: OwnerHistoryVO) {
+  const successor = ownerHistory.value.find(
+    (item) => item.id !== row.id && item.collectedAt === row.endedAt,
+  )
+  if (successor) return historyOwner(successor)
+  if (lead.value?.collectedAt === row.endedAt && lead.value.ownerId) {
+    return lead.value.ownerName ?? fieldRefs.memberMap.value.get(lead.value.ownerId) ?? '新负责人'
+  }
+  return '未分配'
+}
+
 async function load() {
   if (!leadId.value) {
-    router.replace('/leads')
+    await router.replace('/leads')
     return
   }
-
   loading.value = true
   try {
     const [detailRes, fieldRes, followRes, historyRes] = await Promise.all([
@@ -81,7 +136,7 @@ async function load() {
     ownerHistory.value = historyRes.data
   } catch (error) {
     showFailToast(extractErrorMessage(error))
-    router.replace('/leads')
+    await router.replace('/leads')
   } finally {
     loading.value = false
   }
@@ -91,36 +146,94 @@ async function reloadRecords() {
   try {
     const { data } = await pageFollowUps('lead', leadId.value)
     records.value = data.items
+    activeTab.value = 'record'
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
 
 function goEdit() {
-  router.push('/leads/' + leadId.value + '/edit')
+  if (canEdit.value) void router.push('/leads/' + leadId.value + '/edit')
 }
 
-function goConvert() {
-  if (!canConvert.value) return
-  moreShow.value = false
-  router.push('/leads/' + leadId.value + '/convert')
+function callLead() {
+  const phone = lead.value?.phone?.replace(/[^\d+]/g, '')
+  if (!phone) return showFailToast('暂无可联系的手机号')
+  window.location.href = `tel:${phone}`
 }
 
 async function removeLead() {
-  moreShow.value = false
+  if (!canDelete.value) return
   const confirmed = await showActionConfirm({
     title: '删除线索',
-    message: '确认删除「' + (lead.value?.name ?? '') + '」？',
+    message: `确认删除「${lead.value?.name ?? ''}」？`,
     confirmButtonText: '删除',
   })
   if (!confirmed) return
-
   try {
     await leadApi.remove(leadId.value)
     showSuccessFeedback('线索已删除')
-    router.replace('/leads')
+    await router.replace('/leads')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
+  }
+}
+
+async function openMove() {
+  if (!canMove.value) return
+  moveShow.value = true
+  moveLoading.value = true
+  try {
+    const [poolRes, reasonRes] = await Promise.all([
+      leadApi.moveTargetOptions(),
+      dictionaryApi.config('CLUE_POOL_RS'),
+    ])
+    if (!moveShow.value) return
+    poolOptions.value = poolRes.data
+    moveReasonEnabled.value = reasonRes.data.enable
+    moveReasons.value = reasonRes.data.dictList.filter((item) => item.id !== 'system')
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    moveLoading.value = false
+  }
+}
+
+async function confirmMove(value: { poolId?: string; reasonId?: string; note?: string }) {
+  if (!canMove.value || moveSubmitting.value || moveLoading.value) return
+  if (moveReasonEnabled.value && !value.reasonId) {
+    showFailToast('请选择移入线索池原因')
+    return
+  }
+  if (value.poolId && !poolOptions.value.some((pool) => pool.id === value.poolId)) {
+    showFailToast('目标线索池不可用')
+    return
+  }
+  moveSubmitting.value = true
+  try {
+    await leadApi.toPool(leadId.value, value.poolId, value.reasonId, value.note)
+    moveShow.value = false
+    showSuccessFeedback('已移入线索池')
+    await router.replace('/leads')
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    moveSubmitting.value = false
+  }
+}
+
+async function transferOwner(value: { ownerId?: string; note?: string }) {
+  if (!value.ownerId || !canTransfer.value || transferSubmitting.value) return
+  transferSubmitting.value = true
+  try {
+    await leadApi.transfer(leadId.value, value.ownerId, value.note)
+    transferShow.value = false
+    showSuccessFeedback('线索已转移')
+    await load()
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    transferSubmitting.value = false
   }
 }
 
@@ -128,111 +241,216 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden bg-[var(--mobile-page-background)]">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#F3F5F8]">
     <van-loading v-if="loading" class="!flex !justify-center !py-16" />
     <template v-else-if="lead">
-      <van-tabs
-        v-model:active="activeTab"
-        border
-        class="min-h-0 flex-1 [&_.van-tabs__content]:h-full [&_.van-tabs__content]:overflow-hidden [&_.van-tab__panel]:h-full"
+      <div
+        class="min-h-0 flex-1 overflow-y-auto bg-[#F4F6F9] bg-top bg-no-repeat p-[12px]"
+        :style="{ backgroundImage: `url(${homeBackground})`, backgroundSize: '100% auto' }"
       >
-        <van-tab
-          v-for="tab in detailTabs"
-          :key="tab.name"
-          :name="tab.name"
-          :title="tab.title"
-        >
-          <div class="h-full overflow-auto pb-4">
-            <template v-if="tab.name === 'info'">
-              <van-cell-group inset class="!mt-4">
-                <van-cell
-                  v-for="field in descriptionFields"
-                  :key="field.id"
-                  :title="field.label"
-                  :value="displayField(field)"
-                />
-              </van-cell-group>
-            </template>
-
-            <template v-else-if="tab.name === 'record'">
-              <div v-if="canWrite" class="px-4 pt-3">
-                <van-button
-                  type="primary"
-                  plain
-                  block
-                  size="small"
-                  @click="followShow = true"
-                >
-                  新增跟进
-                </van-button>
-              </div>
-              <van-empty v-if="records.length === 0" description="暂无跟进记录" />
-              <van-cell-group
-                v-for="record in records"
-                :key="record.id"
-                inset
-                class="!mt-3"
-              >
-                <van-cell :title="record.type ?? '其他'" :label="record.content">
-                  <template #value>
-                    {{ new Date(record.createdAt).toLocaleDateString('zh-CN') }}
-                  </template>
-                </van-cell>
-              </van-cell-group>
-            </template>
-
-            <MobileFollowUpPlanList
-              v-else-if="tab.name === 'plan'"
-              target-type="lead"
-              :target-id="leadId"
-              :target-name="lead.name"
-              :can-write="canWrite"
+        <section class="rounded-[8px] bg-white/80 p-[12px]" aria-label="学员信息">
+          <div class="flex items-center gap-[10px]">
+            <van-image
+              :src="defaultAvatar"
+              round
+              fit="cover"
+              width="48"
+              height="48"
+              class="shrink-0"
             />
-
-            <template v-else-if="tab.name === 'header'">
-              <van-empty v-if="ownerHistory.length === 0" description="暂无负责人记录" />
-              <van-cell-group
-                v-for="item in ownerHistory"
-                :key="item.id"
-                inset
-                class="!mt-3"
+            <div class="min-w-0 flex-1">
+              <h1 class="m-0 truncate text-[18px] leading-[24px] font-semibold text-[#000000]">
+                {{ lead.name || '未命名线索' }}
+              </h1>
+            </div>
+            <div v-if="canEdit || canDelete" class="flex shrink-0 items-center gap-[18px]">
+              <van-button
+                v-if="canEdit"
+                class="!h-auto !shrink-0 !border-0 !bg-transparent !p-0 !text-[var(--van-primary-color)]"
+                @click="goEdit"
               >
-                <van-cell
-                  :title="item.ownerName ?? '未知负责人'"
-                  :value="item.departmentName ?? '-'"
-                />
-                <van-cell
-                  title="归属开始"
-                  :value="item.collectedAt ? new Date(item.collectedAt).toLocaleString() : '-'"
-                />
-                <van-cell title="归属结束" :value="new Date(item.endedAt).toLocaleString()" />
-                <van-cell title="回收原因" :value="item.reasonName ?? '-'" />
-                <van-cell title="操作人" :value="item.operatorName ?? '-'" />
-              </van-cell-group>
-            </template>
+                <span class="flex flex-col items-center gap-[3px] text-[12px]">
+                  <Pencil :size="18" aria-hidden="true" />编辑
+                </span>
+              </van-button>
+              <van-button
+                v-if="canDelete"
+                class="!h-auto !shrink-0 !border-0 !bg-transparent !p-0 !text-[#888888]"
+                @click="removeLead"
+              >
+                <span class="flex flex-col items-center gap-[3px] text-[12px]">
+                  <Trash2 :size="18" aria-hidden="true" />删除
+                </span>
+              </van-button>
+            </div>
           </div>
-        </van-tab>
-      </van-tabs>
+
+          <div
+            v-if="descriptionFields.length"
+            class="mt-[20px] grid grid-cols-2 gap-x-[12px] gap-y-[15px]"
+          >
+            <div
+              v-for="field in descriptionFields"
+              :key="field.id"
+              class="min-w-0"
+              :class="
+                ['textarea', 'multiselect', 'attachment'].includes(field.type) ? 'col-span-2' : ''
+              "
+            >
+              <div class="text-[14px] leading-[20px] text-[#999999]">{{ field.label }}</div>
+              <div class="mt-[3px] break-words text-[14px] leading-[20px] text-[#333333]">
+                {{ displayField(field) }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="mt-[12px] min-h-[180px] rounded-[8px] bg-white p-[12px]"
+          aria-label="线索记录"
+        >
+          <div class="flex h-[24px] items-center gap-[20px]">
+            <van-button
+              v-for="tab in [
+                { key: 'record', title: '跟进记录' },
+                { key: 'change', title: '变更记录' },
+              ] as const"
+              :key="tab.key"
+              class="relative !h-[24px] !rounded-none !border-0 !bg-transparent !p-0 !leading-[24px]"
+              :class="
+                activeTab === tab.key
+                  ? '!text-[16px] !font-semibold !text-[var(--van-primary-color)]'
+                  : '!text-[14px] !font-normal !text-[#666666]'
+              "
+              @click="activeTab = tab.key"
+            >
+              {{ tab.title }}
+              <span
+                v-if="activeTab === tab.key"
+                class="absolute inset-x-0 bottom-0 h-[2px] rounded-[2px] bg-[var(--van-primary-color)]"
+              />
+            </van-button>
+          </div>
+
+          <div v-if="activeTab === 'record'">
+            <van-empty
+              v-if="sortedRecords.length === 0"
+              image-size="68"
+              description="暂无跟进记录"
+            />
+            <ol v-else class="m-0 ml-[8px] mt-[12px] list-none p-0 pl-[16px]">
+              <li
+                v-for="(record, index) in sortedRecords"
+                :key="record.id"
+                class="relative pb-[24px] last:pb-0"
+              >
+                <span
+                  v-if="index < sortedRecords.length - 1"
+                  class="pointer-events-none absolute -bottom-[9px] -left-[17px] w-[2px] bg-[#CCCCCC]"
+                  :class="index === 0 ? 'top-[8px]' : 'top-[9px]'"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="index === 0"
+                  class="absolute top-0 -left-[24px] h-[16px] w-[16px] rounded-full bg-[color-mix(in_srgb,var(--van-primary-color)_12%,white)]"
+                  aria-hidden="true"
+                />
+                <span
+                  v-else
+                  class="absolute top-[5px] -left-[20px] h-[8px] w-[8px] rounded-full bg-[#999999]"
+                  aria-hidden="true"
+                />
+                <time
+                  class="block text-[12px] leading-[17px] text-[#999999]"
+                  :datetime="record.followedAt ?? record.createdAt"
+                  >{{ formatDate(record.followedAt ?? record.createdAt) }}</time
+                >
+                <p
+                  class="mt-[5px] mb-0 whitespace-pre-wrap break-words text-[14px] leading-[20px] text-[#333333]"
+                >
+                  {{ record.content || record.type || '跟进记录' }}
+                </p>
+                <span
+                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                  >{{ record.ownerName ? `操作人：${record.ownerName}` : '操作人：-' }}</span
+                >
+              </li>
+            </ol>
+          </div>
+          <div v-else>
+            <van-empty
+              v-if="sortedHistory.length === 0"
+              image-size="68"
+              description="暂无变更记录"
+            />
+            <ol v-else class="m-0 ml-[8px] mt-[12px] list-none p-0 pl-[16px]">
+              <li
+                v-for="(item, index) in sortedHistory"
+                :key="item.id"
+                class="relative pb-[24px] last:pb-0"
+              >
+                <span
+                  v-if="index < sortedHistory.length - 1"
+                  class="pointer-events-none absolute -bottom-[9px] -left-[17px] w-[2px] bg-[#CCCCCC]"
+                  :class="index === 0 ? 'top-[8px]' : 'top-[9px]'"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="index === 0"
+                  class="absolute top-0 -left-[24px] h-[16px] w-[16px] rounded-full bg-[color-mix(in_srgb,var(--van-primary-color)_12%,white)]"
+                  aria-hidden="true"
+                />
+                <span
+                  v-else
+                  class="absolute top-[5px] -left-[20px] h-[8px] w-[8px] rounded-full bg-[#999999]"
+                  aria-hidden="true"
+                />
+                <time
+                  class="block text-[12px] leading-[17px] text-[#999999]"
+                  :datetime="item.endedAt"
+                  >{{ formatDate(item.endedAt) }}</time
+                >
+                <p class="mt-[5px] mb-0 text-[14px] leading-[20px] text-[#333333]">
+                  负责人由 {{ historyOwner(item) }} 变更为 {{ nextOwner(item) }}
+                </p>
+                <span
+                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                  >操作人：{{ item.operatorName ?? '系统' }}</span
+                >
+              </li>
+            </ol>
+          </div>
+        </section>
+      </div>
 
       <div
-        v-if="
-          !poolSource &&
-          activeTab === 'info' &&
-          (auth.hasPerm('lead:update') || auth.hasPerm('lead:delete') || canConvert)
-        "
-        class="flex shrink-0 gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
+        v-if="showFooter"
+        class="flex shrink-0 flex-nowrap items-center justify-end gap-[8px] bg-white px-[12px] pt-[10px] pb-[calc(12px+env(safe-area-inset-bottom))]"
       >
-        <van-button v-if="auth.hasPerm('lead:update')" block type="primary" @click="goEdit">
-          编辑
-        </van-button>
         <van-button
-          v-if="auth.hasPerm('lead:delete') || canConvert"
-          block
-          plain
-          @click="moreShow = true"
+          v-if="lead.phone"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          @click="callLead"
+          >电话联系</van-button
         >
-          更多
-        </van-button>
+        <van-button
+          v-if="canMove"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          @click="openMove"
+          >移入线索池</van-button
+        >
+        <van-button
+          v-if="canTransfer"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          @click="transferShow = true"
+          >转移</van-button
+        >
+        <van-button
+          v-if="canWrite"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-[var(--van-primary-color)] !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-white"
+          @click="followShow = true"
+          >写跟进</van-button
+        >
       </div>
     </template>
 
@@ -244,25 +462,24 @@ onMounted(load)
       @followed="reloadRecords"
     />
 
-    <van-action-sheet v-model:show="moreShow" title="更多操作">
-      <div class="space-y-3 p-4">
-        <van-button
-          v-if="canConvert && lead?.transitionType !== 'CUSTOMER'"
-          block
-          @click="goConvert"
-        >
-          转换
-        </van-button>
-        <van-button
-          v-if="auth.hasPerm('lead:delete')"
-          block
-          type="danger"
-          plain
-          @click="removeLead"
-        >
-          删除
-        </van-button>
-      </div>
-    </van-action-sheet>
+    <MobileLeadOperationSheet
+      v-model="transferShow"
+      mode="transfer"
+      :lead-name="lead?.name"
+      :members="fieldRefs.members.value"
+      :submitting="transferSubmitting"
+      @confirm="transferOwner"
+    />
+    <MobileLeadOperationSheet
+      v-model="moveShow"
+      mode="move"
+      :lead-name="lead?.name"
+      :pools="poolOptions"
+      :reason-enabled="moveReasonEnabled"
+      :reasons="moveReasons"
+      :loading="moveLoading"
+      :submitting="moveSubmitting"
+      @confirm="confirmMove"
+    />
   </div>
 </template>

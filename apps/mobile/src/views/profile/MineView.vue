@@ -1,27 +1,20 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, ref } from 'vue'
+import { ChevronRight } from 'lucide-vue-next'
 import { showFailToast } from 'vant'
 import { useRouter } from 'vue-router'
+import defaultAvatar from '../../../../web/public/images/avatar.png'
+import campus from '@/assets/profile/campus.png'
+import passwordIcon from '@/assets/profile/change-password.svg'
 import { extractErrorMessage } from '@/api/http'
-import { showActionConfirm } from '@/utils/dialog'
-import { showSuccessFeedback } from '@/utils/feedback'
-import {
-  getPersonalInfo,
-  resetPersonalPassword,
-  updatePersonalInfo,
-  type PersonalCenterVO,
-} from '@/api/personal-center'
+import { getPersonalInfo, type PersonalCenterVO } from '@/api/personal-center'
 import { useAuthStore } from '@/stores/auth'
+import { showActionConfirm } from '@/utils/dialog'
 
 const router = useRouter()
 const auth = useAuthStore()
 const info = ref<PersonalCenterVO | null>(null)
 const loading = ref(false)
-const editVisible = ref(false)
-const passwordVisible = ref(false)
-const saving = ref(false)
-const editForm = reactive({ phone: '', email: '', language: 'zh-CN' as 'zh-CN' | 'en-US' })
-const passwordForm = reactive({ originPassword: '', password: '', confirmPassword: '' })
 
 async function loadInfo() {
   loading.value = true
@@ -35,176 +28,118 @@ async function loadInfo() {
   }
 }
 
-function openEdit() {
-  editForm.phone = info.value?.phone ?? ''
-  editForm.email = info.value?.email ?? ''
-  editForm.language = info.value?.language ?? 'zh-CN'
-  editVisible.value = true
-}
-
-async function saveInfo() {
-  if (!editForm.phone.trim() || !/^\S+@\S+\.\S+$/.test(editForm.email.trim())) {
-    showFailToast('请填写正确的手机号和邮箱')
-    return
-  }
-  saving.value = true
-  try {
-    const { data } = await updatePersonalInfo({
-      phone: editForm.phone.trim(),
-      email: editForm.email.trim(),
-      language: editForm.language,
-    })
-    info.value = data
-    await auth.fetchMe(true)
-    editVisible.value = false
-    showSuccessFeedback('个人信息已更新')
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  } finally {
-    saving.value = false
-  }
-}
-
-function openPassword() {
-  Object.assign(passwordForm, { originPassword: '', password: '', confirmPassword: '' })
-  passwordVisible.value = true
-}
-
-async function savePassword() {
-  if (!passwordForm.originPassword) return showFailToast('请输入当前密码')
-  if (!passwordForm.password || !/(?=.*[A-Za-z])(?=.*\d)/.test(passwordForm.password)) {
-    return showFailToast('新密码至少包含字母和数字')
-  }
-  if (passwordForm.password !== passwordForm.confirmPassword) return showFailToast('两次密码不一致')
-  saving.value = true
-  try {
-    await resetPersonalPassword({
-      originPassword: passwordForm.originPassword,
-      password: passwordForm.password,
-    })
-    showSuccessFeedback('密码已修改，请重新登录')
-    const tenant = auth.user?.tenantSlug
-    auth.logout()
-    passwordVisible.value = false
-    await router.push({ name: 'mobile-login', query: tenant ? { tenant } : undefined })
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  } finally {
-    saving.value = false
-  }
-}
-
 async function handleLogout() {
   const confirmed = await showActionConfirm({ title: '退出登录', message: '确定退出当前账号？' })
   if (!confirmed) return
   const tenant = auth.user?.tenantSlug
   auth.logout()
-  router.push({ name: 'mobile-login', query: tenant ? { tenant } : undefined })
+  await router.replace({ name: 'mobile-login', query: tenant ? { tenant } : undefined })
 }
 
-onMounted(loadInfo)
+onActivated(loadInfo)
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden bg-[var(--text-n9)]">
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
-      <div class="flex items-center gap-4 rounded-[12px] bg-white p-4">
-        <van-image v-if="info?.avatarUrl" round width="64" height="64" :src="info.avatarUrl" />
-        <div
-          v-else
-          class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary-7)] text-xl font-semibold text-[var(--primary-8)]"
-        >
-          {{ info?.userName?.slice(0, 1) ?? auth.user?.name?.slice(0, 1) ?? '?' }}
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-base font-semibold text-[var(--text-n1)]">
-            {{ info?.userName ?? auth.user?.name ?? '-' }}
+  <div
+    class="h-full overflow-y-auto bg-[#F5F5F5] bg-top bg-no-repeat pb-[28px]"
+    style="
+      background-image: linear-gradient(180deg, #e5efff 0%, #eef5ff 14%, #e4ebfe 45%, #f5f5f5 100%);
+      background-size: 100% 211px;
+    "
+  >
+    <div class="px-[12px] pt-[20px] pb-[20px]">
+      <div
+        class="relative flex h-[80px] items-center overflow-hidden rounded-[10px] bg-white px-[16px]"
+        :style="{
+          backgroundImage:
+            'url(' + campus + '), linear-gradient(90deg, #FFFFFF 0%, #F8FBFF 52%, #E7F1FF 100%)',
+          backgroundSize: '209px 59px, cover',
+          backgroundPosition: 'right top, center',
+          backgroundRepeat: 'no-repeat, no-repeat',
+        }"
+      >
+        <van-image
+          :src="info?.avatarUrl || auth.user?.avatarUrl || defaultAvatar"
+          fit="cover"
+          round
+          width="60"
+          height="60"
+          class="shrink-0"
+        />
+        <div class="relative ml-[10px] min-w-0 flex-1">
+          <div class="truncate text-[18px] leading-[25px] font-semibold text-[#333333]">
+            {{ info?.userName || auth.user?.name || '-' }}
           </div>
           <div
-            class="mt-2 inline-flex max-w-full truncate rounded-[6px] bg-[var(--text-n9)] px-2 py-1 text-xs text-[var(--text-n1)]"
+            class="mt-[4px] inline-flex max-w-full rounded-[4px] bg-[var(--primary-7)] px-[5px] py-[2px] text-[12px] leading-[16px] text-[var(--primary-8)]"
           >
-            {{ info?.departmentName || '未分配部门' }}
+            <span class="truncate">{{
+              info?.roles.map((role) => role.name).join('、') || '普通成员'
+            }}</span>
           </div>
         </div>
-      </div>
-
-      <van-cell-group inset class="!mx-0">
-        <van-cell class="!p-4" title="手机号" :value="info?.phone || '-'" is-link @click="openEdit" />
-        <van-cell class="!p-4" title="邮箱" :value="info?.email || '-'" is-link @click="openEdit" />
-        <van-cell
-          class="!p-4"
-          title="通知语言"
-          :value="info?.language === 'en-US' ? 'English' : '简体中文'"
-          is-link
-          @click="openEdit"
-        />
-      </van-cell-group>
-
-      <van-cell-group v-if="info?.passwordLoginEnabled !== false" inset class="!mx-0">
-        <van-cell class="!p-4" title="修改密码" is-link @click="openPassword" />
-      </van-cell-group>
-
-      <div>
-        <van-button block type="primary" :loading="loading" @click="handleLogout">退出登录</van-button>
       </div>
     </div>
 
-    <van-popup v-model:show="editVisible" position="bottom" round>
-      <div class="flex h-full flex-col bg-[var(--text-n10)]">
-        <div
-          class="flex min-h-12 items-center justify-center border-b-[0.5px] border-[var(--text-n8)] px-4 text-base font-medium text-[var(--text-n1)]"
-        >
-          编辑个人信息
-        </div>
-        <div class="py-4">
-          <van-cell-group inset>
-          <van-field
-            v-model="editForm.phone"
-            label="手机号"
-            maxlength="11"
-            placeholder="请输入手机号"
-          />
-          <van-field v-model="editForm.email" label="邮箱" placeholder="请输入邮箱" />
-          <van-field label="通知语言" readonly>
-            <template #input>
-              <van-radio-group v-model="editForm.language" direction="horizontal">
-                <van-radio name="zh-CN">简体中文</van-radio>
-                <van-radio name="en-US">English</van-radio>
-              </van-radio-group>
-            </template>
-          </van-field>
-          </van-cell-group>
-        </div>
-        <div
-          class="flex gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
-        >
-          <van-button block @click="editVisible = false">取消</van-button>
-          <van-button block type="primary" :loading="saving" @click="saveInfo">更新</van-button>
-        </div>
-      </div>
-    </van-popup>
+    <section
+      class="mx-[12px] overflow-hidden rounded-[10px] bg-white px-[12px] pt-[12px] pb-[2px]"
+      aria-label="全部功能"
+    >
+      <h2 class="m-0 mb-[4px] text-[17px] leading-[18px] font-semibold text-[#111111]">全部功能</h2>
+      <van-cell
+        clickable
+        :border="false"
+        class="!h-[56px] !items-center !border-0 !border-b-[1px] !border-solid !border-b-[#F0F0F0] !bg-transparent !p-0"
+        @click="router.push('/mine/basic-info')"
+      >
+        <template #icon>
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 22 22"
+            fill="none"
+            class="mr-[5px] shrink-0"
+            aria-hidden="true"
+          >
+            <path
+              d="M17.9967 3.05998H16.9985V2.02999C16.9985 1.46123 16.5508 1 15.998 1C15.4452 1 14.9975 1.46123 14.9975 2.02999V3.05998H7.00025V2.02999C7.00025 1.66197 6.80838 1.32262 6.5 1.13861C6.18934 0.954594 5.80787 0.954594 5.49949 1.13861C5.18883 1.32262 4.99924 1.66197 4.99924 2.02999V3.05998H4.00102C2.89772 3.06237 2.00457 3.98244 2 5.11519V18.94C2 20.0728 2.9 21 4.00102 21H17.999C19.1046 20.9976 19.9977 20.0752 20 18.94V5.11997C19.9954 3.98243 19.1023 3.06237 17.9967 3.05998ZM11.1508 6.3029C12.8365 6.30768 14.198 7.70331 14.2025 9.42395C14.198 11.1446 12.8365 12.5378 11.153 12.5426C9.46954 12.5378 8.10584 11.1446 8.10127 9.42395C8.10355 7.70331 9.46497 6.31007 11.1508 6.3029ZM16.9459 18.4716H5.04949V17.4823C5.04949 15.5059 9.01497 14.4162 10.9977 14.4162C12.9805 14.4162 16.9459 15.5035 16.9459 17.4823V18.4716Z"
+              fill="var(--primary-8)"
+            />
+          </svg>
+        </template>
+        <template #title>
+          <span class="text-[16px] leading-[22px] text-[#111111]">基本信息</span>
+        </template>
+        <template #right-icon>
+          <ChevronRight :size="20" color="#999999" aria-hidden="true" />
+        </template>
+      </van-cell>
+      <van-cell
+        v-if="info?.passwordLoginEnabled"
+        clickable
+        :border="false"
+        class="!h-[56px] !items-center !border-0 !bg-transparent !p-0"
+        @click="router.push('/mine/change-password')"
+      >
+        <template #icon>
+          <img :src="passwordIcon" width="22" height="22" alt="" class="mr-[5px] shrink-0" />
+        </template>
+        <template #title>
+          <span class="text-[16px] leading-[22px] text-[#111111]">修改密码</span>
+        </template>
+        <template #right-icon>
+          <ChevronRight :size="20" color="#999999" aria-hidden="true" />
+        </template>
+      </van-cell>
+    </section>
 
-    <van-popup v-model:show="passwordVisible" position="bottom" round>
-      <div class="flex h-full flex-col bg-[var(--text-n10)]">
-        <div
-          class="flex min-h-12 items-center justify-center border-b-[0.5px] border-[var(--text-n8)] px-4 text-base font-medium text-[var(--text-n1)]"
-        >
-          修改密码
-        </div>
-        <div class="py-4">
-          <van-cell-group inset>
-          <van-field v-model="passwordForm.originPassword" type="password" label="当前密码" />
-          <van-field v-model="passwordForm.password" type="password" label="新密码" />
-          <van-field v-model="passwordForm.confirmPassword" type="password" label="确认新密码" />
-          </van-cell-group>
-        </div>
-        <div
-          class="flex gap-3 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
-        >
-          <van-button block @click="passwordVisible = false">取消</van-button>
-          <van-button block type="primary" :loading="saving" @click="savePassword">保存</van-button>
-        </div>
-      </div>
-    </van-popup>
+    <van-button
+      block
+      class="!mx-[12px] !mt-[40px] !h-[50px] !w-[calc(100%-24px)] !rounded-[10px] !border-0 !bg-white !text-[16px] !font-medium !text-[#F04438]"
+      :disabled="loading"
+      @click="handleLogout"
+    >
+      退出登录
+    </van-button>
   </div>
 </template>

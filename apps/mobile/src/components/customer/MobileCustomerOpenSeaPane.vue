@@ -1,41 +1,53 @@
 <script setup lang="ts">
-import type { CustomerVO, FieldVO } from '@micromatrix/shared'
-import { computed, onMounted, ref } from 'vue'
+import type {
+  CustomerVO,
+  FieldVO,
+  FilterCondition,
+  ModuleQuickSearchConfig,
+  QuickSearchQueryGroup,
+} from '@micromatrix/shared'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showFailToast } from 'vant'
+import { showFailToast, type DropdownItemInstance } from 'vant'
 import { listCustomers, poolBatchDeleteCustomers } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
+import { metadataApi } from '@/api/metadata'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
+import leadEmptyImage from '@/assets/lead-empty.png'
 import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileCustomerListCard from '@/components/customer/MobileCustomerListCard.vue'
+import MobileQuickSearchBar from '@/components/MobileQuickSearchBar.vue'
+import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useAuthStore } from '@/stores/auth'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
-import { useFieldRefs } from '@/composables/useFieldRefs'
-import { fetchFields } from '@/api/mobile'
-import { useAuthStore } from '@/stores/auth'
 import type { MobileViewSelection } from '@/types/mobile-view'
 
 const router = useRouter()
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
-
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
-const keyword = ref('')
+const fields = ref<FieldVO[]>([])
+const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
+const filters = ref<FilterCondition[]>([])
+const quickGroups = ref<QuickSearchQueryGroup[]>([])
 const items = ref<CustomerVO[]>([])
 const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
 const refreshing = ref(false)
-const fields = ref<FieldVO[]>([])
 const activeSavedViewId = ref('')
 const poolsReady = ref(false)
 const savedViewsReady = ref(false)
 const viewsReady = computed(() => poolsReady.value && savedViewsReady.value)
-
-const actionShow = ref(false)
-const actionTarget = ref<CustomerVO | null>(null)
+const viewPickerShow = ref(false)
+const poolDropdownItem = ref<DropdownItemInstance | null>(null)
+const poolKeyword = ref('')
 const assignShow = ref(false)
+const assignTarget = ref<CustomerVO | null>(null)
+let generation = 0
+let loadingGeneration = -1
 
 const memberColumns = computed(() =>
   fieldRefs.members.value.map((item) => ({ text: item.name, value: item.id })),
@@ -43,135 +55,136 @@ const memberColumns = computed(() =>
 const currentPool = computed(
   () => pools.value.find((pool) => pool.id === selectedPoolId.value) ?? null,
 )
+const poolDropdownOptions = computed(() =>
+  pools.value.map((pool) => ({ text: pool.name, value: pool.id })),
+)
 const listFields = computed(() => {
   const hiddenIds = new Set(currentPool.value?.hiddenFieldIds ?? [])
-  const visible = fields.value.filter(
-    (field) => field.showInList && !field.hidden && (field.key === 'name' || !hiddenIds.has(field.id)),
-  )
-  const nameField = fields.value.find((field) => field.key === 'name' && !field.hidden)
-  if (nameField && !visible.some((field) => field.key === 'name')) visible.unshift(nameField)
-  return visible
+  return fields.value.filter((field) => !hiddenIds.has(field.id))
 })
-
-async function initPools() {
+async function init() {
   try {
-    const [{ data: poolData }, { data: fieldData }] = await Promise.all([
+    const [{ data: poolData }, { data: config }] = await Promise.all([
       resourcePoolApi.options('customer'),
-      fetchFields('customer'),
+      metadataApi.formConfig('customer'),
       fieldRefs.load(),
     ])
     pools.value = poolData
-    fields.value = fieldData
-    if (!selectedPoolId.value || !poolData.some((item) => item.id === selectedPoolId.value)) {
+    fields.value = config.fields
+    quickSearch.value = config.formProp.quickSearch ?? null
+    if (!poolData.some((pool) => pool.id === selectedPoolId.value))
       selectedPoolId.value = poolData[0]?.id ?? ''
-    }
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   } finally {
     poolsReady.value = true
+    if (viewsReady.value) reload()
   }
 }
-
 async function loadMore() {
-  if (!viewsReady.value || !selectedPoolId.value || finished.value) return
+  if (
+    !viewsReady.value ||
+    !selectedPoolId.value ||
+    finished.value ||
+    loadingGeneration === generation
+  )
+    return
+  const current = generation
+  loadingGeneration = current
   loading.value = true
   try {
     const { data } = await listCustomers({
       page: page.value,
       pageSize: 20,
-      keyword: keyword.value.trim() || undefined,
       scope: 'sea',
       poolId: selectedPoolId.value,
+      keyword: poolKeyword.value.trim() || undefined,
+      filters: filters.value.length ? JSON.stringify(filters.value) : undefined,
+      quickGroups: quickGroups.value.length ? quickGroups.value : undefined,
       viewId: activeSavedViewId.value || undefined,
     })
+    if (current !== generation) return
     items.value.push(...data.items)
-    finished.value = items.value.length >= data.total
+    finished.value = items.value.length >= data.total || data.items.length === 0
     page.value += 1
   } catch (error) {
+    if (current !== generation) return
     showFailToast(extractErrorMessage(error))
     finished.value = true
   } finally {
-    loading.value = false
+    if (current === generation) {
+      loading.value = false
+      loadingGeneration = -1
+    }
   }
 }
-
 function reload() {
-  page.value = 1
+  generation += 1
+  loadingGeneration = -1
+  loading.value = false
   items.value = []
-  finished.value = false
-  if (viewsReady.value && selectedPoolId.value) loadMore()
-}
-
-async function handleRefresh() {
   page.value = 1
-  items.value = []
-  finished.value = false
-  try {
-    if (selectedPoolId.value) await loadMore()
-  } finally {
-    refreshing.value = false
-  }
+  finished.value = !selectedPoolId.value
+  if (viewsReady.value && selectedPoolId.value) void loadMore()
 }
-
-function selectPool(poolId: string) {
-  if (selectedPoolId.value === poolId) return
-  selectedPoolId.value = poolId
+function handleRefresh() {
+  reload()
+  refreshing.value = false
+}
+function setPool(id: string) {
+  if (!pools.value.some((pool) => pool.id === id) || id === selectedPoolId.value) return
+  selectedPoolId.value = id
   reload()
 }
-
-function applyViewSelection(selection: MobileViewSelection) {
-  activeSavedViewId.value = selection.type === 'saved' ? selection.id : ''
+function applyView(selection: MobileViewSelection) {
+  activeSavedViewId.value =
+    quickSearch.value?.showSavedViews === false
+      ? ''
+      : selection.type === 'saved'
+        ? selection.id
+        : ''
 }
-
 function handleViewReady(selection: MobileViewSelection) {
-  applyViewSelection(selection)
+  applyView(selection)
   savedViewsReady.value = true
+  if (poolsReady.value) reload()
 }
-
 function handleViewChange(selection: MobileViewSelection) {
-  applyViewSelection(selection)
+  applyView(selection)
+  viewPickerShow.value = false
   reload()
 }
-
 function goDetail(customer: CustomerVO) {
-  router.push({
+  void router.push({
     path: '/customers/detail',
     query: { id: customer.id, name: customer.name, source: 'openSea' },
   })
 }
-
-function openActions(customer: CustomerVO) {
-  actionTarget.value = customer
-  actionShow.value = true
-}
-
 async function claim(customer: CustomerVO) {
+  if (!auth.hasPerm('customerPool:pick')) return
   try {
     await customerExtraApi.claim(customer.id, customer.poolId ?? selectedPoolId.value)
     showSuccessFeedback(`已领取「${customer.name}」`)
-    actionShow.value = false
     reload()
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
-
 async function openAssign(customer: CustomerVO) {
-  actionTarget.value = customer
+  if (!auth.hasPerm('customerPool:assign')) return
+  assignTarget.value = customer
   try {
-    if (fieldRefs.members.value.length === 0) await fieldRefs.load()
-    actionShow.value = false
+    if (!fieldRefs.members.value.length) await fieldRefs.load()
     assignShow.value = true
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
-
 async function assign({ selectedValues }: { selectedValues: string[] }) {
   const userId = selectedValues[0]
-  if (!userId || !actionTarget.value) return
+  if (!userId || !assignTarget.value || !auth.hasPerm('customerPool:assign')) return
   try {
-    await customerExtraApi.assign(actionTarget.value.id, userId, true)
+    await customerExtraApi.assign(assignTarget.value.id, userId, true)
     showSuccessFeedback('客户已分配')
     assignShow.value = false
     reload()
@@ -179,8 +192,8 @@ async function assign({ selectedValues }: { selectedValues: string[] }) {
     showFailToast(extractErrorMessage(error))
   }
 }
-
 async function remove(customer: CustomerVO) {
+  if (!auth.hasPerm('customerPool:delete')) return
   const confirmed = await showActionConfirm({
     title: '删除公海客户',
     message: `确认删除「${customer.name}」？存在关联业务数据时会拒绝删除。`,
@@ -190,69 +203,74 @@ async function remove(customer: CustomerVO) {
   try {
     await poolBatchDeleteCustomers([customer.id])
     showSuccessFeedback('客户已删除')
-    actionShow.value = false
     reload()
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }
 }
-
-onMounted(initPools)
-defineExpose({ reload, initPools })
+function openViews() {
+  viewPickerShow.value = !viewPickerShow.value
+}
+function openPools() {
+  poolDropdownItem.value?.toggle(true)
+}
+defineExpose({ reload, openViews, openPools })
+onMounted(init)
+onActivated(() => {
+  if (viewsReady.value) reload()
+})
 </script>
 
 <template>
-  <div class="h-full min-h-0 flex flex-col overflow-hidden bg-[var(--mobile-page-background)]">
-    <div class="bg-[var(--text-n10)] p-[8px_16px]">
-      <van-search
-        v-model="keyword"
-        shape="round"
-        placeholder="请输入客户名称"
-        class="!p-0"
-        @search="reload"
-        @clear="reload"
-      />
-    </div>
-    <div
-      v-if="pools.length"
-      class="flex min-h-12 gap-2 overflow-x-auto whitespace-nowrap border-b-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] px-1 py-2"
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#F5F5F5]">
+    <MobileQuickSearchBar
+      v-model:filters="filters"
+      v-model:quick-groups="quickGroups"
+      v-model:keyword="poolKeyword"
+      :fields="fields"
+      :config="quickSearch"
+      @search="reload"
     >
-      <van-button
-        v-for="pool in pools"
-        :key="pool.id"
-        round
-        size="small"
-        class="!border-none !px-4 !py-1 !text-sm"
-        :class="
-          selectedPoolId === pool.id
-            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
-            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
-        "
-        @click="selectPool(pool.id)"
-      >
-        {{ pool.name }}
-      </van-button>
+      <template #search-prefix>
+        <van-dropdown-menu
+          class="h-[32px] w-full"
+          :z-index="1002"
+          active-color="var(--van-primary-color)"
+          style="
+            --van-dropdown-menu-height: 32px;
+            --van-dropdown-menu-background: transparent;
+            --van-dropdown-menu-shadow: none;
+            --van-dropdown-menu-title-font-size: 12px;
+            --van-dropdown-menu-title-text-color: #333333;
+            --van-dropdown-menu-title-active-text-color: var(--van-primary-color);
+            --van-dropdown-menu-title-padding: 0;
+            --van-dropdown-menu-title-line-height: 16px;
+            --van-dropdown-menu-content-max-height: 55vh;
+          "
+        >
+          <van-dropdown-item
+            ref="poolDropdownItem"
+            :model-value="selectedPoolId"
+            :title="currentPool?.name ?? '选择客户公海'"
+            title-class="!min-w-0 truncate"
+            :options="poolDropdownOptions"
+            :disabled="!pools.length"
+            @change="setPool"
+          />
+        </van-dropdown-menu>
+      </template>
+    </MobileQuickSearchBar>
+    <div v-show="viewPickerShow" class="shrink-0 bg-white">
+      <MobileViewBar module="customer_pool" @ready="handleViewReady" @change="handleViewChange" />
     </div>
-
-    <MobileViewBar
-      v-if="poolsReady"
-      module="customer_pool"
-      @ready="handleViewReady"
-      @change="handleViewChange"
-    />
-
-    <van-empty v-if="poolsReady && !pools.length" description="暂无可访问的客户公海" />
-    <div v-else-if="viewsReady" class="min-h-0 flex-1 overflow-auto">
-      <van-pull-refresh
-        v-model="refreshing"
-        class="min-h-full"
-        @refresh="handleRefresh"
-      >
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <van-pull-refresh v-model="refreshing" class="min-h-full" @refresh="handleRefresh">
         <van-list
+          v-if="viewsReady && selectedPoolId"
           v-model:loading="loading"
           :finished="finished"
-          finished-text="已经到底部啦~"
-          class="flex flex-col gap-4 p-4"
+          :finished-text="items.length ? '没有更多客户了' : ''"
+          class="flex flex-col gap-[12px] px-[12px] pt-[12px] pb-[16px]"
           @load="loadMore"
         >
           <MobileCustomerListCard
@@ -262,58 +280,34 @@ defineExpose({ reload, initPools })
             :fields="listFields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
+            mode="pool"
+            :can-assign="auth.hasPerm('customerPool:assign')"
+            :can-claim="auth.hasPerm('customerPool:pick')"
+            :can-delete="auth.hasPerm('customerPool:delete')"
             @open="goDetail"
+            @assign="openAssign"
+            @claim="claim"
+            @delete="remove"
+          />
+          <div
+            v-if="finished && !items.length"
+            class="flex min-h-[360px] flex-col items-center justify-center gap-[20px]"
           >
-            <template #actions>
-              <van-button
-                v-if="auth.hasPerm('customerPool:pick')"
-                icon="friends-o"
-                size="small"
-                type="primary"
-                plain
-                class="!border-0"
-                @click.stop="claim(item)"
-              >领取</van-button>
-              <van-button
-                v-if="auth.hasPerm('customerPool:assign') || auth.hasPerm('customerPool:delete')"
-                icon="ellipsis"
-                size="small"
-                type="primary"
-                plain
-                class="!border-0"
-                @click.stop="openActions(item)"
-              >更多</van-button>
-            </template>
-          </MobileCustomerListCard>
+            <van-image :src="leadEmptyImage" fit="contain" width="186" height="144" alt="" />
+            <span class="text-[14px] leading-[20px] text-[#9E9E9E]">暂无客户</span>
+          </div>
         </van-list>
+        <van-loading v-else-if="!viewsReady" class="!flex !justify-center !py-10" />
+        <van-empty v-else image-size="90" description="暂无可访问的客户公海" class="!py-[80px]" />
       </van-pull-refresh>
     </div>
-    <van-loading v-else class="!flex !justify-center !py-10" />
-
-    <van-action-sheet v-model:show="actionShow" title="客户公海操作">
-      <div v-if="actionTarget" class="p-4 space-y-3">
-        <van-button v-if="auth.hasPerm('customerPool:pick')" block @click="claim(actionTarget)"
-          >领取</van-button
-        >
-        <van-button
-          v-if="auth.hasPerm('customerPool:assign')"
-          block
-          @click="openAssign(actionTarget)"
-          >分配</van-button
-        >
-        <van-button
-          v-if="auth.hasPerm('customerPool:delete')"
-          block
-          type="danger"
-          plain
-          @click="remove(actionTarget)"
-          >删除</van-button
-        >
-      </div>
-    </van-action-sheet>
-
     <van-popup v-model:show="assignShow" position="bottom" round>
-      <van-picker :columns="memberColumns" @confirm="assign" @cancel="assignShow = false" />
+      <van-picker
+        title="分配负责人"
+        :columns="memberColumns"
+        @confirm="assign"
+        @cancel="assignShow = false"
+      />
     </van-popup>
   </div>
 </template>

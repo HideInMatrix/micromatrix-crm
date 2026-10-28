@@ -13,6 +13,7 @@ const auth = useAuthStore()
 const searchSelect = useSearchSelectStore()
 const isWeCom = isWeComWorkbenchBrowser()
 const transitionName = ref('transition-none')
+let lastHistoryPosition = router.options.history.state.position ?? 0
 
 const tabs = [
   { name: 'mobile-home', title: '首页', icon: House, path: '/home' },
@@ -45,15 +46,29 @@ const headerBack = computed(() => headerConfig.value?.back === true)
 const removeTransitionGuard = router.beforeEach((to, from) => {
   const toDepth = to.meta.depth ?? 0
   const fromDepth = from.meta.depth ?? 0
+  const currentHistoryPosition = router.options.history.state.position ?? lastHistoryPosition
 
   if (toDepth === 1 && fromDepth === 1) {
     transitionName.value = 'transition-none'
     return
   }
-  transitionName.value = toDepth >= fromDepth ? 'slide-left' : 'slide-right'
+  // 同层级的详情、编辑等路由也需要区分前进与返回。
+  if (currentHistoryPosition < lastHistoryPosition) {
+    transitionName.value = 'slide-right'
+  } else if (currentHistoryPosition > lastHistoryPosition) {
+    transitionName.value = 'slide-left'
+  } else {
+    transitionName.value = toDepth >= fromDepth ? 'slide-left' : 'slide-right'
+  }
+})
+const removeHistoryTracker = router.afterEach(() => {
+  lastHistoryPosition = router.options.history.state.position ?? lastHistoryPosition
 })
 
-onUnmounted(removeTransitionGuard)
+onUnmounted(() => {
+  removeTransitionGuard()
+  removeHistoryTracker()
+})
 
 const active = computed({
   get: () => (route.name as string) ?? 'home',
@@ -76,9 +91,7 @@ const active = computed({
       @back="router.back()"
     />
     <router-view v-slot="{ Component, route: viewRoute }">
-      <div
-        class="relative min-h-0 flex-1 overflow-hidden bg-[var(--mobile-page-background)]"
-      >
+      <div class="relative min-h-0 flex-1 overflow-hidden bg-[var(--mobile-page-background)]">
         <transition :name="transitionName">
           <keep-alive v-if="viewRoute.meta.depth === 1">
             <component :is="Component" :key="String(viewRoute.name)" />
@@ -97,17 +110,18 @@ const active = computed({
       :fixed="false"
       :z-index="100"
       safe-area-inset-bottom
-      class="relative box-content h-10 shrink-0 gap-2 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)]"
+      style="
+        --van-tabbar-height: 64px;
+        --van-tabbar-item-font-size: 14px;
+        --van-tabbar-item-icon-size: 24px;
+      "
+      class="relative box-content shrink-0 gap-2 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)]"
     >
-      <van-tabbar-item
-        v-for="tab in visibleTabs"
-        :key="tab.name"
-        :name="tab.name"
-      >
+      <van-tabbar-item v-for="tab in visibleTabs" :key="tab.name" :name="tab.name">
         <template #icon="{ active: tabActive }">
           <component
             :is="tab.icon"
-            :size="18"
+            :size="24"
             :stroke-width="tabActive ? 2.4 : 2"
             aria-hidden="true"
           />

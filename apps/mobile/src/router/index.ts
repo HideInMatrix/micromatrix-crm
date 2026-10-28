@@ -62,7 +62,6 @@ const router = createRouter({
             title: '新建线索',
             perm: 'lead:create',
             depth: 2,
-            mobileHeader: { back: true },
           },
         },
         {
@@ -73,7 +72,6 @@ const router = createRouter({
             title: '编辑线索',
             perm: 'lead:update',
             depth: 2,
-            mobileHeader: { back: true },
           },
         },
         {
@@ -84,7 +82,6 @@ const router = createRouter({
             title: '线索详情',
             perm: 'menu:lead',
             depth: 2,
-            mobileHeader: { back: true, titleQuery: 'name' },
           },
         },
         {
@@ -95,7 +92,6 @@ const router = createRouter({
             title: '线索池详情',
             perm: 'leadPool:read',
             depth: 2,
-            mobileHeader: { back: true, titleQuery: 'name' },
           },
         },
         {
@@ -112,7 +108,6 @@ const router = createRouter({
             title: '新建客户',
             perm: 'customer:create',
             depth: 2,
-            mobileHeader: { back: true },
           },
         },
         {
@@ -123,7 +118,6 @@ const router = createRouter({
             title: '编辑客户',
             perm: 'customer:update',
             depth: 2,
-            mobileHeader: { back: true },
           },
         },
         {
@@ -140,7 +134,19 @@ const router = createRouter({
           path: 'mine',
           name: 'mobile-mine',
           component: () => import('@/views/profile/MineView.vue'),
-          meta: { title: '我的', depth: 1, mobileHeader: {} },
+          meta: { title: '我的', depth: 1 },
+        },
+        {
+          path: 'mine/basic-info',
+          name: 'mobile-mine-basic-info',
+          component: () => import('@/views/profile/BasicInfoView.vue'),
+          meta: { title: '基本信息', depth: 2 },
+        },
+        {
+          path: 'mine/change-password',
+          name: 'mobile-mine-change-password',
+          component: () => import('@/views/profile/ChangePasswordView.vue'),
+          meta: { title: '修改密码', depth: 2 },
         },
         {
           path: 'mine/message',
@@ -167,7 +173,6 @@ const router = createRouter({
             title: '客户详情',
             perm: 'menu:customer',
             depth: 2,
-            mobileHeader: { back: true, titleQuery: 'name' },
           },
         },
         {

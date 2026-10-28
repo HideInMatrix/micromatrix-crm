@@ -12,6 +12,7 @@ const props = defineProps<{
   members?: Array<{ id: string; name: string }>
   deptTree?: DepartmentVO[]
   name?: string
+  inputAlign?: 'left' | 'right'
   rules?: Array<{ required?: boolean; message?: string }>
 }>()
 const emit = defineEmits<{
@@ -59,10 +60,7 @@ async function resolveDataSourceNames() {
 }
 
 function clear() {
-  emit(
-    'update:modelValue',
-    props.field.type === 'data_source_multiple' ? [] : undefined,
-  )
+  emit('update:modelValue', props.field.type === 'data_source_multiple' ? [] : undefined)
 }
 
 watch(
@@ -75,6 +73,7 @@ watch(
 <template>
   <van-field
     :model-value="displayText"
+    :input-align="inputAlign"
     :name="name"
     :rules="rules"
     :label="field.label"
@@ -87,4 +86,3 @@ watch(
     @click="emit('open')"
   />
 </template>
-

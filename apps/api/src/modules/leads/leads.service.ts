@@ -1066,7 +1066,11 @@ export class LeadsService {
   }
 
   /** 退回线索池 */
-  async moveToPool(user: AuthUser, id: string, poolId?: string, reasonId?: string) {
+  async moveToPool(user: AuthUser, id: string, poolId?: string, reasonId?: string, note?: string) {
+    const description = note?.trim()
+    if (description && description.length > 500) {
+      throw new BadRequestException('补充说明不能超过500字')
+    }
     const lead = await this.ensureInScope(user, id, 'lead:recycle')
     if (lead.transitionId) throw new BadRequestException('已转换线索不能移入线索池')
     await this.dictionaries.validateReason(user.tenantId, 'CLUE_POOL_RS', reasonId)
@@ -1100,6 +1104,16 @@ export class LeadsService {
       operatorId: user.id,
       reasonId,
     })
+    if (description) {
+      await this.changeLog.record(user, {
+        module: 'lead',
+        action: 'toPool',
+        targetId: id,
+        targetName: lead.name,
+        before: { poolId: null, note: null },
+        after: { poolId: pool.id, note: description },
+      })
+    }
     await this.notifications.send({
       tenantId: user.tenantId,
       event: 'CLUE_MOVED_POOL',
@@ -1930,7 +1944,6 @@ export class LeadsService {
         }
       }
 
-
       if (options.copyFollowArtifacts) {
         await this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId)
       }
@@ -1963,7 +1976,6 @@ export class LeadsService {
       })
       if (!updatedCustomer) throw new NotFoundException('客户不存在')
     }
-
   }
 
   private async copyLeadFollowArtifactsInTransaction(

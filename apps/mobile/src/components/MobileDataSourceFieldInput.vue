@@ -4,24 +4,18 @@ import { computed, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
 import { dataSourceApi } from '@/api/data-source'
 import { extractErrorMessage } from '@/api/http'
+import MobileDataSourcePopupPicker from './MobileDataSourcePopupPicker.vue'
 
 const props = defineProps<{
   field: FieldVO
   modelValue?: string | string[]
   name?: string
+  inputAlign?: 'left' | 'right'
   rules?: Array<{ required?: boolean; message?: string }>
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string | string[] | undefined] }>()
-
 const show = ref(false)
-const keyword = ref('')
-const options = ref<DataSourceOptionVO[]>([])
 const selectedOptions = ref<DataSourceOptionVO[]>([])
-const loading = ref(false)
-const finished = ref(false)
-const page = ref(1)
-const pageSize = 30
-
 const multiple = computed(() => props.field.type === 'data_source_multiple')
 const sourceType = computed<DataSourceType>(() => props.field.config?.dataSourceType ?? 'CUSTOMER')
 const selectedIds = computed(() => {
@@ -34,71 +28,31 @@ const selectedIds = computed(() => {
 })
 const displayText = computed(() => selectedOptions.value.map((item) => item.name).join('、'))
 
+let resolveGeneration = 0
 async function resolveSelected() {
+  const current = ++resolveGeneration
   if (!selectedIds.value.length) {
     selectedOptions.value = []
     return
   }
   try {
-    selectedOptions.value = await dataSourceApi.resolve(sourceType.value, selectedIds.value)
-  } catch (error) {
-    showFailToast(extractErrorMessage(error))
-  }
-}
-
-async function loadMore() {
-  if (loading.value || finished.value) return
-  loading.value = true
-  try {
-    const result = await dataSourceApi.page(sourceType.value, {
-      current: page.value,
-      pageSize,
-      keyword: keyword.value.trim() || undefined,
+    const resolved = await dataSourceApi.resolve(sourceType.value, selectedIds.value)
+    if (current !== resolveGeneration) return
+    const labels = new Map(resolved.map((option) => [option.id, option]))
+    selectedOptions.value = selectedIds.value.flatMap((id) => {
+      const option = labels.get(id)
+      return option ? [option] : []
     })
-    const existing = new Set(options.value.map((item) => item.id))
-    options.value.push(...result.list.filter((item) => !existing.has(item.id)))
-    page.value += 1
-    finished.value = options.value.length >= result.total || result.list.length < pageSize
   } catch (error) {
-    finished.value = true
-    showFailToast(extractErrorMessage(error))
-  } finally {
-    loading.value = false
+    if (current === resolveGeneration) showFailToast(extractErrorMessage(error))
   }
 }
 
-function reload() {
-  options.value = []
-  page.value = 1
-  finished.value = false
-  void loadMore()
+function select(ids: string[], option?: DataSourceOptionVO) {
+  // 先展示刚选中的名称，再让 ID 变化触发异步解析；不必等待接口响应才回显。
+  if (!multiple.value && option && ids[0] === option.id) selectedOptions.value = [option]
+  emit('update:modelValue', multiple.value ? ids : ids[0])
 }
-
-function open() {
-  show.value = true
-  keyword.value = ''
-  reload()
-}
-
-function select(option: DataSourceOptionVO) {
-  if (!multiple.value) {
-    selectedOptions.value = [option]
-    emit('update:modelValue', option.id)
-    show.value = false
-    return
-  }
-  const ids = new Set(selectedIds.value)
-  if (ids.has(option.id)) ids.delete(option.id)
-  else ids.add(option.id)
-  const next = [...ids]
-  emit('update:modelValue', next)
-  const optionMap = new Map([...selectedOptions.value, ...options.value].map((item) => [item.id, item]))
-  selectedOptions.value = next.flatMap((id) => {
-    const item = optionMap.get(id)
-    return item ? [item] : []
-  })
-}
-
 function clear() {
   selectedOptions.value = []
   emit('update:modelValue', multiple.value ? [] : undefined)
@@ -114,6 +68,7 @@ watch(
 <template>
   <van-field
     :model-value="displayText"
+    :input-align="inputAlign"
     :name="name"
     :rules="rules"
     :label="field.label"
@@ -123,42 +78,14 @@ watch(
     is-link
     clearable
     @clear="clear"
-    @click="open"
+    @click="show = true"
   />
-
-  <van-popup v-model:show="show" position="bottom" round class="h-[72%]">
-    <div class="h-full flex flex-col">
-      <div class="px-4 pt-4 pb-2 text-center font-medium">选择{{ field.label }}</div>
-      <van-search v-model="keyword" placeholder="搜索" @search="reload" @clear="reload" />
-      <div class="flex-1 overflow-auto">
-        <van-list
-          v-model:loading="loading"
-          :finished="finished"
-          finished-text="没有更多了"
-          @load="loadMore"
-        >
-          <van-cell
-            v-for="option in options"
-            :key="option.id"
-            :title="option.name"
-            clickable
-            @click="select(option)"
-          >
-            <template #right-icon>
-              <van-checkbox
-                v-if="multiple"
-                :model-value="selectedIds.includes(option.id)"
-                @click.stop="select(option)"
-              />
-            </template>
-          </van-cell>
-        </van-list>
-      </div>
-      <div v-if="multiple" class="p-4 border-t border-[var(--text-n8)]">
-        <van-button type="primary" block @click="show = false">
-          确定{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
-        </van-button>
-      </div>
-    </div>
-  </van-popup>
+  <MobileDataSourcePopupPicker
+    v-model:show="show"
+    :label="field.label"
+    :source-type="sourceType"
+    :selected-ids="selectedIds"
+    :multiple="multiple"
+    @select="select"
+  />
 </template>

@@ -1,4 +1,5 @@
 export * from './device'
 export * from './field-display'
+export * from './quick-search-query'
 export * from './http'
 export * from './token-storage'

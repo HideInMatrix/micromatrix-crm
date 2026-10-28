@@ -414,8 +414,8 @@ export const leadApi = {
   update: (id: string, data: Record<string, unknown>) =>
     http.post<LeadVO>('/lead/update', { id, ...data }),
   remove: (id: string) => http.get(`/lead/delete/${id}`),
-  toPool: (id: string, poolId?: string, reasonId?: string) =>
-    http.post('/lead/to-pool', { id, poolId, reasonId }),
+  toPool: (id: string, poolId?: string, reasonId?: string, note?: string) =>
+    http.post('/lead/to-pool', { id, poolId, reasonId, ...(note ? { note } : {}) }),
   claim: (id: string, poolId: string) => http.post('/pool/lead/pick', { clueId: id, poolId }),
   transfer: (id: string, owner: string, note?: string) =>
     http.post('/lead/batch/transfer', { ids: [id], owner, ...(note ? { note } : {}) }),
@@ -475,10 +475,7 @@ export const leadApi = {
       customerId: string
     }>('/lead/transform', data),
   transitionCustomer: (data: Record<string, unknown> & { clueId: string }) =>
-    http.post<{ clueId: string; customerId: string }>(
-      '/lead/transition/account',
-      data,
-    ),
+    http.post<{ clueId: string; customerId: string }>('/lead/transition/account', data),
   retransitionCustomer: (data: { clueIds: string[]; customerId: string }) =>
     http.post<{ customerId: string; success: number; skippedIds: string[] }>(
       '/lead/re-transition/account',

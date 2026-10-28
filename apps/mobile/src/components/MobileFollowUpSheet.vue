@@ -1,57 +1,136 @@
 <script setup lang="ts">
-import { FOLLOW_UP_TYPES, type FollowUpVO } from '@micromatrix/shared'
+import type { FieldVO } from '@micromatrix/shared'
+import { computed, reactive, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
-import { reactive, ref, watch } from 'vue'
-import { createFollowUp, pageFollowUps } from '@/api/mobile'
-import { showSuccessFeedback } from '@/utils/feedback'
+import { leadApi, followUpApi } from '@/api/sales'
+import { metadataApi } from '@/api/metadata'
 import { extractErrorMessage } from '@/api/http'
+import MobileCalendarPopup from '@/components/MobileCalendarPopup.vue'
+import { useAuthStore } from '@/stores/auth'
+import { showSuccessFeedback } from '@/utils/feedback'
 
 const props = defineProps<{
   targetType: 'lead' | 'customer'
   targetId: string | null
   targetName?: string
 }>()
-
 const show = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ followed: [] }>()
-
-const records = ref<FollowUpVO[]>([])
-const loading = ref(false)
+const auth = useAuthStore()
 const saving = ref(false)
-const form = reactive({ type: '电话', content: '' })
+const loadingIntent = ref(false)
+const methodShow = ref(false)
+const intentShow = ref(false)
+const dateShow = ref(false)
+const intentField = ref<FieldVO | null>(null)
+const initialIntent = ref('')
+const form = reactive({ type: '电话', content: '', followedOn: '', intent: '' })
 
-watch(show, (open) => {
-  if (open && props.targetId) load()
-})
+const methods = [
+  { text: '电话沟通', value: '电话' },
+  { text: '微信沟通', value: '微信' },
+  { text: '面谈', value: '会议' },
+  { text: '到校参观', value: '拜访' },
+]
+const methodText = computed(
+  () => methods.find((item) => item.value === form.type)?.text ?? form.type,
+)
+const intentOptions = computed(() => intentField.value?.options ?? [])
+const intentText = computed(
+  () => intentOptions.value.find((option) => option.value === form.intent)?.label ?? '请选择',
+)
+const canEditIntent = computed(
+  () => props.targetType === 'lead' && auth.hasPerm('lead:update') && Boolean(intentField.value),
+)
 
-async function load() {
-  if (!props.targetId) return
-  loading.value = true
+async function loadIntent() {
+  if (!props.targetId || props.targetType !== 'lead' || !auth.hasPerm('lead:update')) return
+  loadingIntent.value = true
   try {
-    const { data } = await pageFollowUps(props.targetType, props.targetId)
-    records.value = data.items
+    const [config, detail] = await Promise.all([
+      metadataApi.formConfig('lead'),
+      leadApi.get(props.targetId),
+    ])
+    if (!show.value) return
+    const field = config.data.fields.find(
+      (item) =>
+        !item.hidden &&
+        item.type === 'select' &&
+        item.label === '意向等级' &&
+        Boolean(item.options?.length),
+    )
+    intentField.value = field ?? null
+    const current = field ? detail.data.customData[field.key] : undefined
+    form.intent = typeof current === 'string' ? current : ''
+    initialIntent.value = form.intent
+  } catch {
+    // 意向等级是线索字段的可选扩展，读取失败不影响记录跟进。
+    intentField.value = null
   } finally {
-    loading.value = false
+    loadingIntent.value = false
   }
 }
 
-async function submit() {
-  if (!props.targetId) return
-  if (!form.content.trim()) {
-    showFailToast('请填写跟进内容')
-    return
+watch(show, (opened) => {
+  if (opened) {
+    form.type = '电话'
+    form.content = ''
+    form.followedOn = ''
+    form.intent = ''
+    initialIntent.value = ''
+    intentField.value = null
+    methodShow.value = false
+    intentShow.value = false
+    dateShow.value = false
+    void loadIntent()
+  } else {
+    methodShow.value = false
+    intentShow.value = false
+    dateShow.value = false
   }
+})
+
+function chooseMethod(value: string) {
+  form.type = value
+  methodShow.value = false
+}
+function chooseIntent(value: string) {
+  form.intent = value
+  intentShow.value = false
+}
+function chooseDate(value: string) {
+  form.followedOn = value
+}
+
+async function submit() {
+  if (!props.targetId || saving.value) return
+  const content = form.content.trim()
+  if (!content) return showFailToast('请填写跟进内容')
   saving.value = true
   try {
-    await createFollowUp({
+    await followUpApi.create({
       targetType: props.targetType,
       targetId: props.targetId,
       type: form.type,
-      content: form.content.trim(),
+      content,
+      followedAt: form.followedOn
+        ? new Date(`${form.followedOn}T00:00:00`).toISOString()
+        : undefined,
     })
-    form.content = ''
-    showSuccessFeedback('已记录')
-    load()
+    if (canEditIntent.value && intentField.value && form.intent !== initialIntent.value) {
+      try {
+        await leadApi.update(props.targetId, {
+          moduleFields: [{ fieldId: intentField.value.id, fieldValue: form.intent }],
+        })
+      } catch (error) {
+        showFailToast(`跟进已保存，但意向等级更新失败：${extractErrorMessage(error)}`)
+        show.value = false
+        emit('followed')
+        return
+      }
+    }
+    show.value = false
+    showSuccessFeedback('跟进已保存')
     emit('followed')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
@@ -62,61 +141,246 @@ async function submit() {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round class="h-[75%]">
-    <div class="p-4 h-full flex flex-col">
-      <div class="text-center font-medium mb-3">跟进 · {{ props.targetName ?? '' }}</div>
-
-      <div class="mb-3">
-        <div class="flex gap-2 mb-2 flex-wrap">
-          <van-tag
-            v-for="t in FOLLOW_UP_TYPES"
-            :key="t"
-            :type="form.type === t ? 'primary' : 'default'"
-            size="medium"
-            @click="form.type = t"
-          >
-            {{ t }}
-          </van-tag>
-        </div>
-        <van-field
-          v-model="form.content"
-          type="textarea"
-          rows="2"
-          autosize
-          placeholder="跟进内容..."
-          class="!bg-[var(--text-n9)] rounded-[var(--border-radius-small)]"
-        />
-        <van-button
-          type="primary"
-          size="small"
-          block
-          class="mt-2"
-          :loading="saving"
-          @click="submit"
+  <van-popup
+    v-model:show="show"
+    position="bottom"
+    round
+    :close-on-click-overlay="false"
+    style="
+      height: min(600px, 74dvh);
+      max-height: calc(100dvh - 88px);
+      overflow: hidden;
+      --van-popup-round-radius: 12px;
+      --van-popup-background: #f5f5f5;
+    "
+  >
+    <div class="flex h-full min-h-0 flex-col bg-[#F5F5F5]">
+      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-white px-[12px]">
+        <span
+          class="max-w-[calc(100%-96px)] truncate text-[16px] leading-[20px] font-semibold text-[#000000]"
+          >写跟进·{{ targetName ?? '' }}</span
         >
-          记录跟进
-        </van-button>
+        <div class="absolute right-[12px]">
+          <van-button
+            type="default"
+            size="small"
+            style="
+              --van-button-border-width: 0px;
+              --van-button-small-height: 34px;
+              --van-button-small-padding: 0;
+              --van-button-small-font-size: 14px;
+              --van-button-default-background: transparent;
+              --van-button-default-color: #777777;
+            "
+            @click="show = false"
+            >取消</van-button
+          >
+        </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto">
-        <div v-if="loading" class="flex justify-center py-4">
-          <van-loading size="20" />
-        </div>
-        <van-empty v-else-if="records.length === 0" description="暂无跟进记录" image-size="60" />
+      <div class="min-h-0 flex-1 overflow-y-auto p-[12px]">
         <div
-          v-for="record in records"
-          :key="record.id"
-          class="py-2.5 border-b border-[var(--text-n8)] last:border-b-0"
+          class="overflow-hidden rounded-[8px] bg-white px-[12px]"
+          style="
+            --van-cell-background: #ffffff;
+            --van-cell-horizontal-padding: 0px;
+            --van-cell-vertical-padding: 14px;
+            --van-cell-line-height: 20px;
+            --van-cell-font-size: 14px;
+            --van-cell-text-color: #333333;
+            --van-cell-value-color: #333333;
+            --van-cell-right-icon-color: #999999;
+          "
         >
-          <div class="text-sm">
-            <van-tag size="medium" class="mr-1">{{ record.type }}</van-tag>
-            {{ record.content }}
-          </div>
-          <div class="text-xs text-gray-400 mt-1">
-            {{ new Date(record.createdAt).toLocaleString() }} · {{ record.ownerName }}
+          <van-cell
+            title="跟进方式"
+            :value="methodText"
+            is-link
+            clickable
+            :border="false"
+            @click="methodShow = true"
+          />
+          <van-cell
+            v-if="canEditIntent"
+            title="更新意向等级"
+            :value="intentText"
+            is-link
+            clickable
+            :border="false"
+            class="border-t border-[#F1F1F1]"
+            @click="intentShow = true"
+          />
+          <van-cell
+            title="跟进时间"
+            :value="form.followedOn || '请选择跟进时间'"
+            is-link
+            clickable
+            :border="false"
+            class="border-t border-[#F1F1F1]"
+            value-class="min-w-0"
+            @click="dateShow = true"
+          />
+          <div class="h-[120px] border-t border-[#F1F1F1] pt-[12px]">
+            <div class="text-[14px] leading-[20px] text-[#333333]">
+              跟进内容 <span class="text-[#F04438]">*</span>
+            </div>
+            <van-field
+              v-model="form.content"
+              type="textarea"
+              rows="3"
+              maxlength="3000"
+              placeholder="沟通要点、家长诉求、下一步动作"
+              style="
+                --van-cell-horizontal-padding: 0px;
+                --van-cell-vertical-padding: 0px;
+                --van-cell-font-size: 14px;
+                --van-field-input-line-height: 21px;
+                --van-field-placeholder-text-color: #999999;
+                --van-field-input-text-color: #333333;
+              "
+              class="mt-[6px]"
+            />
           </div>
         </div>
+        <van-loading v-if="loadingIntent" class="!flex !justify-center !py-[12px]" size="18" />
+      </div>
+
+      <div
+        class="shrink-0 border-t border-[#EAEAEA] bg-white px-[20px] pt-[8px] pb-[calc(8px+env(safe-area-inset-bottom))]"
+        style="
+          --van-button-default-height: 44px;
+          --van-button-border-radius: 8px;
+          --van-button-normal-font-size: 17px;
+        "
+      >
+        <van-button type="primary" block :loading="saving" :disabled="!targetId" @click="submit"
+          >保存跟进</van-button
+        >
       </div>
     </div>
   </van-popup>
+
+  <van-popup
+    v-model:show="methodShow"
+    teleport="body"
+    position="bottom"
+    round
+    style="
+      height: min(198px, 40dvh);
+      --van-popup-round-radius: 12px;
+      --van-popup-background: #ffffff;
+    "
+  >
+    <div class="flex h-full min-h-0 flex-col bg-white">
+      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
+        <span class="text-[16px] font-semibold text-[#000000]">跟进方式</span>
+        <div class="absolute right-[12px]">
+          <van-button
+            type="default"
+            size="small"
+            style="
+              --van-button-border-width: 0px;
+              --van-button-small-height: 34px;
+              --van-button-small-padding: 0;
+              --van-button-default-background: transparent;
+              --van-button-default-color: #777777;
+            "
+            @click="methodShow = false"
+            >取消</van-button
+          >
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-[10px] p-[12px]">
+        <van-button
+          v-for="option in methods"
+          :key="option.value"
+          type="default"
+          block
+          class="min-w-0"
+          style="
+            --van-button-default-height: 36px;
+            --van-button-normal-padding: 0px;
+            --van-button-default-font-size: 14px;
+            --van-button-radius: 6px;
+          "
+          :color="form.type === option.value ? 'var(--van-primary-color)' : '#F3F4F8'"
+          :plain="form.type === option.value"
+          @click="chooseMethod(option.value)"
+        >
+          <span
+            :class="
+              form.type === option.value ? 'text-[var(--van-primary-color)]' : 'text-[#333333]'
+            "
+            >{{ option.text }}</span
+          >
+        </van-button>
+      </div>
+      <div class="shrink-0 pb-[env(safe-area-inset-bottom)]" />
+    </div>
+  </van-popup>
+
+  <van-popup
+    v-model:show="intentShow"
+    teleport="body"
+    position="bottom"
+    round
+    style="
+      height: min(220px, 42dvh);
+      --van-popup-round-radius: 12px;
+      --van-popup-background: #ffffff;
+    "
+  >
+    <div class="flex h-full min-h-0 flex-col bg-white">
+      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
+        <span class="text-[16px] font-semibold text-[#000000]">更新意向等级</span>
+        <div class="absolute right-[12px]">
+          <van-button
+            type="default"
+            size="small"
+            style="
+              --van-button-border-width: 0px;
+              --van-button-small-height: 34px;
+              --van-button-small-padding: 0;
+              --van-button-default-background: transparent;
+              --van-button-default-color: #777777;
+            "
+            @click="intentShow = false"
+            >取消</van-button
+          >
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-[10px] p-[12px]">
+        <van-button
+          v-for="option in intentOptions"
+          :key="option.value"
+          type="default"
+          block
+          class="min-w-0"
+          style="
+            --van-button-default-height: 36px;
+            --van-button-normal-padding: 0px;
+            --van-button-default-font-size: 14px;
+            --van-button-radius: 6px;
+          "
+          :color="form.intent === option.value ? 'var(--van-primary-color)' : '#F3F4F8'"
+          :plain="form.intent === option.value"
+          @click="chooseIntent(option.value)"
+          ><span
+            :class="
+              form.intent === option.value ? 'text-[var(--van-primary-color)]' : 'text-[#333333]'
+            "
+            >{{ option.label }}</span
+          ></van-button
+        >
+      </div>
+      <div class="shrink-0 pb-[env(safe-area-inset-bottom)]" />
+    </div>
+  </van-popup>
+
+  <MobileCalendarPopup
+    v-model:show="dateShow"
+    label="跟进时间"
+    :value="form.followedOn"
+    @confirm="chooseDate"
+  />
 </template>

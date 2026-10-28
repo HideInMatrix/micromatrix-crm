@@ -7,6 +7,7 @@ import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 defineProps<{
   fields: FieldVO[]
   formProp?: ModuleFormProp
+  appearance?: 'default' | 'create'
   members: Array<{ id: string; name: string }>
   deptTree: DepartmentVO[]
 }>()
@@ -31,11 +32,12 @@ defineExpose({ validate })
     description="当前线索模块未配置可用表单字段"
     class="!py-10"
   />
-  <van-form v-else ref="formRef" required="auto">
+  <van-form v-else ref="formRef" required="auto" :show-error-message="false">
     <MobileDynamicForm
       v-model="model"
       :fields="fields"
       :form-prop="formProp"
+      :appearance="appearance"
       :members="members"
       :dept-tree="deptTree"
       @search-select="emit('search-select', $event)"
