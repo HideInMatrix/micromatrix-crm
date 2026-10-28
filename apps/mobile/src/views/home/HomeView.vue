@@ -272,14 +272,21 @@ onActivated(() => void refresh())
 
         <section class="rounded-[8px] bg-white p-[10px]" aria-labelledby="mobile-home-messages">
           <div class="mb-3 flex items-center justify-between gap-2">
-            <div class="flex min-w-0 items-center gap-2">
+            <div class="flex min-w-0 items-center gap-[4px]">
               <h2
                 id="mobile-home-messages"
-                class="m-0 text-[16px] leading-[20px] font-semibold text-[#1D2129]"
+                class="m-0 text-[16px] leading-[16px] font-semibold text-[#1D2129]"
               >
                 消息中心
               </h2>
-              <van-badge v-if="unreadCount" :content="unreadCount" :max="99" color="#F04438" />
+              <van-badge
+                v-if="unreadCount"
+                :content="unreadCount"
+                :max="99"
+                color="#F04438"
+                style="transform: none"
+                class="!inline-flex !h-[14px] !min-w-[20px] !items-center !justify-center !rounded-full !border-0 !px-[4px] !text-[12px] !leading-[14px] !font-medium"
+              />
             </div>
             <van-button
               class="!h-auto !border-0 !bg-transparent !p-0 !text-[12px] !font-normal !text-[var(--van-primary-color)]"
