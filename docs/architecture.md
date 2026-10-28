@@ -54,7 +54,7 @@ apps/api/
     └── prisma.module.ts
 ```
 
-`db.ts` 是应用运行时唯一 client 创建点；API 与 worker 各自在自己的 Node.js 进程中持有一个连接池。NestJS shutdown hooks 负责在进程关闭时统一 `db.close()`。需要多连接语义的数据库测试只在 `src/testing/prisma-test-db.ts` 创建隔离 test client。
+`db.ts` 是应用运行时唯一 client 创建点；API 与 worker 各自在自己的 Node.js 进程中持有一个连接池。NestJS shutdown hooks 负责在进程关闭时统一 `db.close()`。项目不保留测试专用数据库 client。
 
 Migration graph 固定在 `apps/api/migrations/`，结构变化只追加新的 forward migration。详细规则见 [prisma-migration-policy.md](./prisma-migration-policy.md)。
 
@@ -94,7 +94,7 @@ Lead 转 Customer 不再创建 Opportunity。转换只复制显式配置的 form
 
 生产发布使用三类镜像：API、Migration、Web。Web 镜像同时打包 `apps/web/dist` 与 `apps/mobile/dist`；worker 复用 API 镜像执行 `dist/worker.js`。Migration 镜像是数据库结构变更与 bootstrap Seed 的唯一生产入口。
 
-生产拓扑、代理层数和 release smoke 见 [docker-release.md](./docker-release.md)。
+生产拓扑、代理层数和发布流程见 [docker-release.md](./docker-release.md)。
 
 ## 10. Cordys 参考原则
 

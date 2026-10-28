@@ -97,8 +97,8 @@ export class SaveCustomFormDataDto {
 
   @ApiProperty()
   @IsString()
-  @IsNotEmpty({ message: '负责人不能为空' })
-  ownerId!: string
+  @IsOptional()
+  ownerId?: string
 
   @ApiPropertyOptional()
   @IsObject()

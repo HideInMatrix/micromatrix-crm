@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { FIELD_TYPE_OPTIONS, type FieldVO } from '@micromatrix/shared'
+import { computed } from 'vue'
 import draggable from 'vuedraggable'
 
-defineProps<{
+const props = defineProps<{
   fields: FieldVO[]
+  referenceMode?: boolean
 }>()
+const displayFields = computed(() =>
+  props.referenceMode ? props.fields.filter((field) => field.key !== 'ownerId') : props.fields,
+)
+function updateOrderedFields(ordered: FieldVO[]) {
+  if (!props.referenceMode) return emit('update:fields', ordered)
+  const hidden = props.fields.filter((field) => field.key === 'ownerId')
+  emit('update:fields', [...ordered, ...hidden])
+}
 
 const emit = defineEmits<{
   create: []
@@ -24,7 +34,11 @@ function typeLabel(type: string) {
     <div>
       <div class="text-sm font-600">字段设计</div>
       <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
-        名称和负责人是系统字段；其它字段可按业务需要新增和排序。
+        {{
+          referenceMode
+            ? '名称为系统字段，负责人在资料库级别设置；其他字段按需添加。'
+            : '名称和负责人是系统字段；其它字段可按业务需要新增和排序。'
+        }}
       </div>
     </div>
     <el-button type="primary" plain @click="emit('create')">新增字段</el-button>
@@ -43,10 +57,10 @@ function typeLabel(type: string) {
       <span>操作</span>
     </div>
     <draggable
-      :model-value="fields"
+      :model-value="displayFields"
       item-key="id"
       handle=".custom-form-field-drag"
-      @update:model-value="emit('update:fields', $event)"
+      @update:model-value="updateOrderedFields($event)"
       @end="emit('reorder')"
     >
       <template #item="{ element: field }">

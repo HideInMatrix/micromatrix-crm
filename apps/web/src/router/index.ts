@@ -174,6 +174,16 @@ const router = createRouter({
           },
         },
         {
+          path: 'system/data-sources',
+          name: 'reference-sources',
+          component: () => import('@/views/custom-forms/ReferenceSourcesView.vue'),
+          meta: {
+            title: '数据源管理',
+            perm: 'CUSTOM_FORM:READ',
+            activeMenu: '/system/data-sources',
+          },
+        },
+        {
           path: 'system/departments',
           component: () => import('@/views/system/MembersView.vue'),
           meta: { title: '组织架构', perm: 'system:dept' },

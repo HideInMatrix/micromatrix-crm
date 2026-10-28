@@ -91,13 +91,12 @@ pnpm dev
 pnpm typecheck
 pnpm build
 pnpm lint
-pnpm --filter @micromatrix/api test:rules
 pnpm db:verify-migrations
 pnpm db:status
 pnpm db:verify
 ```
 
-当前 API rules 基线为 **391/391 pass**。Mobile build/typecheck 会同时执行 Vant + UnoCSS 规范门禁。
+Mobile build/typecheck 会同时执行 Vant + UnoCSS 规范门禁。
 
 ## Docker Release
 
@@ -108,12 +107,6 @@ pnpm db:verify
 ```bash
 git tag v0.0.1
 git push origin v0.0.1
-```
-
-本地完整发布 Smoke：
-
-```bash
-pnpm smoke:docker-release
 ```
 
 详细说明见 [Docker 发布文档](./docs/docker-release.md)。

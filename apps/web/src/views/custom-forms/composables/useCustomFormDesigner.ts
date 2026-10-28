@@ -41,6 +41,22 @@ export function useCustomFormDesigner(onFormChanged: (formId: string) => Promise
       ElMessage.warning('表单名称不能为空')
       return
     }
+    if (current.referenceDataSource) {
+      const scope = current.formProp.referenceDepartmentScope
+      const departments = current.formProp.referenceDepartmentIds
+      if (scope === 'SELECTED' && (!Array.isArray(departments) || !departments.length)) {
+        ElMessage.warning('请选择至少一个允许使用的部门')
+        return
+      }
+      if (
+        !(typeof current.formProp.referenceOwnerId === 'string'
+          ? current.formProp.referenceOwnerId
+          : current.creator?.id)
+      ) {
+        ElMessage.warning('请选择资料库负责人')
+        return
+      }
+    }
     saving.value = true
     try {
       const { data } = await customFormApi.update(current.id, {

@@ -268,7 +268,7 @@ export interface ModuleFormProp {
    * Lead formProp 只保存 leadSourceFieldKey；Customer formProp 保存 customerResult*。
    */
   homeAnalytics?: HomeAnalyticsConfig
-  /** PC 端模块快捷搜索与高级能力入口开关；不影响移动端。 */
+  /** 模块快捷搜索配置：PC 与移动端共用 items，视图与高级搜索开关按端呈现。 */
   quickSearch?: ModuleQuickSearchConfig
   /** 跨表单联动配置；客户表单设计器支持配置 Lead → Customer 字段映射。 */
   linkProp?: FormLinkProp

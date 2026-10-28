@@ -9,8 +9,10 @@ import {
   type ModuleFormProp,
   type ModuleKey,
 } from '@micromatrix/shared'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { DEFAULT_ALERT_CONFIG } from '@/components/form-engine/form-presentation'
+import { customFormApi } from '@/api/custom-form'
+import { extractErrorMessage } from '@/api/http'
 
 import ModuleFormLinkDrawer from './ModuleFormLinkDrawer.vue'
 import { isDraftField, type ModuleFormFieldDraft } from './types'
@@ -78,6 +80,21 @@ const alertBackgroundColor = computed({
     else delete nextConfig.alertBackgroundColor
   },
 })
+const referenceSources = ref<Array<{ id: string; name: string }>>([])
+const sourceLoading = ref(false)
+async function loadReferenceSources() {
+  sourceLoading.value = true
+  try {
+    const { data } = await customFormApi.referenceOptions()
+    referenceSources.value = data.filter((source) => source.enable)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    sourceLoading.value = false
+  }
+}
+onMounted(() => void loadReferenceSources())
+
 const needOptions = computed(() =>
   ['select', 'multiselect', 'radio', 'checkbox'].includes(field.value?.type ?? ''),
 )
@@ -312,12 +329,19 @@ function saveLeadLink(sourceFormKey: string, scenarios: FormLinkScenario[]) {
                 filterable
                 :disabled="dataSourceTypeLocked"
                 placeholder="请选择数据源"
+                :loading="sourceLoading"
               >
                 <el-option
                   v-for="option in BUILTIN_DATA_SOURCE_OPTIONS"
                   :key="option.value"
                   :label="option.label"
                   :value="option.value"
+                />
+                <el-option
+                  v-for="option in referenceSources"
+                  :key="option.id"
+                  :label="option.name"
+                  :value="option.id"
                 />
               </el-select>
               <div

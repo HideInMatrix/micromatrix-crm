@@ -52,24 +52,19 @@ tsx src/prisma/seed.ts
 
 Migration 是一次性服务；数据库结构升级成功后才允许 API / worker / Web 进入后续启动阶段。
 
-## 4. 本地 release smoke
+## 4. 本地发布构建验证
+
+项目不保留测试专用脚本。发布前执行类型检查与正式构建：
 
 ```bash
-pnpm smoke:docker-release
+pnpm typecheck
+pnpm build
+docker build -f docker/api.Dockerfile -t micromatrix-crm-api:local .
+docker build -f docker/migrate.Dockerfile -t micromatrix-crm-migrate:local .
+docker build -f docker/web.Dockerfile -t micromatrix-crm-web:local .
 ```
 
-脚本使用独立临时 PostgreSQL / Redis，不复用当前开发库。验收至少覆盖：
-
-- API / Migration / Web 三张镜像真实构建。
-- 当前 Prisma 8 migration graph 从空库应用。
-- bootstrap Seed。
-- API 与 worker 入口存在并可运行。
-- Redis / BullMQ 基础链路。
-- `/api/health`、Nginx `/healthz` 和 `/api` proxy。
-- PC `/login` history fallback。
-- Mobile `/mobile/` 与深层路由 fallback。
-
-不能用静态 grep 代替真实 Docker build / runtime smoke。
+部署后需在实际环境中确认数据库迁移、API/Worker 健康状态及 PC、移动端路由正常运行。
 
 ## 5. 生产 Compose
 

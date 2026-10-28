@@ -38,7 +38,7 @@
 
 ## 5. NestJS 后端
 
-- 业务模块放在 `apps/api/src/modules/<domain>/`；跨域基础能力放在 `src/common`、`src/prisma`、`src/testing` 等明确公共边界。
+- 业务模块放在 `apps/api/src/modules/<domain>/`；跨域基础能力放在 `src/common`、`src/prisma` 等明确公共边界。
 - 除显式 `@Public` 外统一经过 AuthGuard；功能权限使用 canonical 权限码，写操作同时保留审计日志。
 - 所有业务查询必须保持 tenant 隔离；列表、详情、更新、删除同时应用目标权限对应的数据范围。
 - 多角色数据范围只能合并真正拥有目标权限的角色，不能用无关角色扩大数据边界。
@@ -82,13 +82,13 @@
 5. NestJS module / controller / service / DTO。
 6. PC 与 Mobile 是否都需要入口以及各自交互。
 7. 导入导出、通知、审批、日志、外部 API 是否需要接入。
-8. 数据库 integration test、权限/数据范围测试和 UI smoke。
+8. 数据库迁移检查、权限/数据范围验收与 UI 验证。
 
 如果能力只服务线索或客户配置，应优先进入现有“模块配置 → Lead / Customer”，不要另建没有独立业务意义的设置模块。
 
 ## 10. 完成标准
 
 - 代码、路由、导航、权限、数据库 contract 和文档必须描述同一产品边界。
-- 自动化门禁通过不代表真实客户端验收可以省略；企业微信等 Provider 容器行为仍需要真实客户端 smoke。
+- 类型检查与构建通过不代表真实客户端验收可以省略；企业微信等 Provider 容器行为仍需要真实客户端验证。
 - 对 destructive migration，开发库验证不能替代正式环境发布前的只读 precheck。
 - 不提交与当前任务无关的历史工作区修改，也不通过回滚覆盖已有未提交工作。

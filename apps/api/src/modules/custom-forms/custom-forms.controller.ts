@@ -67,6 +67,17 @@ export class CustomFormsController {
     return this.forms.options(user)
   }
 
+  @Get('reference-options')
+  @ApiOperation({ summary: '本企业启用的基础资料数据源目录' })
+  referenceOptions(@CurrentUser() user: AuthUser) {
+    return this.forms.referenceOptions(user)
+  }
+
+  @Get(':id/reference-config')
+  referenceConfig(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.forms.referenceConfig(user, id)
+  }
+
   @Post()
   @RequirePermissions('CUSTOM_FORM:ADD')
   @LogOperation('custom-form', 'create')
@@ -217,6 +228,35 @@ export class CustomFormDataController {
     @Body() input: CustomFormDataPageDto,
   ) {
     return this.forms.dataPage(user, id, input)
+  }
+
+  @Post('reference-options')
+  @HttpCode(200)
+  referencePage(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() input: CustomFormDataPageDto,
+  ) {
+    return this.forms.referencePage(user, id, input)
+  }
+
+  @Post('reference-resolve')
+  @HttpCode(200)
+  referenceResolve(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() input: BatchIdsDto,
+  ) {
+    return this.forms.referenceResolve(user, id, input.ids)
+  }
+
+  @Get('reference-record/:recordId')
+  referenceRecord(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('recordId') recordId: string,
+  ) {
+    return this.forms.referenceRecord(user, id, recordId)
   }
 
   @Post('source-options')

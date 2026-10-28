@@ -23,6 +23,28 @@ export interface DataSourcePageQuery {
   filterMode?: 'AND' | 'OR'
 }
 
+let referenceTypesCache: Promise<Set<string>> | null = null
+
+async function referenceTypeIds(): Promise<Set<string>> {
+  if (!referenceTypesCache) {
+    referenceTypesCache = customFormApi
+      .referenceOptions()
+      .then(({ data }) => new Set(data.map((item) => item.id)))
+      .catch((error: unknown) => {
+        referenceTypesCache = null
+        throw error
+      })
+  }
+  return referenceTypesCache
+}
+
+async function isReferenceType(sourceType: string): Promise<boolean> {
+  if ((await referenceTypeIds()).has(sourceType)) return true
+  // 资料库可能在页面打开后新建；对未知 ID 刷新目录，避免缓存导致新来源不可选。
+  referenceTypesCache = null
+  return (await referenceTypeIds()).has(sourceType)
+}
+
 const sourceFieldsCache = new Map<string, Promise<FieldVO[]>>()
 
 function filterOp(
@@ -73,7 +95,11 @@ function optionsOf(values: unknown[]): DataSourceOptionVO[] {
 
 async function fetchDataSourceFields(sourceType: DataSourceType): Promise<FieldVO[]> {
   if (!isBuiltinDataSourceType(sourceType)) {
-    return (await customFormApi.config(sourceType)).data.fields
+    return (
+      await ((await isReferenceType(sourceType))
+        ? customFormApi.referenceConfig(sourceType)
+        : customFormApi.config(sourceType))
+    ).data.fields
   }
 
   switch (sourceType) {
@@ -143,13 +169,15 @@ export async function loadDataSourcePage(
   const serializedFilters = filters ? JSON.stringify(filters) : undefined
 
   if (!isBuiltinDataSourceType(sourceType)) {
-    const { data } = await customFormApi.dataSourcePage(sourceType, {
-      current,
-      pageSize,
-      keyword,
-      filters,
-      filterMode,
-    })
+    const { data } = await ((await isReferenceType(sourceType))
+      ? customFormApi.referencePage(sourceType, { current, pageSize, keyword, filters })
+      : customFormApi.dataSourcePage(sourceType, {
+          current,
+          pageSize,
+          keyword,
+          filters,
+          filterMode,
+        }))
     return data
   }
 
@@ -263,7 +291,9 @@ export async function loadDataSourceRecord(
   const fields = await loadDataSourceFields(sourceType)
   if (!isBuiltinDataSourceType(sourceType)) {
     try {
-      const { data } = await customFormApi.dataDetail(sourceType, id)
+      const { data } = await ((await isReferenceType(sourceType))
+        ? customFormApi.referenceRecord(sourceType, id)
+        : customFormApi.dataDetail(sourceType, id))
       return sourceRecordOf(fields, data)
     } catch {
       return null
@@ -284,7 +314,9 @@ export async function resolveDataSourceOptions(
   if (!uniqueIds.length) return []
 
   if (!isBuiltinDataSourceType(sourceType)) {
-    const { data } = await customFormApi.dataSourceResolve(sourceType, uniqueIds)
+    const { data } = await ((await isReferenceType(sourceType))
+      ? customFormApi.referenceResolve(sourceType, uniqueIds)
+      : customFormApi.dataSourceResolve(sourceType, uniqueIds))
     const map = new Map(data.map((item) => [item.id, item]))
     return uniqueIds.flatMap((id) => {
       const option = map.get(id)

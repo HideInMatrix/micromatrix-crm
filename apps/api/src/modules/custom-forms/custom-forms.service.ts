@@ -154,6 +154,173 @@ export class CustomFormsService {
     private readonly userViews: UserViewsService,
   ) {}
 
+  /** 基础资料仍使用 CustomForm 存储，仅通过表单属性识别其用途。 */
+  private isReferenceProp(raw: string | null | undefined): boolean {
+    if (!raw) return false
+    try {
+      const prop: unknown = JSON.parse(raw)
+      return Boolean(
+        prop &&
+        typeof prop === 'object' &&
+        (prop as Record<string, unknown>).referenceDataSource === true,
+      )
+    } catch {
+      return false
+    }
+  }
+
+  private async referenceIds(ids: string[]): Promise<Set<string>> {
+    if (!ids.length) return new Set()
+    const blobs = await this.prisma.client.orm.public.SysModuleFormBlob.where((row) =>
+      row.id.in(ids),
+    )
+      .select('id', 'prop')
+      .all()
+    return new Set(blobs.filter((row) => this.isReferenceProp(row.prop)).map((row) => row.id))
+  }
+
+  private async referenceSettings(id: string) {
+    const blob = await this.prisma.client.orm.public.SysModuleFormBlob.where({ id })
+      .select('prop')
+      .first()
+    let prop: Record<string, unknown> = {}
+    try {
+      prop = JSON.parse(blob?.prop ?? '{}') as Record<string, unknown>
+    } catch {
+      /* invalid legacy JSON */
+    }
+    return {
+      ownerId: typeof prop.referenceOwnerId === 'string' ? prop.referenceOwnerId : '',
+      scope: prop.referenceDepartmentScope === 'SELECTED' ? 'SELECTED' : 'ALL',
+      departmentIds: Array.isArray(prop.referenceDepartmentIds)
+        ? prop.referenceDepartmentIds.filter((v): v is string => typeof v === 'string')
+        : [],
+    }
+  }
+
+  private async validateReferenceSettings(
+    tenantId: string,
+    ownerId: string,
+    departmentIds: string[],
+  ) {
+    await this.ensureTenantUsers(tenantId, [ownerId])
+    if (!departmentIds.length) return
+    const unique = [...new Set(departmentIds)]
+    const departments = await this.prisma.client.orm.public.Departments.where({ tenantId })
+      .where((row) => row.id.in(unique))
+      .select('id')
+      .all()
+    if (departments.length !== unique.length)
+      throw new BadRequestException('使用部门不存在或不属于当前企业')
+  }
+
+  private async canUseReference(user: AuthUser, formId: string, creatorId: string) {
+    const settings = await this.referenceSettings(formId)
+    if (user.permissions.includes('*') || user.id === (settings.ownerId || creatorId)) return true
+    if (settings.scope !== 'SELECTED') return true
+    return Boolean(user.deptId && settings.departmentIds.includes(user.deptId))
+  }
+
+  private async requireReference(user: AuthUser, id: string, requireEnabled = true) {
+    const form = await this.prisma.client.orm.public.CustomForm.where({
+      id,
+      organizationId: user.tenantId,
+    })
+      .select('id', 'name', 'enable', 'createUser')
+      .first()
+    if (!form || (requireEnabled && !form.enable) || !(await this.referenceIds([id])).has(id)) {
+      throw new NotFoundException('基础资料数据源不存在或已停用')
+    }
+    if (!(await this.canUseReference(user, id, form.createUser))) {
+      throw new ForbiddenException('当前部门未被授权使用此资料库')
+    }
+    return form
+  }
+
+  /** 目录包括已停用数据源，以便解析历史关联；创建新字段只显示已启用项。 */
+  async referenceOptions(user: AuthUser) {
+    const forms = await this.prisma.client.orm.public.CustomForm.where({
+      organizationId: user.tenantId,
+    })
+      .select('id', 'name', 'enable', 'createUser')
+      .orderBy((row) => row.name.asc())
+      .all()
+    const ids = await this.referenceIds(forms.map((form) => form.id))
+    const allowed = await Promise.all(
+      forms
+        .filter((form) => ids.has(form.id))
+        .map(async (form) =>
+          (await this.canUseReference(user, form.id, form.createUser)) ? form : null,
+        ),
+    )
+    return allowed.filter((form): form is NonNullable<typeof form> => form !== null)
+  }
+
+  async referenceConfig(user: AuthUser, id: string) {
+    const form = await this.requireReference(user, id, false)
+    return {
+      formKey: id,
+      formProp: {},
+      fields: await this.metadata.listFields(user.tenantId, id),
+      name: form.name,
+    }
+  }
+
+  /** 数据源读取不按记录 owner 限制；仅基础资料允许这样读取。 */
+  async referencePage(user: AuthUser, id: string, input: CustomFormDataPageDto) {
+    await this.requireReference(user, id)
+    const current = input.current ?? 1
+    const pageSize = input.pageSize ?? 20
+    let query = this.prisma.client.orm.public.CustomFormData.where({
+      organizationId: user.tenantId,
+      customFormId: id,
+    })
+    const keyword = input.keyword?.trim()
+    if (keyword) query = query.where((row) => row.name.ilike(`%${keyword}%`))
+    if (input.filters?.length) {
+      const fields = await this.metadata.listFields(user.tenantId, id)
+      const filteredIds = await this.filterDataIds(
+        user.tenantId,
+        id,
+        fields,
+        input.filters,
+        input.filterMode ?? 'AND',
+      )
+      if (!filteredIds.length) return { list: [], total: 0, current, pageSize }
+      query = query.where((row) => row.id.in(filteredIds))
+    }
+    const [count, records] = await Promise.all([
+      query.aggregate((agg) => ({ count: agg.count() })),
+      query
+        .orderBy((row) => row.name.asc())
+        .offset((current - 1) * pageSize)
+        .limit(pageSize)
+        .select('id', 'name')
+        .all(),
+    ])
+    return { list: records, total: count.count, current, pageSize }
+  }
+
+  async referenceResolve(user: AuthUser, id: string, ids: string[]) {
+    await this.requireReference(user, id, false)
+    if (!ids.length) return []
+    return this.prisma.client.orm.public.CustomFormData.where({
+      organizationId: user.tenantId,
+      customFormId: id,
+    })
+      .where((row) => row.id.in([...new Set(ids)]))
+      .select('id', 'name')
+      .all()
+  }
+
+  async referenceRecord(user: AuthUser, id: string, recordId: string) {
+    await this.requireReference(user, id, false)
+    const row = await this.findData(user.tenantId, id, recordId)
+    const fields = await this.metadata.listFields(user.tenantId, id)
+    const data = this.dataToVO(row, fields)
+    return { id: data.id, name: data.name, values: data.values, fields }
+  }
+
   async list(user: AuthUser) {
     const rows = await this.prisma.client.orm.public.CustomForm.where({
       organizationId: user.tenantId,
@@ -182,6 +349,14 @@ export class CustomFormsService {
           .select('customFormId', 'internalKey')
           .all()
       : []
+    const referenceIds = await this.referenceIds(formIds)
+    const referenceOwners = new Map(
+      await Promise.all(
+        [...referenceIds].map(
+          async (id) => [id, (await this.referenceSettings(id)).ownerId] as const,
+        ),
+      ),
+    )
     const adminFormIds = new Set(admins.map((row) => row.customFormId))
     const roleKeysByForm = new Map<string, Set<string>>()
     for (const role of roles) {
@@ -191,13 +366,19 @@ export class CustomFormsService {
     }
 
     return rows
-      .filter((row) => adminFormIds.has(row.id) || (row.enable && roleKeysByForm.has(row.id)))
+      .filter(
+        (row) =>
+          adminFormIds.has(row.id) ||
+          referenceOwners.get(row.id) === user.id ||
+          (row.enable && roleKeysByForm.has(row.id)),
+      )
       .map((row) => {
         const roleKeys = roleKeysByForm.get(row.id) ?? new Set<string>()
-        const isAdmin = adminFormIds.has(row.id)
+        const isAdmin = adminFormIds.has(row.id) || referenceOwners.get(row.id) === user.id
         return {
           id: row.id,
           name: row.name,
+          referenceDataSource: referenceIds.has(row.id),
           enable: row.enable,
           organizationId: row.organizationId,
           isAdmin,
@@ -208,13 +389,22 @@ export class CustomFormsService {
   }
 
   async options(user: AuthUser) {
-    return this.prisma.client.orm.public.CustomForm.where({
+    const forms = await this.prisma.client.orm.public.CustomForm.where({
       organizationId: user.tenantId,
       enable: true,
     })
-      .select('id', 'name')
+      .select('id', 'name', 'createUser')
       .orderBy([(row) => row.updateTime.desc(), (row) => row.id.asc()])
       .all()
+    const referenceIds = await this.referenceIds(forms.map((form) => form.id))
+    const visible = await Promise.all(
+      forms.map(async (form) =>
+        referenceIds.has(form.id) && !(await this.canUseReference(user, form.id, form.createUser))
+          ? null
+          : { id: form.id, name: form.name },
+      ),
+    )
+    return visible.filter((form): form is NonNullable<typeof form> => form !== null)
   }
 
   async detail(user: AuthUser, id: string) {
@@ -233,6 +423,7 @@ export class CustomFormsService {
       name: form.name,
       enable: form.enable,
       organizationId: form.organizationId,
+      referenceDataSource: (await this.referenceIds([id])).has(id),
       creator,
       isAdmin: access.isAdmin,
       hasCreateDataPermission: access.canCreate,
@@ -244,6 +435,20 @@ export class CustomFormsService {
   async create(user: AuthUser, input: SaveCustomFormDto) {
     const name = input.name.trim()
     await this.ensureNameUnique(user.tenantId, name)
+    const reference = input.formProp?.referenceDataSource === true
+    const referenceOwnerId =
+      reference && typeof input.formProp?.referenceOwnerId === 'string'
+        ? input.formProp.referenceOwnerId
+        : user.id
+    const referenceDepartmentIds =
+      reference && Array.isArray(input.formProp?.referenceDepartmentIds)
+        ? input.formProp.referenceDepartmentIds.filter((id): id is string => typeof id === 'string')
+        : []
+    if (reference)
+      await this.validateReferenceSettings(user.tenantId, referenceOwnerId, referenceDepartmentIds)
+    const referenceProp = reference
+      ? { ...input.formProp, referenceDataSource: true, referenceOwnerId, referenceDepartmentIds }
+      : (input.formProp ?? {})
     const now = BigInt(Date.now())
 
     const form = await this.prisma.client.transaction(async (tx) => {
@@ -269,7 +474,7 @@ export class CustomFormsService {
       })
       await tx.orm.public.SysModuleFormBlob.create({
         id: created.id,
-        prop: JSON.stringify(input.formProp ?? {}),
+        prop: JSON.stringify(referenceProp),
       })
 
       await Promise.all([
@@ -305,6 +510,45 @@ export class CustomFormsService {
     await this.requireAdmin(user, id)
     const name = input.name.trim()
     await this.ensureNameUnique(user.tenantId, name, id)
+    const existing = await this.prisma.client.orm.public.SysModuleFormBlob.where({ id })
+      .select('prop')
+      .first()
+    const oldProp = JSON.parse(existing?.prop ?? '{}') as Record<string, unknown>
+    const isReference = oldProp.referenceDataSource === true
+    const nextProp = input.formProp === undefined ? undefined : { ...oldProp, ...input.formProp }
+    if (nextProp && isReference) {
+      nextProp.referenceDataSource = true
+      const existingForm = await this.prisma.client.orm.public.CustomForm.where({
+        id,
+        organizationId: user.tenantId,
+      })
+        .select('createUser')
+        .first()
+      const ownerId =
+        typeof nextProp.referenceOwnerId === 'string'
+          ? nextProp.referenceOwnerId
+          : typeof oldProp.referenceOwnerId === 'string'
+            ? oldProp.referenceOwnerId
+            : (existingForm?.createUser ?? user.id)
+      const departments = Array.isArray(nextProp.referenceDepartmentIds)
+        ? nextProp.referenceDepartmentIds.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : []
+      const scope = nextProp.referenceDepartmentScope === 'SELECTED' ? 'SELECTED' : 'ALL'
+      if (scope === 'SELECTED' && !departments.length) {
+        throw new BadRequestException('请至少指定一个可以使用此资料库的部门')
+      }
+      await this.validateReferenceSettings(user.tenantId, ownerId, departments)
+      nextProp.referenceOwnerId = ownerId
+      nextProp.referenceDepartmentScope = scope
+      nextProp.referenceDepartmentIds = departments
+    } else if (nextProp && !isReference) {
+      delete nextProp.referenceDataSource
+      delete nextProp.referenceOwnerId
+      delete nextProp.referenceDepartmentScope
+      delete nextProp.referenceDepartmentIds
+    }
     const now = BigInt(Date.now())
     await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomForm.where({ id: id }).update({
@@ -325,12 +569,12 @@ export class CustomFormsService {
           .first()
         if (blob) {
           await tx.orm.public.SysModuleFormBlob.where({ id: blob.id }).update({
-            prop: JSON.stringify(input.formProp),
+            prop: JSON.stringify(nextProp),
           })
         } else {
           await tx.orm.public.SysModuleFormBlob.create({
             id: id,
-            prop: JSON.stringify(input.formProp),
+            prop: JSON.stringify(nextProp),
           })
         }
       }
@@ -348,6 +592,83 @@ export class CustomFormsService {
     return { id: row.id, enable: row.enable }
   }
 
+  /** 查找当前企业表单中真正引用某个资料库的字段，防止误删已关联的数据。 */
+  private async referencingFields(tenantId: string, sourceId: string) {
+    const forms = await this.prisma.client.orm.public.SysModuleForm.where({
+      organizationId: tenantId,
+    })
+      .select('formKey')
+      .all()
+    const definitions = await Promise.all(
+      forms.map(async (form) => {
+        try {
+          return await this.metadata.listFields(tenantId, form.formKey)
+        } catch {
+          return [] as FieldVO[]
+        }
+      }),
+    )
+    return definitions
+      .flat()
+      .filter(
+        (field) =>
+          ['data_source', 'data_source_multiple'].includes(field.type) &&
+          field.config?.dataSourceType === sourceId,
+      )
+  }
+
+  private async assertUnreferencedCatalogRecords(
+    tenantId: string,
+    sourceId: string,
+    ids: string[],
+  ) {
+    if (!ids.length || !(await this.referenceIds([sourceId])).has(sourceId)) return
+    const fields = await this.referencingFields(tenantId, sourceId)
+    if (!fields.length) return
+    const fieldIds = fields.map((field) => field.id)
+    const matches = (value: string) => {
+      if (ids.includes(value)) return true
+      try {
+        const decoded: unknown = JSON.parse(value)
+        return (
+          Array.isArray(decoded) &&
+          decoded.some((entry) => typeof entry === 'string' && ids.includes(entry))
+        )
+      } catch {
+        return false
+      }
+    }
+    const [clue, clueBlob, customer, customerBlob, custom, customBlob] = await Promise.all([
+      this.prisma.client.orm.public.ClueField.where((row) => row.fieldId.in(fieldIds))
+        .select('fieldValue')
+        .all(),
+      this.prisma.client.orm.public.ClueFieldBlob.where((row) => row.fieldId.in(fieldIds))
+        .select('fieldValue')
+        .all(),
+      this.prisma.client.orm.public.CustomerField.where((row) => row.fieldId.in(fieldIds))
+        .select('fieldValue')
+        .all(),
+      this.prisma.client.orm.public.CustomerFieldBlob.where((row) => row.fieldId.in(fieldIds))
+        .select('fieldValue')
+        .all(),
+      this.prisma.client.orm.public.CustomFormDataField.where((row) => row.fieldId.in(fieldIds))
+        .select('fieldValue')
+        .all(),
+      this.prisma.client.orm.public.CustomFormDataFieldBlob.where((row) => row.fieldId.in(fieldIds))
+        .select('fieldValue')
+        .all(),
+    ])
+    if (
+      [...clue, ...clueBlob, ...customer, ...customerBlob, ...custom, ...customBlob].some((row) =>
+        matches(row.fieldValue),
+      )
+    ) {
+      throw new BadRequestException(
+        '资料已被线索、客户或其他表单引用，请保留记录以确保历史数据完整',
+      )
+    }
+  }
+
   async remove(user: AuthUser, id: string) {
     await this.requireAdmin(user, id)
     const dataRows = await this.prisma.client.orm.public.CustomFormData.where({
@@ -356,6 +677,17 @@ export class CustomFormsService {
     })
       .select('id')
       .all()
+    if (dataRows.length && (await this.referenceIds([id])).has(id)) {
+      throw new BadRequestException(
+        '数据源已包含基础资料，请停用而不是删除，避免已有业务数据的关联失效',
+      )
+    }
+    if (
+      (await this.referenceIds([id])).has(id) &&
+      (await this.referencingFields(user.tenantId, id)).length
+    ) {
+      throw new BadRequestException('数据源仍被表单字段使用，请先解除关联，或直接停用数据源')
+    }
     await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.SysUserView.where({
         organizationId: user.tenantId,
@@ -640,10 +972,18 @@ export class CustomFormsService {
   async createData(user: AuthUser, id: string, input: SaveCustomFormDataDto) {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     if (!access.canCreate) throw new ForbiddenException('当前成员没有创建表单数据的权限')
-    if (!access.canManageAll && input.ownerId !== user.id) {
+    const isReference = (await this.referenceIds([id])).has(id)
+    if (!isReference && !input.ownerId) throw new BadRequestException('负责人不能为空')
+    const referenceOwnerId = isReference
+      ? (await this.referenceSettings(id)).ownerId ||
+        (await this.prisma.client.orm.public.CustomForm.where({ id }).select('createUser').first())
+          ?.createUser ||
+        user.id
+      : input.ownerId!
+    if (!access.canManageAll && referenceOwnerId !== user.id) {
       throw new ForbiddenException('当前成员只能创建本人负责的数据')
     }
-    await this.ensureTenantUsers(user.tenantId, [input.ownerId])
+    await this.ensureTenantUsers(user.tenantId, [referenceOwnerId])
     const { fields, values } = await this.validateValues(user.tenantId, id, input.values, true)
     const attachmentPlan = await this.validateAttachmentValues(user, null, fields, values)
     const now = BigInt(Date.now())
@@ -652,7 +992,7 @@ export class CustomFormsService {
         id: createLegacyId32(),
         customFormId: id,
         name: input.name.trim(),
-        owner: input.ownerId,
+        owner: referenceOwnerId,
         organizationId: user.tenantId,
         createTime: now,
         updateTime: now,
@@ -670,17 +1010,20 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const current = await this.findData(user.tenantId, id, dataId)
     this.assertWritableData(access, user.id, current.ownerId)
-    if (!access.canManageAll && input.ownerId !== user.id) {
+    const isReference = (await this.referenceIds([id])).has(id)
+    if (!isReference && !input.ownerId) throw new BadRequestException('负责人不能为空')
+    const ownerId = isReference ? current.ownerId : input.ownerId!
+    if (!access.canManageAll && ownerId !== user.id) {
       throw new ForbiddenException('当前成员不能把数据转交给其他负责人')
     }
-    await this.ensureTenantUsers(user.tenantId, [input.ownerId])
+    await this.ensureTenantUsers(user.tenantId, [ownerId])
     const { fields, values } = await this.validateValues(user.tenantId, id, input.values, true)
     const oldAttachmentIds = this.attachmentIdsFromRow(current, fields)
     const attachmentPlan = await this.validateAttachmentValues(user, dataId, fields, values)
     await this.prisma.client.transaction(async (tx) => {
       await tx.orm.public.CustomFormData.where({ id: dataId }).update({
         name: input.name.trim(),
-        owner: input.ownerId,
+        owner: ownerId,
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
       })
@@ -704,6 +1047,7 @@ export class CustomFormsService {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     const current = await this.findData(user.tenantId, id, dataId)
     this.assertWritableData(access, user.id, current.ownerId)
+    await this.assertUnreferencedCatalogRecords(user.tenantId, id, [dataId])
     await this.prisma.client.orm.public.CustomFormData.where({
       id: dataId,
     }).delete()
@@ -750,6 +1094,9 @@ export class CustomFormsService {
     }
 
     if (field.key === 'ownerId') {
+      if ((await this.referenceIds([id])).has(id)) {
+        throw new BadRequestException('基础资料负责人只能在资料库设置中调整')
+      }
       const ownerId = typeof input.fieldValue === 'string' ? input.fieldValue.trim() : ''
       if (!ownerId) throw new BadRequestException('负责人不能为空')
       if (!access.canManageAll && ownerId !== user.id) {
@@ -830,6 +1177,7 @@ export class CustomFormsService {
       .all()
     if (rows.length !== ids.length) throw new BadRequestException('批量数据包含不存在的记录')
     for (const row of rows) this.assertWritableData(access, user.id, row.owner)
+    await this.assertUnreferencedCatalogRecords(user.tenantId, id, ids)
     const count = await this.prisma.client.orm.public.CustomFormData.where({
       organizationId: user.tenantId,
       customFormId: id,
@@ -885,7 +1233,10 @@ export class CustomFormsService {
   async importTemplate(user: AuthUser, id: string, importType: ImportType) {
     const { form, access } = await this.resolveAccess(user, id, { requireEnabled: true })
     this.assertImportAccess(access, importType)
-    const fields = await this.metadata.listFields(user.tenantId, id)
+    const isReference = (await this.referenceIds([id])).has(id)
+    const fields = (await this.metadata.listFields(user.tenantId, id)).filter(
+      (field) => !isReference || field.key !== 'ownerId',
+    )
     const { mainFields, groups } = this.subTableSpreadsheetConfig(fields)
     return {
       filename: `${form.name}${importType === 'ADD' ? '导入新建' : '导入更新'}模板.xlsx`,
@@ -903,7 +1254,10 @@ export class CustomFormsService {
   ): Promise<ImportResultVO> {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     this.assertImportAccess(access, importType)
-    const fields = await this.metadata.listFields(user.tenantId, id)
+    const isReference = (await this.referenceIds([id])).has(id)
+    const fields = (await this.metadata.listFields(user.tenantId, id)).filter(
+      (field) => !isReference || field.key !== 'ownerId',
+    )
     const rows = await this.parseCustomFormImportGroups(file, fields, importType)
     const errorMessages: ImportResultVO['errorMessages'] = []
     let successCount = 0
@@ -930,7 +1284,10 @@ export class CustomFormsService {
   ): Promise<ImportResultVO> {
     const { access } = await this.resolveAccess(user, id, { requireEnabled: true })
     this.assertImportAccess(access, importType)
-    const fields = await this.metadata.listFields(user.tenantId, id)
+    const isReference = (await this.referenceIds([id])).has(id)
+    const fields = (await this.metadata.listFields(user.tenantId, id)).filter(
+      (field) => !isReference || field.key !== 'ownerId',
+    )
     const rows = await this.parseCustomFormImportGroups(file, fields, importType)
     const errorMessages: ImportResultVO['errorMessages'] = []
     let successCount = 0
@@ -1827,6 +2184,16 @@ export class CustomFormsService {
 
     if (!name) throw new BadRequestException('名称不能为空')
     if (name.length > 255) throw new BadRequestException('名称不能超过 255 个字符')
+    if ((await this.referenceIds([formId])).has(formId) && importType === 'ADD') {
+      ownerId =
+        (await this.referenceSettings(formId)).ownerId ||
+        (
+          await this.prisma.client.orm.public.CustomForm.where({ id: formId })
+            .select('createUser')
+            .first()
+        )?.createUser ||
+        user.id
+    }
     if (!ownerId) throw new BadRequestException('负责人不能为空')
     await this.ensureTenantUsers(user.tenantId, [ownerId])
     if (!access.canManageAll && ownerId !== user.id) {
@@ -2063,9 +2430,15 @@ export class CustomFormsService {
           .all()
       : []
     const roleKeys = new Set(roleRows.map((role) => String(role.internalKey)))
-    const isAdmin = Boolean(admin)
+    const settings = (await this.referenceIds([id])).has(id)
+      ? await this.referenceSettings(id)
+      : null
+    const isAdmin = Boolean(admin) || Boolean(settings?.ownerId === user.id)
     if (!isAdmin && options.requireEnabled && !form.enable) {
       throw new ForbiddenException('自定义表单当前未启用')
+    }
+    if (!isAdmin && settings && !(await this.canUseReference(user, id, form.createUser))) {
+      throw new ForbiddenException('当前部门未被授权使用此资料库')
     }
     if (!isAdmin && roleKeys.size === 0) throw new ForbiddenException('没有该自定义表单的访问权限')
     const hasManageAll = roleKeys.has('MANAGE_ALL')

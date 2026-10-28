@@ -117,7 +117,7 @@ pnpm db:status
 
 `postgres<Contract>(...)` 返回 plain object。应用运行时只允许 `src/prisma/db.ts` 创建一个进程级 client；NestJS `PrismaService` 只是 DI / lifecycle wrapper。
 
-Seed 使用同一个 `db`。只有需要独立连接、多连接互斥或测试隔离的测试代码，才允许在 `src/testing/prisma-test-db.ts` 创建额外 test client。
+Seed 使用同一个 `db`；项目不保留测试专用数据库 client。
 
 禁止重新引入：
 

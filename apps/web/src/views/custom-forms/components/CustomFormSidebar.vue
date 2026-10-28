@@ -6,6 +6,7 @@ defineProps<{
   forms: CustomFormListVO[]
   activeFormId: string
   canAdd: boolean
+  referenceMode?: boolean
 }>()
 
 const keyword = defineModel<string>('keyword', { default: '' })
@@ -22,14 +23,23 @@ const emit = defineEmits<{
 <template>
   <el-card shadow="never" class="w-[280px] shrink-0" body-class="h-full !p-4 flex flex-col min-h-0">
     <div class="mb-3 flex items-center gap-2">
-      <el-input v-model="keyword" clearable placeholder="搜索表单" class="flex-1" />
+      <el-input
+        v-model="keyword"
+        clearable
+        :placeholder="referenceMode ? '搜索数据源' : '搜索表单'"
+        class="flex-1"
+      />
       <el-button v-if="canAdd" type="primary" plain class="!px-3" @click="emit('create')">
         新建
       </el-button>
     </div>
 
     <div v-loading="loading" class="min-h-0 flex-1 overflow-auto">
-      <el-empty v-if="!forms.length && !loading" description="暂无自定义表单" :image-size="72" />
+      <el-empty
+        v-if="!forms.length && !loading"
+        :description="referenceMode ? '暂无数据源，点击新建创建资料库' : '暂无自定义表单'"
+        :image-size="72"
+      />
       <div v-else class="space-y-1">
         <div
           v-for="item in forms"
@@ -49,9 +59,12 @@ const emit = defineEmits<{
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="emit('config', item.id, 'design')">
-                  表单设计
+                  {{ referenceMode ? '字段配置' : '表单设计' }}
                 </el-dropdown-item>
-                <el-dropdown-item @click="emit('config', item.id, 'permission')">
+                <el-dropdown-item
+                  v-if="!referenceMode"
+                  @click="emit('config', item.id, 'permission')"
+                >
                   成员权限
                 </el-dropdown-item>
                 <el-dropdown-item @click="emit('toggle', item)">

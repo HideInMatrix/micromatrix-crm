@@ -6,6 +6,8 @@ export type CustomFormRoleKey = 'MANAGE_ALL' | 'VIEW_ALL' | 'MANAGE_OWN'
 export interface CustomFormListVO {
   id: string
   name: string
+  /** 基础资料的数据源目录；与普通自定义业务表单隔离。 */
+  referenceDataSource?: boolean
   enable: boolean
   organizationId: string
   isAdmin: boolean
@@ -69,6 +71,6 @@ export interface SaveCustomFormInput {
 
 export interface SaveCustomFormDataInput {
   name: string
-  ownerId: string
+  ownerId?: string
   values?: Record<string, unknown>
 }

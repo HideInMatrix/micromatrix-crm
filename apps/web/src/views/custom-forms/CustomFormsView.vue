@@ -18,6 +18,8 @@ import { useCustomFormTransfer } from './composables/useCustomFormTransfer'
 import { useCustomFormViews } from './composables/useCustomFormViews'
 import { useCustomForms } from './composables/useCustomForms'
 
+const props = withDefaults(defineProps<{ referenceMode?: boolean }>(), { referenceMode: false })
+
 const {
   auth,
   loading,
@@ -31,11 +33,10 @@ const {
   createForm: createCatalogForm,
   toggleForm: toggleCatalogForm,
   removeForm: removeCatalogForm,
-} = useCustomForms()
+} = useCustomForms(props.referenceMode)
 
 const { members, deptTree, load: loadReferences } = useCustomFormReferences()
 const currentUserId = computed(() => auth.user?.id)
-
 const {
   loading: dataLoading,
   page: dataPage,
@@ -56,6 +57,10 @@ const {
   remove: removeDataBase,
 } = useCustomFormData(activeFormId, currentUserId, members)
 
+const nameFieldLabel = computed(
+  () => dataPage.value.fields.find((field) => field.key === 'name')?.label ?? '名称',
+)
+
 const {
   advancedFilters,
   activeViewId,
@@ -73,7 +78,7 @@ const {
   handleSavedViewChange,
   clearAdvancedFilters,
   handleColumnsChange,
-} = useCustomFormViews(dataPage, activeFormId, loadData)
+} = useCustomFormViews(dataPage, activeFormId, loadData, props.referenceMode)
 
 const {
   importVisible,
@@ -224,6 +229,7 @@ onMounted(async () => {
       :forms="filteredForms"
       :active-form-id="activeFormId"
       :can-add="canAddForm"
+      :reference-mode="referenceMode"
       @create="createForm"
       @select="selectForm"
       @config="openConfig"
@@ -285,8 +291,10 @@ onMounted(async () => {
       v-model:admins="configAdmins"
       v-model:roles="configRoles"
       :loading="configLoading"
+      :reference-mode="referenceMode"
       :saving="configSaving"
       :members="members"
+      :dept-tree="deptTree"
       @save-base="saveFormBase"
       @save-permissions="savePermissions"
       @create-field="openFieldCreate"
@@ -310,6 +318,8 @@ onMounted(async () => {
       v-model:owner-id="dataForm.ownerId"
       v-model:values="dataValues"
       :active-form-name="activeForm?.name ?? ''"
+      :name-field-label="nameFieldLabel"
+      :reference-mode="referenceMode"
       :editing-data="editingData"
       :saving="dataSaving"
       :owner-options="ownerOptions"

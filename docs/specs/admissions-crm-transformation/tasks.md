@@ -138,7 +138,7 @@ T5 focused tests 21/21 通过，覆盖 Stage Event 漏斗去重、迁移前 fall
 - [x] 审计当前 Prisma ORM 8 client 创建、NestJS DI 包装与生命周期管理方式。
 - [x] 将应用运行时 client 收敛为 `src/prisma/db.ts` 导出的进程级单例 plain object；`PrismaService` 只负责 DI 包装和生命周期，不再在 `onModuleInit()` 中创建 client。
 - [x] 按 Prisma ORM 8 NestJS 结构收敛目录：`contract.prisma / contract.json / contract.d.ts / db.ts / Seed` 全部归入 `src/prisma/`；`PrismaService / PrismaModule` 位于 `src/` 根层；删除旧 `apps/api/prisma/`、空 `apps/api/generated/` 与 `src/prisma/generated/`。
-- [x] 生产运行时和 Seed 使用同一个 `db` plain object；仅数据库隔离/多连接测试在 `src/testing/prisma-test-db.ts` 创建独立 test client，不再保留生产 `prisma-client.ts` factory 层。
+- [x] 生产运行时和 Seed 使用同一个 `db` plain object；历史上曾通过独立测试 client 验证多连接场景（测试辅助模块现已清理），不再保留生产 `prisma-client.ts` factory 层。
 - [x] 保留 `apps/api/migrations/` 作为 Prisma 8 正式 migration graph；审计全部 8 个 migration 的 from/to contract 与 snapshots，当前 snapshots 全部属于可达迁移链，没有孤儿 snapshot 可删除。
 - [x] API 主进程启用 NestJS shutdown hooks，使 `PrismaService.onModuleDestroy()` 可以在进程关闭时统一 `db.close()`；Worker 已保持同样行为。
 - [x] 运行 Prisma focused tests、API typecheck/build、全量 rules 与数据库 smoke，确认单例收口不改变事务、raw query、worker 和测试隔离语义。

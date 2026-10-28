@@ -22,6 +22,10 @@ import type { FieldForm } from './metadata'
 export const customFormApi = {
   list: () => http.get<CustomFormListVO[]>('/custom-form/list'),
   options: () => http.get<Array<{ id: string; name: string }>>('/custom-form/options'),
+  referenceOptions: () =>
+    http.get<Array<{ id: string; name: string; enable: boolean }>>(
+      '/custom-form/reference-options',
+    ),
   detail: (id: string) => http.get<CustomFormDetailVO>(`/custom-form/${id}`),
   create: (data: SaveCustomFormInput) => http.post<CustomFormDetailVO>('/custom-form', data),
   update: (id: string, data: SaveCustomFormInput) =>
@@ -39,6 +43,20 @@ export const customFormApi = {
   config: (id: string) =>
     http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
       `/custom-form/${id}/form-config`,
+    ),
+  referenceConfig: (id: string) =>
+    http.get<{ formKey: string; formProp: Record<string, unknown>; fields: FieldVO[] }>(
+      `/custom-form/${id}/reference-config`,
+    ),
+  referencePage: (
+    id: string,
+    data: { current?: number; pageSize?: number; keyword?: string; filters?: FilterCondition[] },
+  ) => http.post<DataSourcePageVO>(`/custom-form/${id}/data/reference-options`, data),
+  referenceResolve: (id: string, ids: string[]) =>
+    http.post<DataSourceOptionVO[]>(`/custom-form/${id}/data/reference-resolve`, { ids }),
+  referenceRecord: (id: string, recordId: string) =>
+    http.get<{ id: string; name: string; values: Record<string, unknown>; fields: FieldVO[] }>(
+      `/custom-form/${id}/data/reference-record/${recordId}`,
     ),
   createField: (id: string, data: FieldForm) =>
     http.post<FieldVO>(`/custom-form/${id}/fields`, data),

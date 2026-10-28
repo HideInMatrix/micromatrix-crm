@@ -23,6 +23,12 @@ export const MENUS: MenuItem[] = [
     perm: 'menu:system',
     children: [
       {
+        path: '/system/data-sources',
+        title: '数据源管理',
+        moduleKey: 'system',
+        perm: 'CUSTOM_FORM:READ',
+      },
+      {
         path: '/system/departments',
         title: '组织架构',
         moduleKey: 'system',

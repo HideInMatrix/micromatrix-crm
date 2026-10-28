@@ -5,6 +5,7 @@ export function useCustomFormViews(
   dataPage: Ref<CustomFormDataPageVO>,
   activeFormId: Ref<string>,
   reload: (reset?: boolean) => Promise<void>,
+  referenceMode = false,
 ) {
   const advancedFilters = ref<FilterCondition[]>([])
   const activeViewId = ref<string>()
@@ -12,13 +13,18 @@ export function useCustomFormViews(
 
   const displayFields = computed(() =>
     dataPage.value.fields.filter(
-      (field) => field.showInList && !['attachment', 'sub_product'].includes(field.type),
+      (field) =>
+        field.showInList &&
+        (!referenceMode || field.key !== 'ownerId') &&
+        !['attachment', 'sub_product'].includes(field.type),
     ),
   )
   const filterableFields = computed(() =>
     dataPage.value.fields.filter(
       (field) =>
-        !field.hidden && !['formula', 'picture', 'attachment', 'sub_product'].includes(field.type),
+        !field.hidden &&
+        (!referenceMode || field.key !== 'ownerId') &&
+        !['formula', 'picture', 'attachment', 'sub_product'].includes(field.type),
     ),
   )
   const defaultColumnKeys = computed(() => displayFields.value.map((field) => field.key))
@@ -28,6 +34,7 @@ export function useCustomFormViews(
     return dataPage.value.fields.filter(
       (field) =>
         !field.hidden &&
+        (!referenceMode || field.key !== 'ownerId') &&
         !['attachment', 'sub_product'].includes(field.type) &&
         visible.has(field.key),
     )
@@ -36,17 +43,29 @@ export function useCustomFormViews(
     activeFormId.value ? `customForm:${activeFormId.value}` : '',
   )
   const savedViewFields = computed(() =>
-    dataPage.value.fields.filter((field) => !['attachment', 'sub_product'].includes(field.type)),
+    dataPage.value.fields.filter(
+      (field) =>
+        (!referenceMode || field.key !== 'ownerId') &&
+        !['attachment', 'sub_product'].includes(field.type),
+    ),
   )
-  const customDataFields = computed(() => dataPage.value.fields.filter((field) => !field.system))
+  const customDataFields = computed(() =>
+    dataPage.value.fields.filter(
+      (field) => !field.system && !['name', 'ownerId'].includes(field.key),
+    ),
+  )
   const batchEditableFields = computed(() =>
     dataPage.value.fields.filter(
-      (field) => !['attachment', 'picture', 'formula', 'sub_product'].includes(field.type),
+      (field) =>
+        (!referenceMode || field.key !== 'ownerId') &&
+        !['attachment', 'picture', 'formula', 'sub_product'].includes(field.type),
     ),
   )
   const exportFields = computed(() =>
     dataPage.value.fields.filter(
-      (field) => !['picture', 'formula', 'attachment'].includes(field.type),
+      (field) =>
+        (!referenceMode || field.key !== 'ownerId') &&
+        !['picture', 'formula', 'attachment'].includes(field.type),
     ),
   )
   const exportDisplayFields = computed(() => [

@@ -705,6 +705,11 @@ export class ModuleFormsService {
 
   private fieldOrigin(formKey: string, key: string): FieldOrigin {
     const template = this.fieldTemplate(formKey, key)
+    // 自定义表单使用内部 32 位 formKey，不在 MODULE_SYSTEM_FIELDS 常量中。
+    // 名称/负责人仍属于系统字段，不能因为没有固定模块模板而当作普通字段渲染。
+    if (!template && /^[0-9a-f]{32}$/i.test(formKey) && (key === 'name' || key === 'ownerId')) {
+      return 'SYSTEM'
+    }
     if (!template) return 'CUSTOM'
     return template.system === false ? 'PRESET' : 'SYSTEM'
   }
