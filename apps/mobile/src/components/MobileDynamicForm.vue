@@ -242,7 +242,7 @@ function textInputType(field: FieldVO) {
               'mobile-create-section mx-[12px] overflow-hidden rounded-[8px] bg-white',
               index > 0 ? 'mt-[12px]' : '',
             ]
-          : '!mx-4 overflow-hidden rounded-[6px] border border-[var(--text-n8)] bg-[var(--text-n10)] [&_.van-cell]:!px-4 [&_.van-cell]:!py-3 [&_.van-field__control]:text-[var(--text-n1)] [&_.van-field__label]:!w-[84px] [&_.van-field__label]:text-[var(--text-n2)]'
+          : '!mx-4 overflow-hidden rounded-[6px] border border-[var(--text-n8)] bg-[var(--text-n10)] [&_.van-cell]:!px-4 [&_.van-cell]:!py-3 [&_.van-field__control]:!text-[#000000] [&_.van-field__label]:!w-[84px] [&_.van-field__label]:text-[var(--text-n2)]'
       "
       :style="
         createDesign

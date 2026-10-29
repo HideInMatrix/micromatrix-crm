@@ -12,8 +12,6 @@ import { ChevronRight, GitPullRequest } from 'lucide-vue-next'
 import { computed, onActivated, ref } from 'vue'
 import { showFailToast } from 'vant'
 import { useRouter } from 'vue-router'
-// 设计图素材由 PC public 统一维护，Vite 会将引用文件打包进 Mobile 构建产物。
-import defaultAvatar from '../../../../web/public/images/avatar.png'
 import homeBackground from '../../../../web/public/images/home-background.png'
 import { homeApi } from '@/api/home'
 import { extractErrorMessage } from '@/api/http'
@@ -25,6 +23,8 @@ import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
+// 头像资源由移动端 public 独立维护，避免依赖 PC 端静态资源。
+const defaultAvatar = `${import.meta.env.BASE_URL}images/user.png`
 const router = useRouter()
 const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
@@ -206,7 +206,7 @@ onActivated(() => void refresh())
             </template>
           </van-image>
         </van-button>
-        <div class="min-w-0 flex-1">
+        <div class="flex h-[60px] min-w-0 flex-1 flex-col justify-center">
           <div class="truncate text-[18px] font-semibold leading-[26px] text-black">
             {{ greeting }}，{{ auth.user?.name || '老师' }}
           </div>
@@ -218,7 +218,7 @@ onActivated(() => void refresh())
 
       <main class="relative -mt-[44px] flex flex-col gap-[12px] px-[12px] pb-6">
         <section
-          class="flex h-[66px] shrink-0 items-center rounded-[8px] bg-white shadow-sm"
+          class="flex h-[66px] shrink-0 items-center rounded-[8px] bg-white"
           aria-label="线索统计"
         >
           <van-button
@@ -270,7 +270,10 @@ onActivated(() => void refresh())
           </van-button>
         </section>
 
-        <section class="rounded-[8px] bg-white p-[10px]" aria-labelledby="mobile-home-messages">
+        <section
+          class="rounded-[8px] bg-white px-[12px] py-[10px]"
+          aria-labelledby="mobile-home-messages"
+        >
           <div class="mb-3 flex items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-[4px]">
               <h2
@@ -289,16 +292,12 @@ onActivated(() => void refresh())
               />
             </div>
             <van-button
-              class="!h-auto !border-0 !bg-transparent !p-0 !text-[12px] !font-normal !text-[var(--van-primary-color)]"
+              class="!h-auto !border-0 !bg-transparent !p-0 !text-[13px] !text-[var(--van-primary-color)]"
               @click="router.push('/mine/message')"
             >
               <span class="inline-flex items-center gap-[2px] whitespace-nowrap leading-none">
                 查看全部
-                <ChevronRight
-                  :size="10"
-                  class="shrink-0 text-[var(--van-primary-color)]"
-                  aria-hidden="true"
-                />
+                <ChevronRight :size="16" class="shrink-0" aria-hidden="true" />
               </span>
             </van-button>
           </div>
@@ -349,7 +348,7 @@ onActivated(() => void refresh())
           </div>
         </section>
 
-        <section aria-labelledby="mobile-home-leads">
+        <section class="mt-[8px]" aria-labelledby="mobile-home-leads">
           <div class="mb-3 flex items-center justify-between gap-2">
             <h2
               id="mobile-home-leads"

@@ -233,7 +233,7 @@ onActivated(() => {
     >
       <template #search-prefix>
         <van-dropdown-menu
-          class="h-[32px] w-full"
+          class="pool-selector-dropdown h-[32px] w-full"
           :z-index="1002"
           active-color="var(--van-primary-color)"
           style="

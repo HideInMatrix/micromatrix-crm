@@ -3,7 +3,6 @@ import { onActivated, ref } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 import { showFailToast } from 'vant'
 import { useRouter } from 'vue-router'
-import defaultAvatar from '../../../../web/public/images/avatar.png'
 import campus from '@/assets/profile/campus.png'
 import passwordIcon from '@/assets/profile/change-password.svg'
 import { extractErrorMessage } from '@/api/http'
@@ -11,6 +10,7 @@ import { getPersonalInfo, type PersonalCenterVO } from '@/api/personal-center'
 import { useAuthStore } from '@/stores/auth'
 import { showActionConfirm } from '@/utils/dialog'
 
+const defaultAvatar = `${import.meta.env.BASE_URL}images/user.png`
 const router = useRouter()
 const auth = useAuthStore()
 const info = ref<PersonalCenterVO | null>(null)
@@ -83,15 +83,21 @@ onActivated(loadInfo)
 
     <section
       class="mx-[12px] overflow-hidden rounded-[10px] bg-white px-[12px] pt-[12px] pb-[2px]"
+      style="
+        --van-cell-font-size: 16px;
+        --van-cell-line-height: 22px;
+        --van-cell-vertical-padding: 17px;
+        --van-cell-horizontal-padding: 0px;
+        --van-cell-text-color: #111111;
+        --van-cell-background: transparent;
+        --van-cell-border-color: #ededed;
+        --van-cell-active-color: transparent;
+        --van-padding-md: 0px;
+      "
       aria-label="全部功能"
     >
       <h2 class="m-0 mb-[4px] text-[17px] leading-[18px] font-semibold text-[#111111]">全部功能</h2>
-      <van-cell
-        clickable
-        :border="false"
-        class="!h-[56px] !items-center !border-0 !border-b-[1px] !border-solid !border-b-[#F0F0F0] !bg-transparent !p-0"
-        @click="router.push('/mine/basic-info')"
-      >
+      <van-cell center clickable @click="router.push('/mine/basic-info')">
         <template #icon>
           <svg
             width="22"
@@ -116,9 +122,9 @@ onActivated(loadInfo)
       </van-cell>
       <van-cell
         v-if="info?.passwordLoginEnabled"
+        center
         clickable
         :border="false"
-        class="!h-[56px] !items-center !border-0 !bg-transparent !p-0"
         @click="router.push('/mine/change-password')"
       >
         <template #icon>
@@ -133,13 +139,24 @@ onActivated(loadInfo)
       </van-cell>
     </section>
 
-    <van-button
-      block
-      class="!mx-[12px] !mt-[40px] !h-[50px] !w-[calc(100%-24px)] !rounded-[10px] !border-0 !bg-white !text-[16px] !font-medium !text-[#F04438]"
-      :disabled="loading"
-      @click="handleLogout"
-    >
-      退出登录
-    </van-button>
+    <div class="mx-[12px] mt-[40px]">
+      <van-button
+        block
+        class="font-medium"
+        style="
+          --van-button-default-height: 50px;
+          --van-button-normal-font-size: 16px;
+          --van-button-default-color: #f04438;
+          --van-button-default-background: #ffffff;
+          --van-button-default-border-color: transparent;
+          --van-button-border-width: 0px;
+          --van-button-radius: 10px;
+        "
+        :disabled="loading"
+        @click="handleLogout"
+      >
+        退出登录
+      </van-button>
+    </div>
   </div>
 </template>

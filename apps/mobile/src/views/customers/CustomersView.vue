@@ -56,6 +56,8 @@ function switchTab(tab: CustomerModuleTab) {
         --van-button-default-height: 52px;
         --van-button-normal-padding: 0px;
         --van-button-border-width: 0px;
+        --van-button-primary-background: var(--mobile-hall-create-gradient);
+        --van-button-primary-border-color: transparent;
       "
       @click="createCustomer"
     >

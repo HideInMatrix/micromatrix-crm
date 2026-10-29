@@ -5,7 +5,6 @@ import { Pencil, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
-import defaultAvatar from '../../../../web/public/images/avatar.png'
 import homeBackground from '../../../../web/public/images/home-background.png'
 import { extractErrorMessage } from '@/api/http'
 import { fetchFields, pageFollowUps } from '@/api/mobile'
@@ -18,6 +17,7 @@ import { useAuthStore } from '@/stores/auth'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
 
+const defaultAvatar = `${import.meta.env.BASE_URL}images/user.png`
 type HistoryTab = 'record' | 'change'
 
 const route = useRoute()

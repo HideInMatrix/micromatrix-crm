@@ -188,7 +188,7 @@ async function submit() {
             --van-cell-line-height: 20px;
             --van-cell-font-size: 14px;
             --van-cell-text-color: #333333;
-            --van-cell-value-color: #333333;
+            --van-cell-value-color: #000000;
             --van-cell-right-icon-color: #999999;
           "
         >
@@ -236,7 +236,7 @@ async function submit() {
                 --van-cell-font-size: 14px;
                 --van-field-input-line-height: 21px;
                 --van-field-placeholder-text-color: #999999;
-                --van-field-input-text-color: #333333;
+                --van-field-input-text-color: #000000;
               "
               class="mt-[6px]"
             />
@@ -265,13 +265,9 @@ async function submit() {
     teleport="body"
     position="bottom"
     round
-    style="
-      height: min(198px, 40dvh);
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #ffffff;
-    "
+    style="--van-popup-round-radius: 12px; --van-popup-background: #ffffff"
   >
-    <div class="flex h-full min-h-0 flex-col bg-white">
+    <div class="flex min-h-0 flex-col bg-white">
       <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
         <span class="text-[16px] font-semibold text-[#000000]">跟进方式</span>
         <div class="absolute right-[12px]">
@@ -324,13 +320,9 @@ async function submit() {
     teleport="body"
     position="bottom"
     round
-    style="
-      height: min(220px, 42dvh);
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #ffffff;
-    "
+    style="--van-popup-round-radius: 12px; --van-popup-background: #ffffff"
   >
-    <div class="flex h-full min-h-0 flex-col bg-white">
+    <div class="flex min-h-0 flex-col bg-white">
       <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
         <span class="text-[16px] font-semibold text-[#000000]">更新意向等级</span>
         <div class="absolute right-[12px]">

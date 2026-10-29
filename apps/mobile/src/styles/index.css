@@ -1,5 +1,6 @@
 :root {
   --mobile-page-background: var(--text-n9);
+  --mobile-hall-create-gradient: linear-gradient(180deg, #ffb65b 0%, #ff8a3d 100%);
 
   --van-primary-color: var(--primary-8);
   --van-success-color: var(--success-green);
@@ -50,8 +51,32 @@ body {
   box-sizing: border-box;
 }
 
+/* Use higher specificity than Vant's :root/:host defaults, without overriding control states. */
+html:root {
+  --van-field-input-text-color: #000000;
+  --van-cell-value-color: #000000;
+}
+
 .van-popup--bottom {
   background: var(--text-n10);
+}
+
+/* Keep dropdown panels visually consistent across all mobile pages. */
+.van-dropdown-item__content {
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+}
+
+.van-popup.van-dropdown-item__content.van-popup--top {
+  overflow: hidden;
+  border-radius: 0 0 12px 12px !important;
+}
+
+/* Pool selectors do not need a caret or the selected-option checkmark. */
+.pool-selector-dropdown .van-dropdown-menu__title::after,
+.pool-selector-dropdown .van-dropdown-item__icon {
+  display: none !important;
+  content: none !important;
 }
 
 .van-popup--bottom.van-popup--round,

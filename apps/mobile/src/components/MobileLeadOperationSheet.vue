@@ -204,7 +204,7 @@ watch(show, (visible) => {
               --van-cell-font-size: 14px;
               --van-cell-background: #ffffff;
               --van-cell-text-color: #333333;
-              --van-cell-value-color: #333333;
+              --van-cell-value-color: #000000;
               --van-cell-right-icon-color: #999999;
             "
           >
@@ -265,7 +265,7 @@ watch(show, (visible) => {
               style="
                 --van-cell-vertical-padding: 0px;
                 --van-cell-horizontal-padding: 0px;
-                --van-field-input-text-color: #333333;
+                --van-field-input-text-color: #000000;
                 --van-field-placeholder-text-color: #999999;
                 --van-field-input-line-height: 20px;
                 --van-cell-font-size: 14px;

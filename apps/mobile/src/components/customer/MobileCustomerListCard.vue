@@ -44,9 +44,6 @@ const visibleFields = computed(() =>
     )
     .sort((a, b) => a.sort - b.sort),
 )
-const heading = computed(() => visibleFields.value[0] ?? null)
-const subtitle = computed(() => visibleFields.value[1] ?? null)
-const detailFields = computed(() => visibleFields.value.slice(2))
 const showActions = computed(
   () => props.mode === 'mine' || props.canAssign || props.canClaim || props.canDelete,
 )
@@ -68,27 +65,16 @@ function displayValue(field: FieldVO): string {
 
 <template>
   <article class="rounded-[8px] bg-white p-[12px]" @click="emit('open', customer)">
-    <div v-if="heading" class="flex min-w-0 items-center justify-between gap-[8px]">
-      <span class="min-w-0 truncate text-[15px] leading-[18px] font-medium text-[#000000]">
-        <span v-if="heading.key !== 'name'">{{ heading.label }}：</span>{{ displayValue(heading) }}
-      </span>
-      <span
-        v-if="subtitle"
-        class="max-w-[64%] shrink-0 truncate whitespace-nowrap text-[12px] leading-[18px] text-[#666666]"
-      >
-        {{ subtitle.label }}：<span class="text-[#333333]">{{ displayValue(subtitle) }}</span>
-      </span>
-    </div>
-    <div v-else class="text-[15px] leading-[18px] font-medium text-[#333333]">查看客户</div>
     <div
-      v-if="detailFields.length"
-      class="mt-[12px] grid grid-cols-2 gap-x-[8px] gap-y-[12px] text-[12px] leading-[16px]"
+      v-if="visibleFields.length"
+      class="grid grid-cols-2 gap-x-[8px] gap-y-[12px] text-[12px] leading-[16px]"
     >
-      <div v-for="field in detailFields" :key="field.id" class="min-w-0 truncate">
-        <span class="text-[#666666]">{{ field.label }}：</span
+      <div v-for="field in visibleFields" :key="field.id" class="min-w-0 truncate">
+        <span v-if="field.key !== 'name'" class="text-[#666666]">{{ field.label }}：</span
         ><span class="text-[#333333]">{{ displayValue(field) }}</span>
       </div>
     </div>
+    <div v-else class="text-[12px] leading-[16px] text-[#333333]">查看客户</div>
     <div
       v-if="showActions"
       class="mt-[16px] flex items-center justify-end gap-[12px]"

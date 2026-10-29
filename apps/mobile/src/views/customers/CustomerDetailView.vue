@@ -11,7 +11,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
 import { removeCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
-import defaultAvatar from '../../../../web/public/images/avatar.png'
 import homeBackground from '../../../../web/public/images/home-background.png'
 import { customerExtraApi, resourcePoolApi } from '@/api/sales'
 import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
@@ -24,6 +23,7 @@ import { showSuccessFeedback } from '@/utils/feedback'
 import { fetchFields, getCustomer, pageFollowUps } from '@/api/mobile'
 import { useAuthStore } from '@/stores/auth'
 
+const defaultAvatar = `${import.meta.env.BASE_URL}images/user.png`
 type DetailTab = 'record' | 'change'
 
 const route = useRoute()
