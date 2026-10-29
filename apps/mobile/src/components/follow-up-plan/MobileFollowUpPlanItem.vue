@@ -87,10 +87,12 @@ function convert() {
         </div>
 
         <van-dropdown-menu
+          :z-index="1001"
           class="shrink-0 [&_.van-dropdown-menu__bar]:!h-6 [&_.van-dropdown-menu__bar]:!rounded-[4px] [&_.van-dropdown-menu__bar]:!shadow-none [&_.van-dropdown-menu__title]:!text-sm"
           @click.stop
         >
           <van-dropdown-item
+            teleport="body"
             v-model="status"
             :disabled="!props.canWrite || !plan.canManage || (plan.converted && plan.status === 'COMPLETED')"
             :options="FOLLOW_UP_PLAN_STATUS_OPTIONS"
@@ -166,4 +168,3 @@ function convert() {
     </div>
   </div>
 </template>
-

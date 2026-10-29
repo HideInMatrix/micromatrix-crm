@@ -247,6 +247,8 @@ onActivated(() => {
         >
           <van-dropdown-item
             ref="poolDropdownItem"
+            teleport="body"
+            class="pool-selector-dropdown-item"
             :model-value="selectedPoolId"
             :title="currentPool?.name ?? '选择线索池'"
             title-class="!min-w-0 truncate"

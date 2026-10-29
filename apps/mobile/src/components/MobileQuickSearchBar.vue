@@ -251,6 +251,7 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
       <van-dropdown-item
         v-for="item in selectItems"
         :key="item.id"
+        teleport="body"
         :title="displayLabel(item)"
         :title-class="values[item.id] ? 'text-[var(--van-primary-color)]' : ''"
       >

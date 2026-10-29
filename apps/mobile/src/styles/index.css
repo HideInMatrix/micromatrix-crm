@@ -74,7 +74,7 @@ html:root {
 
 /* Pool selectors do not need a caret or the selected-option checkmark. */
 .pool-selector-dropdown .van-dropdown-menu__title::after,
-.pool-selector-dropdown .van-dropdown-item__icon {
+.pool-selector-dropdown-item .van-dropdown-item__icon {
   display: none !important;
   content: none !important;
 }
