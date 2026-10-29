@@ -28,6 +28,27 @@ const placeholder = computed(() =>
   /学校|院校/.test(props.label) ? '请输入学校名称' : `请输入${props.label}`,
 )
 
+function highlightParts(label: string): { text: string; matched: boolean }[] {
+  const keyword = appliedKeyword.value.trim()
+  if (!keyword) return [{ text: label, matched: false }]
+
+  const normalizedLabel = label.toLocaleLowerCase()
+  const normalizedKeyword = keyword.toLocaleLowerCase()
+  const parts: { text: string; matched: boolean }[] = []
+  let cursor = 0
+  let index = normalizedLabel.indexOf(normalizedKeyword, cursor)
+
+  while (index >= 0) {
+    if (index > cursor) parts.push({ text: label.slice(cursor, index), matched: false })
+    parts.push({ text: label.slice(index, index + keyword.length), matched: true })
+    cursor = index + keyword.length
+    index = normalizedLabel.indexOf(normalizedKeyword, cursor)
+  }
+
+  if (cursor < label.length) parts.push({ text: label.slice(cursor), matched: false })
+  return parts.length ? parts : [{ text: label, matched: false }]
+}
+
 async function loadMore() {
   if (!show.value || requesting || finished.value) return
   const requestId = generation
@@ -201,7 +222,15 @@ watch(show, (opened) => {
                     : 'text-[#333333]'
                 "
               >
-                {{ option.name }}
+                <template
+                  v-for="(part, index) in highlightParts(option.name)"
+                  :key="`${option.id}-${index}`"
+                >
+                  <span v-if="part.matched" class="font-semibold text-[var(--van-primary-color)]">{{
+                    part.text
+                  }}</span>
+                  <span v-else>{{ part.text }}</span>
+                </template>
               </span>
             </template>
             <template v-if="isSelected(option.id)" #right-icon>

@@ -15,12 +15,6 @@ const leadId = computed(() =>
 const form = useLeadForm(leadId)
 const leadFormRef = ref<InstanceType<typeof MobileLeadForm> | null>(null)
 const draftKey = computed(() => (leadId.value ? 'lead-edit:' + leadId.value : 'lead-create'))
-const createMode = computed(() => !form.editing.value)
-async function cancel() {
-  searchSelect.clearDraft(draftKey.value)
-  await router.back()
-}
-
 async function submit() {
   try {
     await leadFormRef.value?.validate()
@@ -56,18 +50,15 @@ onBeforeRouteLeave((to) => {
 </script>
 
 <template>
-  <div
-    class="flex h-full min-h-0 flex-col overflow-hidden"
-    :class="createMode ? 'bg-[#F5F5F5]' : 'bg-[var(--text-n10)]'"
-  >
-    <div class="min-h-0 flex-1 overflow-y-auto" :class="createMode ? 'pb-[20px]' : 'py-4'">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#F5F5F5]">
+    <div class="min-h-0 flex-1 overflow-y-auto pb-[20px]">
       <van-loading v-if="form.loading.value" class="!flex !justify-center !py-10" />
       <template v-else>
         <div>
           <MobileLeadForm
             ref="leadFormRef"
             v-model="form.model.value"
-            :appearance="createMode ? 'create' : 'default'"
+            appearance="create"
             :fields="form.fields.value"
             :form-prop="form.formProp.value"
             :members="form.fieldRefs.members.value"
@@ -79,7 +70,6 @@ onBeforeRouteLeave((to) => {
     </div>
 
     <div
-      v-if="createMode"
       class="shrink-0 border-t-[0.5px] border-[#EAEAEA] bg-white px-[20px] pt-[8px] pb-[calc(8px+env(safe-area-inset-bottom))]"
       style="
         --van-button-default-height: 44px;
@@ -88,16 +78,7 @@ onBeforeRouteLeave((to) => {
       "
     >
       <van-button type="primary" block :loading="form.saving.value" @click="submit">
-        保存线索
-      </van-button>
-    </div>
-    <div
-      v-else
-      class="flex shrink-0 gap-4 border-t-[0.5px] border-[var(--text-n8)] bg-[var(--text-n10)] p-4 pb-[calc(16px+env(safe-area-inset-bottom))]"
-    >
-      <van-button block :disabled="form.saving.value" @click="cancel">取消</van-button>
-      <van-button type="primary" block :loading="form.saving.value" @click="submit">
-        {{ form.submitText.value }}
+        {{ form.editing.value ? '保存修改' : '保存线索' }}
       </van-button>
     </div>
   </div>

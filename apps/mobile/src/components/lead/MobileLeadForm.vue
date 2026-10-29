@@ -32,7 +32,7 @@ defineExpose({ validate })
     description="当前线索模块未配置可用表单字段"
     class="!py-10"
   />
-  <van-form v-else ref="formRef" required="auto" :show-error-message="false">
+  <van-form v-else ref="formRef" required="auto" :show-error-message="appearance !== 'create'">
     <MobileDynamicForm
       v-model="model"
       :fields="fields"

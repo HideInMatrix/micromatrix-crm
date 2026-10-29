@@ -26,9 +26,17 @@ const emit = defineEmits<{
   record: [value: DataSourceRecordVO | null]
 }>()
 
+const pageSize = 50
 const loading = ref(false)
-const options = ref<DataSourceOptionVO[]>([])
+const loadingMore = ref(false)
+const resolvedOptions = ref<DataSourceOptionVO[]>([])
+const pageOptions = ref<DataSourceOptionVO[]>([])
+const currentPage = ref(0)
+const total = ref(0)
+const activeKeyword = ref('')
 const selectedRecord = ref<DataSourceRecordVO | null>(null)
+let activeFilters: Awaited<ReturnType<typeof buildDataSourceFilters>> = []
+let activeFilterMode: 'AND' | 'OR' = 'AND'
 let searchSeq = 0
 let recordSeq = 0
 let resolveSeq = 0
@@ -38,22 +46,35 @@ const selectedIds = computed(() => {
   return props.modelValue ? [props.modelValue] : []
 })
 
-function mergeOptions(next: DataSourceOptionVO[]) {
-  const merged = new Map(options.value.map((item) => [item.id, item]))
+const selectOptions = computed(() => {
+  const merged = new Map<string, DataSourceOptionVO>()
+  for (const item of [...resolvedOptions.value, ...pageOptions.value]) {
+    merged.set(item.id, item)
+  }
+  // 即使源记录已被删除或当前用户无权访问，也保留已保存的 ID，避免编辑表单丢失选中值。
+  for (const id of selectedIds.value) {
+    if (!merged.has(id)) merged.set(id, { id, name: id })
+  }
+  return [...merged.values()].map((item) => ({ label: item.name, value: item.id }))
+})
+
+function appendPageOptions(next: DataSourceOptionVO[]) {
+  const merged = new Map(pageOptions.value.map((item) => [item.id, item]))
   for (const item of next) merged.set(item.id, item)
-  options.value = [...merged.values()]
+  pageOptions.value = [...merged.values()]
 }
 
 async function resolveSelected() {
   const seq = ++resolveSeq
   if (!props.sourceType || !selectedIds.value.length) {
+    resolvedOptions.value = []
     selectedRecord.value = null
     return
   }
   try {
     const rows = await dataSourceApi.resolve(props.sourceType, selectedIds.value)
     if (seq !== resolveSeq) return
-    mergeOptions(rows)
+    resolvedOptions.value = rows
     if (!props.multiple && selectedIds.value[0]) {
       const record = await dataSourceApi.record(props.sourceType, selectedIds.value[0])
       if (seq === resolveSeq) selectedRecord.value = record
@@ -68,7 +89,13 @@ async function resolveSelected() {
 async function search(keyword = '') {
   if (!props.sourceType) return
   const seq = ++searchSeq
+  const query = keyword.trim()
+  activeKeyword.value = query
+  currentPage.value = 0
+  total.value = 0
+  pageOptions.value = []
   loading.value = true
+  loadingMore.value = false
   try {
     const filters = await buildDataSourceFilters(
       props.sourceType,
@@ -76,15 +103,20 @@ async function search(keyword = '') {
       props.formFields ?? [],
       props.formValues ?? {},
     )
+    const filterMode = props.field?.config?.combineSearch?.searchMode ?? 'AND'
     const page = await dataSourceApi.page(props.sourceType, {
       current: 1,
-      pageSize: 50,
-      keyword: keyword.trim() || undefined,
+      pageSize,
+      keyword: query || undefined,
       filters,
-      filterMode: props.field?.config?.combineSearch?.searchMode ?? 'AND',
+      filterMode,
     })
     if (seq !== searchSeq) return
-    mergeOptions(page.list)
+    activeFilters = filters
+    activeFilterMode = filterMode
+    pageOptions.value = page.list
+    currentPage.value = page.current
+    total.value = page.total
   } catch (error) {
     if (seq !== searchSeq) return
     ElMessage.error(extractErrorMessage(error))
@@ -93,11 +125,48 @@ async function search(keyword = '') {
   }
 }
 
+async function loadMore(direction: string) {
+  if (
+    direction !== 'bottom' ||
+    loading.value ||
+    loadingMore.value ||
+    currentPage.value * pageSize >= total.value
+  ) {
+    return
+  }
+  const seq = searchSeq
+  loadingMore.value = true
+  try {
+    const page = await dataSourceApi.page(props.sourceType, {
+      current: currentPage.value + 1,
+      pageSize,
+      keyword: activeKeyword.value || undefined,
+      filters: activeFilters,
+      filterMode: activeFilterMode,
+    })
+    if (seq !== searchSeq) return
+    appendPageOptions(page.list)
+    currentPage.value = page.current
+    total.value = page.total
+  } catch (error) {
+    if (seq !== searchSeq) return
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    if (seq === searchSeq) loadingMore.value = false
+  }
+}
+
 watch(
   () => props.sourceType,
   async () => {
+    searchSeq += 1
     recordSeq += 1
-    options.value = []
+    loading.value = false
+    loadingMore.value = false
+    resolvedOptions.value = []
+    pageOptions.value = []
+    currentPage.value = 0
+    total.value = 0
     await resolveSelected()
   },
   { immediate: true },
@@ -143,15 +212,16 @@ function displayValue(field: FieldVO): string {
 
 <template>
   <div class="w-full">
-    <el-select
+    <el-select-v2
       :model-value="modelValue"
+      :options="selectOptions"
       :multiple="multiple"
       filterable
       remote
       clearable
       reserve-keyword
       :remote-method="search"
-      :loading="loading"
+      :loading="loading || loadingMore"
       :disabled="disabled"
       :placeholder="placeholder ?? '请选择数据'"
       :teleported="teleported ?? true"
@@ -159,15 +229,9 @@ function displayValue(field: FieldVO): string {
       collapse-tags
       collapse-tags-tooltip
       @visible-change="$event && search()"
+      @end-reached="loadMore"
       @update:model-value="update"
-    >
-      <el-option
-        v-for="option in options"
-        :key="option.id"
-        :label="option.name"
-        :value="option.id"
-      />
-    </el-select>
+    />
     <div v-if="displayFields.length" class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
       <div v-for="item in displayFields" :key="item.id" class="min-w-0 flex gap-1">
         <span class="shrink-0 text-[var(--el-text-color-secondary)]">{{ item.label }}：</span>
