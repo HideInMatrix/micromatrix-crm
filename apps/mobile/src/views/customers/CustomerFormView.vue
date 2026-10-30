@@ -54,7 +54,7 @@ onBeforeRouteLeave((to) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#F5F5F5]">
-    <div class="min-h-0 flex-1 overflow-y-auto pb-[20px]">
+    <div class="min-h-0 flex-1 overflow-y-auto pb-[20px]" :class="customerId ? '' : 'pt-[12px]'">
       <van-loading v-if="form.loading.value" class="!flex !justify-center !py-10" />
       <MobileCustomerForm
         v-else

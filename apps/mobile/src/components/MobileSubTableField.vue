@@ -2,6 +2,7 @@
 import type { DepartmentVO, FieldVO } from '@micromatrix/shared'
 import { computed } from 'vue'
 import MobileDynamicForm from './MobileDynamicForm.vue'
+import { showActionConfirm } from '@/utils/dialog'
 
 defineProps<{
   field: FieldVO
@@ -20,7 +21,13 @@ const rows = computed<Record<string, unknown>[]>(() =>
 function updateRow(index: number, value: Record<string, unknown>) {
   model.value = rows.value.map((row, i) => (i === index ? value : row))
 }
-function removeRow(index: number) {
+async function removeRow(index: number) {
+  const confirmed = await showActionConfirm({
+    title: '删除明细',
+    message: `确认删除第 ${index + 1} 行？`,
+    confirmButtonText: '删除',
+  })
+  if (!confirmed) return
   model.value = rows.value.filter((_, i) => i !== index)
 }
 function addRow() {

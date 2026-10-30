@@ -29,7 +29,11 @@ async function loadInfo() {
 }
 
 async function handleLogout() {
-  const confirmed = await showActionConfirm({ title: '退出登录', message: '确定退出当前账号？' })
+  const confirmed = await showActionConfirm({
+    title: '退出登录',
+    message: '确定退出当前账号？',
+    confirmButtonText: '退出登录',
+  })
   if (!confirmed) return
   const tenant = auth.user?.tenantSlug
   auth.logout()
