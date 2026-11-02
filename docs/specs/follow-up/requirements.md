@@ -9,7 +9,7 @@
 - 支持分页、关键词、状态、本人、目标类型/目标 ID 和动态高级筛选。
 - 状态固定为 `PREPARED / UNDERWAY / COMPLETED / CANCELLED`。
 - 新建、编辑、删除、状态变化均保持 tenant、权限和 DataScope 边界；客户协作成员继续服从 READ_ONLY/COLLABORATION 语义。
-- 计划负责人、目标对象、联系人、计划时间、跟进方式、内容及可配置字段统一进入当前 ModuleForm / Field / Blob 体系。
+- 计划负责人、目标对象、计划时间、跟进方式、内容及可配置字段统一进入当前 ModuleForm / Field / Blob 体系。
 - 到期计划按调度扫描并向负责人发送对应 Lead/Customer 消息事件；重复扫描不得在同一天重复提醒。
 
 ## 3. 计划转跟进记录
@@ -43,5 +43,5 @@
 
 - API Rules 覆盖计划 CRUD、提醒、转换、FollowRecord CRUD、Field/Blob、评论、mention、权限和事务回滚。
 - 目标类型不得接受除 `lead/customer` 以外的值。
-- 计划转换重复执行、越权目标访问、无效联系人、无效 mention 和已转换计划再次修改必须 fail-closed。
+- 计划转换重复执行、越权目标访问、无效 mention 和已转换计划再次修改必须 fail-closed。
 - 文档和 API 不再出现 Opportunity 作为当前 Follow-up target。

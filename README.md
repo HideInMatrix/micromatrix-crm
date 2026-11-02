@@ -118,6 +118,3 @@ git push origin v0.0.1
 - [开发约定](./docs/conventions.md)
 - [Prisma ORM 8 Migration 规范](./docs/prisma-migration-policy.md)
 - [招生 CRM 主线规格](./docs/specs/admissions-crm-transformation/requirements.md)
-- [当前任务与验收](./docs/specs/admissions-crm-transformation/tasks.md)
-
-历史执行计划、已删除交易链规格和旧 Prisma 迁移阶段文档已从当前文档树清理；需要历史细节时使用 Git 记录追溯。

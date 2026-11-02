@@ -1,38 +1,28 @@
-# 规格文档索引
+# 领域规格索引
 
-本目录按当前长期领域组织，不再按历史任务编号、`*-parity`、Wave 或验收阶段拆分。实施过程、完成状态、一次性 audit/acceptance/plan 由 Git 历史追溯。
+本目录描述当前代码仍然提供的长期业务和平台能力。需求文档记录必须满足的业务约束，设计文档记录领域边界与关键实现原则；具体接口、字段和行为以当前代码及 Prisma contract 为准。
 
-当前业务边界、最新验收状态和剩余事项只以 `admissions-crm-transformation` 为主线任务源。
+## 产品主线
 
-## 当前主线
+| 主题 | 需求 | 设计 |
+| --- | --- | --- |
+| 招生 CRM：线索、客户、公海、转化及产品边界 | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) |
 
-| 主题                        | 需求                                                            | 设计                                                | 当前任务                                          |
-| --------------------------- | --------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
-| ADMISSIONS-001 通用招生 CRM | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) | [tasks](./admissions-crm-transformation/tasks.md) |
+## 平台领域
 
-## 长期领域规格
+| 领域 | 需求 | 设计 |
+| --- | --- | --- |
+| Platform Foundation：组织、成员、RBAC、DataScope、模块配置、个人账号/API Key | [requirements](./platform-foundation/requirements.md) | [design](./platform-foundation/design.md) |
+| Form Engine：ModuleForm、动态字段、Data Source、子表、联动、自定义表单 | [requirements](./form-engine/requirements.md) | [design](./form-engine/design.md) |
+| Follow-up：跟进计划、跟进记录、评论、提醒、计划转记录 | [requirements](./follow-up/requirements.md) | [design](./follow-up/design.md) |
+| Enterprise Platform：企业设置、WeCom/DingTalk/Lark、组织同步、SSO、外部消息 | [requirements](./enterprise-platform/requirements.md) | [design](./enterprise-platform/design.md) |
+| Infrastructure Runtime：Redis、缓存、SSE、协调、BullMQ Worker | [requirements](./infrastructure-runtime/requirements.md) | [design](./infrastructure-runtime/design.md) |
+| Messaging：业务事件、模板/i18n、Notification、公告 | [requirements](./messaging/requirements.md) | [design](./messaging/design.md) |
+| Operation Log：审计、详情 Blob、Retention、清理、客户端 IP | [requirements](./operation-log/requirements.md) | [design](./operation-log/design.md) |
 
-| 领域                                                                         | 需求                                                     | 设计                                         |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
-| Platform Foundation：组织、成员、RBAC、DataScope、模块配置、个人账号/API Key | [requirements](./platform-foundation/requirements.md)    | [design](./platform-foundation/design.md)    |
-| Form Engine：ModuleForm、动态字段、Data Source、子表、联动、自定义表单       | [requirements](./form-engine/requirements.md)            | [design](./form-engine/design.md)            |
-| Follow-up：跟进计划、跟进记录、评论、提醒、计划转记录                        | [requirements](./follow-up/requirements.md)              | [design](./follow-up/design.md)              |
-| Enterprise Platform：企业设置、WeCom/DingTalk/Lark、组织同步、SSO、外部消息  | [requirements](./enterprise-platform/requirements.md)    | [design](./enterprise-platform/design.md)    |
-| Infrastructure Runtime：Redis、缓存、SSE、协调、BullMQ Worker                | [requirements](./infrastructure-runtime/requirements.md) | [design](./infrastructure-runtime/design.md) |
-| Messaging：MessageTaskEvent、模板/i18n、Notification、公告                   | [requirements](./messaging/requirements.md)              | [design](./messaging/design.md)              |
-| Operation Log：审计、详情 Blob、Retention、清理、真实客户端 IP               | [requirements](./operation-log/requirements.md)          | [design](./operation-log/design.md)          |
+## 维护规则
 
-## 审计文档
-
-`admissions-crm-transformation` 下仍保留两份专项 audit：
-
-- `external-financial-integration-audit.md`：外部财务事件 API、幂等与安全边界审计。
-- `legacy-module-dependency-audit.md`：旧业务模块退出后的最终边界、元数据清理范围、Seed 约束及数据库迁移验收状态。
-
-## 文档保留规则
-
-- `requirements.md` 描述当前必须满足的业务/安全约束。
-- `design.md` 描述当前实现边界、数据流和维护原则。
-- 只有仍在推进的主线保留 `tasks.md`；完成专项任务日志不长期保留。
-- 历史阶段编号、VERIFIED/PASS 数量、当时的 migration 数量、一次性 Smoke 结果不进入长期领域文档。
-- 删除业务能力时同步清理领域规格、事件、导航和 API 文档；需要历史证据时使用 Git。
+- 已完成的改造计划、任务清单、一次性审计和验收记录不长期保留在规格目录。
+- 业务能力退出时，同步清理领域规格、导航、权限、API 和测试引用。
+- 不要把历史 Cordys 页面或已经删除的 CRM 模块当作当前实现要求。
+- 历史决策和实施细节通过 Git 历史追溯；不要在长期规格中记录易过期的测试数量、迁移阶段或临时环境状态。

@@ -9,7 +9,7 @@
 
 ## 2. 文档维护
 
-- 当前文档入口是 `docs/README.md`；当前主线任务入口是 `docs/specs/admissions-crm-transformation/tasks.md`。
+- 当前文档入口是 `docs/README.md`；当前业务边界见 `docs/specs/admissions-crm-transformation/requirements.md`。
 - 已删除能力必须在同一任务中清理代码入口、类型、测试、部署引用和文档契约。
 - 整份文档如果已经与当前架构相反，直接删除并更新引用；不要只加“已废弃”标题继续污染全文检索。
 - 已完成专项不再长期保留独立 `tasks.md`；把仍有维护价值的约束合并进稳定领域 `requirements/design`，实施过程与历史验收结果交给 Git 追溯。
@@ -58,7 +58,7 @@
 - API 调用统一进入 `src/api/` 或共享前端 API 层，不在多个 View 重复 HTTP 协议。
 - PC 使用 Element Plus；模块配置和页面入口只展示真实存在的路由与业务能力。
 - 普通布局、间距和响应式优先使用现有 utility / design token；不要为简单布局新增大量一次性 CSS。
-- Cordys UI 参考规则见 [PC UI 设计基线](./cordys-ui-design-guide.md)。
+- UI 实现以当前产品设计稿、现有组件和项目级样式 Token 为准；不要直接照搬历史 Cordys 页面。
 
 ## 8. Mobile 前端
 
@@ -67,7 +67,7 @@
 - 一级页面使用 Mobile Tabbar；详情/新建/编辑等深层页面按当前路由规则隐藏 Tabbar。
 - 企业微信容器中的重复 Header、返回按钮等由统一环境判断控制，不能在每个页面复制 UA 判断。
 - Mobile 搜索/二级选择/动态表单要复用共享协议，不硬编码字段。
-- 详细边界见 [Mobile 重构指南](./cordys-mobile-refactor-guide.md)。
+- Mobile 实现以当前设计稿、Vant 组件规范和 `apps/mobile` 实际路由为准。
 
 ## 9. 新业务能力接入
 
@@ -81,7 +81,7 @@
 4. Metadata 表单字段和动态值边界。
 5. NestJS module / controller / service / DTO。
 6. PC 与 Mobile 是否都需要入口以及各自交互。
-7. 导入导出、通知、审批、日志、外部 API 是否需要接入。
+7. 导入导出、通知、日志、外部 API 是否需要接入。
 8. 数据库迁移检查、权限/数据范围验收与 UI 验证。
 
 如果能力只服务线索或客户配置，应优先进入现有“模块配置 → Lead / Customer”，不要另建没有独立业务意义的设置模块。

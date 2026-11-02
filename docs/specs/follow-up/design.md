@@ -60,6 +60,6 @@ Lead / Customer
 
 ## 7. 前端
 
-PC 与 Mobile 只通过 API 和共享 DTO 访问 Follow-up。目标选择、联系人选择、动态表单、评论和附件应复用领域组件/composable；路由 View 不重复实现资源状态机。
+PC 与 Mobile 只通过 API 和共享 DTO 访问 Follow-up。目标选择、动态表单、评论和附件应复用领域组件/composable；路由 View 不重复实现资源状态机。
 
 当前产品没有独立 Opportunity 跟进入口；任何历史 Opportunity 文档/路由不得作为当前实现依据。
