@@ -1,4 +1,10 @@
-import type { FieldCapabilities, FieldConfig, FieldOption, FieldType } from '@micromatrix/shared'
+import {
+  FOLLOW_UP_TYPES,
+  type FieldCapabilities,
+  type FieldConfig,
+  type FieldOption,
+  type FieldType,
+} from '@micromatrix/shared'
 
 export interface SystemFieldTemplate {
   key: string
@@ -16,6 +22,11 @@ export interface SystemFieldTemplate {
   capabilities?: Partial<FieldCapabilities>
   sort: number
 }
+
+const FOLLOW_UP_METHOD_OPTIONS: FieldOption[] = FOLLOW_UP_TYPES.map((item) => ({
+  label: item,
+  value: item,
+}))
 
 const INDUSTRY_OPTIONS: FieldOption[] = [
   { label: '软件与信息服务', value: '软件与信息服务' },
@@ -205,14 +216,7 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       key: 'type',
       label: '跟进方式',
       type: 'select',
-      options: [
-        { label: '电话', value: '电话' },
-        { label: '拜访', value: '拜访' },
-        { label: '微信', value: '微信' },
-        { label: '邮件', value: '邮件' },
-        { label: '会议', value: '会议' },
-        { label: '其他', value: '其他' },
-      ],
+      options: FOLLOW_UP_METHOD_OPTIONS,
       span: 12,
       listWidth: 110,
       sort: 6,
@@ -277,14 +281,7 @@ export const MODULE_SYSTEM_FIELDS: Record<string, SystemFieldTemplate[]> = {
       label: '跟进方式',
       type: 'select',
       mobile: true,
-      options: [
-        { label: '电话', value: '电话' },
-        { label: '拜访', value: '拜访' },
-        { label: '微信', value: '微信' },
-        { label: '邮件', value: '邮件' },
-        { label: '会议', value: '会议' },
-        { label: '其他', value: '其他' },
-      ],
+      options: FOLLOW_UP_METHOD_OPTIONS,
       span: 12,
       listWidth: 110,
       sort: 5,

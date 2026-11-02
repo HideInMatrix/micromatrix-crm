@@ -11,6 +11,7 @@ import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { showSuccessFeedback } from '@/utils/feedback'
 import { followUpPlanApi, leadApi } from '@/api/sales'
+import { dictionaryApi } from '@/api/system'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -48,10 +49,7 @@ export function useMobileFollowUpPlanForm(
   )
   const visibleFormFields = computed(() =>
     fields.value.filter(
-      (field) =>
-        !field.hidden &&
-        field.type !== 'formula' &&
-        field.mobile !== false,
+      (field) => !field.hidden && field.type !== 'formula' && field.mobile !== false,
     ),
   )
 
@@ -59,7 +57,6 @@ export function useMobileFollowUpPlanForm(
     const value = formModel.value[key]
     return typeof value === 'string' ? value : ''
   }
-
 
   function defaultFieldModel() {
     return Object.fromEntries(fields.value.map((field) => [field.key, field.config?.defaultValue]))
@@ -96,10 +93,18 @@ export function useMobileFollowUpPlanForm(
 
   async function loadMeta() {
     if (metaLoaded.value) return
-    const [{ data }] = await Promise.all([followUpPlanApi.moduleForm(), fieldRefs.load()])
-    fields.value = data.fields.filter(
-      (field) => !field.system || isFollowUpPlanSystemFieldKey(field.key),
-    )
+    const [formRes, methodRes] = await Promise.all([
+      followUpPlanApi.moduleForm(),
+      dictionaryApi.config('FOLLOW_UP_TYPE'),
+      fieldRefs.load(),
+    ]).then(([form, methods]) => [form, methods] as const)
+    const methodOptions = methodRes.data.dictList.map((item) => ({
+      label: item.name,
+      value: item.name,
+    }))
+    fields.value = formRes.data.fields
+      .filter((field) => !field.system || isFollowUpPlanSystemFieldKey(field.key))
+      .map((field) => (field.key === 'method' ? { ...field, options: methodOptions } : field))
     metaLoaded.value = true
   }
 
@@ -125,7 +130,6 @@ export function useMobileFollowUpPlanForm(
     }
   }
 
-
   async function open(plan?: FollowUpPlanVO) {
     try {
       await loadMeta()
@@ -139,12 +143,29 @@ export function useMobileFollowUpPlanForm(
       editing.value = plan ?? null
       const nextTargetType = targetType.value ?? plan?.targetType ?? 'customer'
       const nextTargetId = targetId.value ?? plan?.targetId ?? ''
+      if (
+        plan?.method &&
+        !fields.value
+          .find((field) => field.key === 'method')
+          ?.options?.some((option) => option.value === plan.method)
+      ) {
+        fields.value = fields.value.map((field) =>
+          field.key === 'method'
+            ? {
+                ...field,
+                options: [...(field.options ?? []), { label: plan.method!, value: plan.method! }],
+              }
+            : field,
+        )
+      }
+      const defaultMethod = fields.value.find((field) => field.key === 'method')?.options?.[0]
+        ?.value
       formModel.value = {
         ...defaultFieldModel(),
         ...dynamicValues(plan),
         targetType: nextTargetType,
         targetId: nextTargetId,
-        method: plan?.method ?? '电话',
+        method: plan?.method ?? defaultMethod ?? '',
         estimatedAt: plan?.estimatedAt ?? '',
         content: plan?.content ?? '',
         ownerId: plan?.ownerId ?? auth.user?.id ?? '',
@@ -200,7 +221,6 @@ export function useMobileFollowUpPlanForm(
       await loadTargets()
     },
   )
-
 
   return {
     show,

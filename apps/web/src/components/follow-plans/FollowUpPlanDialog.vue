@@ -11,6 +11,7 @@ import { computed, ref, watch } from 'vue'
 import { listCustomerOptions } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
 import { followUpPlanApi, leadApi } from '@/api/sales'
+import { dictionaryApi } from '@/api/system'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import FollowUpPlanSystemField from '@/components/follow-plans/FollowUpPlanSystemField.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -75,7 +76,6 @@ function stringValue(key: string) {
   return typeof value === 'string' ? value : ''
 }
 
-
 async function loadTargets() {
   if (targetLocked.value) {
     targets.value = [{ id: props.fixedTargetId!, name: props.fixedTargetName ?? '当前对象' }]
@@ -97,7 +97,6 @@ async function loadTargets() {
   }
 }
 
-
 function defaultFieldModel() {
   return Object.fromEntries(fields.value.map((field) => [field.key, field.config?.defaultValue]))
 }
@@ -118,11 +117,19 @@ function moduleFieldsPayload() {
 
 async function loadMeta() {
   try {
-    const [configRes] = await Promise.all([followUpPlanApi.moduleForm(), fieldRefs.load()])
+    const [configRes, methodRes] = await Promise.all([
+      followUpPlanApi.moduleForm(),
+      dictionaryApi.config('FOLLOW_UP_TYPE'),
+      fieldRefs.load(),
+    ]).then(([config, methods]) => [config, methods] as const)
+    const methodOptions = methodRes.data.dictList.map((item) => ({
+      label: item.name,
+      value: item.name,
+    }))
     formProp.value = configRes.data.formProp
-    fields.value = configRes.data.fields.filter(
-      (field) => !field.system || isFollowUpPlanSystemFieldKey(field.key),
-    )
+    fields.value = configRes.data.fields
+      .filter((field) => !field.system || isFollowUpPlanSystemFieldKey(field.key))
+      .map((field) => (field.key === 'method' ? { ...field, options: methodOptions } : field))
     metaLoadFailed.value = false
   } catch (error) {
     metaLoadFailed.value = true
@@ -138,6 +145,22 @@ async function reset() {
     const plan = props.plan
     const targetType = props.fixedTargetType ?? plan?.targetType ?? 'customer'
     const targetId = props.fixedTargetId ?? plan?.targetId ?? ''
+    if (
+      plan?.method &&
+      !fields.value
+        .find((field) => field.key === 'method')
+        ?.options?.some((option) => option.value === plan.method)
+    ) {
+      fields.value = fields.value.map((field) =>
+        field.key === 'method'
+          ? {
+              ...field,
+              options: [...(field.options ?? []), { label: plan.method!, value: plan.method! }],
+            }
+          : field,
+      )
+    }
+    const defaultMethod = fields.value.find((field) => field.key === 'method')?.options?.[0]?.value
     formModel.value = {
       ...defaultFieldModel(),
       ...customValues(plan),
@@ -145,7 +168,7 @@ async function reset() {
       targetId,
       estimatedAt: plan?.estimatedAt ?? '',
       content: plan?.content ?? '',
-      method: plan?.method ?? '电话',
+      method: plan?.method ?? defaultMethod ?? '',
       ownerId: plan?.ownerId ?? auth.user?.id ?? '',
       status: plan?.status ?? 'PREPARED',
     }

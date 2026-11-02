@@ -164,7 +164,8 @@ export const moduleConfigApi = {
 
 // ===== Cordys 模块字典（移池原因等） =====
 
-export type DictionaryModule = 'CLUE_POOL_RS' | 'CUSTOMER_POOL_RS'
+export type DictionaryModule = 'CLUE_POOL_RS' | 'CUSTOMER_POOL_RS' | 'FOLLOW_UP_TYPE'
+export type ReasonDictionaryModule = Extract<DictionaryModule, 'CLUE_POOL_RS' | 'CUSTOMER_POOL_RS'>
 
 export interface DictionaryItemVO {
   id: string
@@ -191,7 +192,7 @@ export const dictionaryApi = {
     http.post<DictionaryItemVO>('/dict/add', { module, name }),
   update: (id: string, name: string) => http.post<DictionaryItemVO>('/dict/update', { id, name }),
   remove: (id: string) => http.get(`/dict/delete/${id}`),
-  toggle: (module: DictionaryModule, enable: boolean) =>
+  toggle: (module: ReasonDictionaryModule, enable: boolean) =>
     http.post('/dict/switch', { module, enable }),
   sort: (start: number, end: number, dragDictId: string) =>
     http.post<DictionaryItemVO[]>('/dict/sort', { start, end, dragDictId }),

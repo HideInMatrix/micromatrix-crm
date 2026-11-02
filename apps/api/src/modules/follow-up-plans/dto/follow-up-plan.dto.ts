@@ -38,16 +38,15 @@ export class CreateFollowUpPlanDto {
   @IsNotEmpty()
   targetId!: string
 
-
   @ApiProperty({ description: '计划内容' })
   @IsString()
   @IsNotEmpty({ message: '计划内容不能为空' })
   @MaxLength(3000)
   content!: string
 
-  @ApiPropertyOptional({ description: '跟进方式' })
+  @ApiPropertyOptional({ description: '跟进方式；选项由系统字典配置' })
   @IsString()
-  @MaxLength(30)
+  @MaxLength(20)
   @IsOptional()
   method?: string
 

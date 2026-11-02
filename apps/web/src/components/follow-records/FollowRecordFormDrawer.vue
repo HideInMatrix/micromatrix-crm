@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  FOLLOW_UP_TYPES,
   type AttachmentVO,
   type FieldVO,
   type ModuleFormProp,
@@ -12,6 +11,7 @@ import { X } from 'lucide-vue-next'
 import { attachmentApi } from '@/api/attachments'
 import { extractErrorMessage } from '@/api/http'
 import { followUpApi, followUpPlanApi } from '@/api/sales'
+import { dictionaryApi } from '@/api/system'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 
@@ -37,6 +37,7 @@ const visible = computed({
 
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
+const followUpTypes = ref<string[]>([])
 const formProp = ref<ModuleFormProp>({})
 const formModel = ref<Record<string, unknown>>({})
 const attachmentMap = ref<Record<string, AttachmentVO[]>>({})
@@ -73,22 +74,22 @@ function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-
-
 async function reset() {
   loading.value = true
   loadFailed.value = false
   try {
-    const [configRes, prefillRes, recordRes] = await Promise.all([
+    const [configRes, prefillRes, recordRes, methodRes] = await Promise.all([
       followUpApi.moduleForm(),
       props.sourcePlanId
         ? followUpPlanApi.recordPrefill(props.sourcePlanId)
         : Promise.resolve(null),
       props.recordId ? followUpApi.get(props.recordId) : Promise.resolve(null),
+      dictionaryApi.config('FOLLOW_UP_TYPE'),
       fieldRefs.load(),
-    ]).then(([config, prefill, record]) => [config, prefill, record] as const)
+    ]).then(([config, prefill, record, methods]) => [config, prefill, record, methods] as const)
 
     fields.value = configRes.data.fields
+    followUpTypes.value = methodRes.data.dictList.map((item) => item.name)
     formProp.value = configRes.data.formProp
     const record = recordRes?.data
     const values = record
@@ -106,6 +107,7 @@ async function reset() {
     attachmentMap.value = record?.attachmentMap ?? {}
     form.ownerId = stringValue(values.ownerId)
     form.type = stringValue(values.type)
+    if (form.type && !followUpTypes.value.includes(form.type)) followUpTypes.value.push(form.type)
     form.content = stringValue(values.content)
     form.followedAt = stringValue(values.followedAt)
     formModel.value = {
@@ -249,12 +251,7 @@ watch(
             </el-form-item>
             <el-form-item label="跟进方式">
               <el-select v-model="form.type" clearable class="w-full" placeholder="可选">
-                <el-option
-                  v-for="item in FOLLOW_UP_TYPES"
-                  :key="item"
-                  :label="item"
-                  :value="item"
-                />
+                <el-option v-for="item in followUpTypes" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
             <el-form-item label="负责人">

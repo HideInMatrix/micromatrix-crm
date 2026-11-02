@@ -29,35 +29,35 @@ export class DictionariesController {
 
   @Post('add')
   @RequirePermissions('system:module:update')
-  @LogOperation('module', 'addReason')
+  @LogOperation('module', 'addDictionaryItem')
   add(@CurrentUser() user: AuthUser, @Body() dto: DictionaryAddDto) {
     return this.service.add(user, dto)
   }
 
   @Post('update')
   @RequirePermissions('system:module:update')
-  @LogOperation('module', 'updateReason')
+  @LogOperation('module', 'updateDictionaryItem')
   update(@CurrentUser() user: AuthUser, @Body() dto: DictionaryUpdateDto) {
     return this.service.update(user, dto)
   }
 
   @Get('delete/:id')
   @RequirePermissions('system:module:update')
-  @LogOperation('module', 'deleteReason')
+  @LogOperation('module', 'deleteDictionaryItem')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.remove(user, id)
   }
 
   @Post('switch')
   @RequirePermissions('system:module:update')
-  @LogOperation('module', 'switchReason')
+  @LogOperation('module', 'switchDictionaryConfig')
   switch(@CurrentUser() user: AuthUser, @Body() dto: DictionarySwitchDto) {
     return this.service.switch(user, dto.module, dto.enable)
   }
 
   @Post('sort')
   @RequirePermissions('system:module:update')
-  @LogOperation('module', 'sortReason')
+  @LogOperation('module', 'sortDictionaryItems')
   sort(@CurrentUser() user: AuthUser, @Body() dto: DictionarySortDto) {
     return this.service.sort(user, dto)
   }

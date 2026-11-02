@@ -1,15 +1,11 @@
 <script setup lang="ts">
-import {
-  FOLLOW_UP_TYPES,
-  type FieldVO,
-  type FollowUpPlanVO,
-  type FollowUpVO,
-} from '@micromatrix/shared'
+import { type FieldVO, type FollowUpPlanVO, type FollowUpVO } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
 import { showSuccessFeedback } from '@/utils/feedback'
 import { followUpApi, followUpPlanApi } from '@/api/sales'
+import { dictionaryApi } from '@/api/system'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
 import MobileVantDateTimeField from '@/components/MobileVantDateTimeField.vue'
 import MobileVantPickerField from '@/components/MobileVantPickerField.vue'
@@ -24,6 +20,7 @@ const emit = defineEmits<{ saved: [record: FollowUpVO] }>()
 
 const fieldRefs = useFieldRefs()
 const fields = ref<FieldVO[]>([])
+const followUpTypes = ref<string[]>([])
 const formModel = ref<Record<string, unknown>>({})
 const loading = ref(false)
 const saving = ref(false)
@@ -40,7 +37,7 @@ const dynamicFields = computed(() =>
 )
 const typeOptions = computed(() => [
   { text: '未设置', value: '' },
-  ...FOLLOW_UP_TYPES.map((item) => ({ text: item, value: item })),
+  ...followUpTypes.value.map((item) => ({ text: item, value: item })),
 ])
 const ownerOptions = computed(() => [
   { text: '沿用计划负责人', value: '' },
@@ -80,22 +77,24 @@ function moduleFieldsPayload() {
   }))
 }
 
-
 async function reset() {
   const plan = props.plan
   if (!plan) return
   loading.value = true
   loadFailed.value = false
   try {
-    const [configRes, prefillRes] = await Promise.all([
+    const [configRes, prefillRes, methodRes] = await Promise.all([
       followUpApi.moduleForm(),
       followUpPlanApi.recordPrefill(plan.id),
+      dictionaryApi.config('FOLLOW_UP_TYPE'),
       fieldRefs.load(),
-    ]).then(([config, prefill]) => [config, prefill] as const)
+    ]).then(([config, prefill, methods]) => [config, prefill, methods] as const)
     fields.value = configRes.data.fields
+    followUpTypes.value = methodRes.data.dictList.map((item) => item.name)
     const values = prefillRes.data.values
     form.ownerId = stringValue(values.ownerId)
     form.type = stringValue(values.type)
+    if (form.type && !followUpTypes.value.includes(form.type)) followUpTypes.value.push(form.type)
     form.content = stringValue(values.content)
     form.followedAt = toLocalDateTime(values.followedAt)
     formModel.value = {

@@ -3,6 +3,7 @@ import type { FieldVO } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
 import { leadApi, followUpApi } from '@/api/sales'
+import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 import { metadataApi } from '@/api/metadata'
 import { extractErrorMessage } from '@/api/http'
 import MobileCalendarPopup from '@/components/MobileCalendarPopup.vue'
@@ -19,22 +20,33 @@ const emit = defineEmits<{ followed: [] }>()
 const auth = useAuthStore()
 const saving = ref(false)
 const loadingIntent = ref(false)
+const loadingMethods = ref(false)
+const methods = ref<DictionaryItemVO[]>([])
 const methodShow = ref(false)
 const intentShow = ref(false)
 const dateShow = ref(false)
 const intentField = ref<FieldVO | null>(null)
 const initialIntent = ref('')
-const form = reactive({ type: '电话', content: '', followedOn: '', intent: '' })
+const form = reactive({ type: '', content: '', followedOn: '', intent: '' })
 
-const methods = [
-  { text: '电话沟通', value: '电话' },
-  { text: '微信沟通', value: '微信' },
-  { text: '面谈', value: '会议' },
-  { text: '到校参观', value: '拜访' },
-]
 const methodText = computed(
-  () => methods.find((item) => item.value === form.type)?.text ?? form.type,
+  () => methods.value.find((item) => item.name === form.type)?.name ?? form.type,
 )
+
+async function loadMethods() {
+  loadingMethods.value = true
+  try {
+    const { data } = await dictionaryApi.config('FOLLOW_UP_TYPE')
+    methods.value = data.dictList
+    if (!methods.value.some((item) => item.name === form.type)) {
+      form.type = methods.value[0]?.name ?? ''
+    }
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  } finally {
+    loadingMethods.value = false
+  }
+}
 const intentOptions = computed(() => intentField.value?.options ?? [])
 const intentText = computed(
   () => intentOptions.value.find((option) => option.value === form.intent)?.label ?? '请选择',
@@ -73,7 +85,7 @@ async function loadIntent() {
 
 watch(show, (opened) => {
   if (opened) {
-    form.type = '电话'
+    form.type = ''
     form.content = ''
     form.followedOn = ''
     form.intent = ''
@@ -83,6 +95,7 @@ watch(show, (opened) => {
     intentShow.value = false
     dateShow.value = false
     void loadIntent()
+    void loadMethods()
   } else {
     methodShow.value = false
     intentShow.value = false
@@ -194,11 +207,11 @@ async function submit() {
         >
           <van-cell
             title="跟进方式"
-            :value="methodText"
-            is-link
-            clickable
+            :value="methodText || '请选择'"
             :border="false"
-            @click="methodShow = true"
+            :is-link="!loadingMethods && methods.length > 0"
+            :clickable="!loadingMethods && methods.length > 0"
+            @click="!loadingMethods && methods.length > 0 && (methodShow = true)"
           />
           <van-cell
             v-if="canEditIntent"
@@ -289,7 +302,7 @@ async function submit() {
       <div class="grid grid-cols-3 gap-[10px] p-[12px]">
         <van-button
           v-for="option in methods"
-          :key="option.value"
+          :key="option.id"
           type="default"
           block
           class="min-w-0"
@@ -299,15 +312,15 @@ async function submit() {
             --van-button-default-font-size: 14px;
             --van-button-radius: 6px;
           "
-          :color="form.type === option.value ? 'var(--van-primary-color)' : '#F3F4F8'"
-          :plain="form.type === option.value"
-          @click="chooseMethod(option.value)"
+          :color="form.type === option.name ? 'var(--van-primary-color)' : '#F3F4F8'"
+          :plain="form.type === option.name"
+          @click="chooseMethod(option.name)"
         >
           <span
             :class="
-              form.type === option.value ? 'text-[var(--van-primary-color)]' : 'text-[#333333]'
+              form.type === option.name ? 'text-[var(--van-primary-color)]' : 'text-[#333333]'
             "
-            >{{ option.text }}</span
+            >{{ option.name }}</span
           >
         </van-button>
       </div>

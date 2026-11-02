@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { FOLLOW_UP_TYPES } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import type { PrismaClient } from '../../prisma/db'
 import { PrismaService } from '../../prisma.service'
@@ -8,9 +9,11 @@ import type {
   DictionaryModule,
   DictionarySortDto,
   DictionaryUpdateDto,
+  ReasonDictionaryModule,
 } from './dto/dictionary.dto'
 
-const MAX_REASON_COUNT = 50
+const MAX_DICTIONARY_COUNT = 50
+const FOLLOW_UP_TYPE_MODULE = 'FOLLOW_UP_TYPE' as const
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
 @Injectable()
@@ -18,8 +21,65 @@ export class DictionariesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(organizationId: string, module: DictionaryModule) {
+    await this.ensureFollowUpTypeDefaults(organizationId, module)
     const rows = await this.listRows(organizationId, module)
     return rows.map((row) => this.toVO(row))
+  }
+
+  private async ensureFollowUpTypeDefaults(organizationId: string, module: DictionaryModule) {
+    if (module !== FOLLOW_UP_TYPE_MODULE) return
+    const marker = await this.configs()
+      .where({ organizationId, module: FOLLOW_UP_TYPE_MODULE })
+      .first()
+    if (marker) return
+
+    try {
+      await this.prisma.client.transaction(async (tx) => {
+        const currentMarker = await tx.orm.public.SysDictConfig.where({
+          organizationId,
+          module: FOLLOW_UP_TYPE_MODULE,
+        }).first()
+        if (currentMarker) return
+
+        await tx.orm.public.SysDictConfig.create({
+          module: FOLLOW_UP_TYPE_MODULE,
+          organizationId,
+          enabled: false,
+        })
+        const current = await tx.orm.public.SysDict.where({
+          organizationId,
+          module: FOLLOW_UP_TYPE_MODULE,
+        })
+          .select('id')
+          .first()
+        if (current) return
+
+        const now = BigInt(Date.now())
+        for (const [index, name] of FOLLOW_UP_TYPES.entries()) {
+          await tx.orm.public.SysDict.create({
+            id: createLegacyId32(),
+            name,
+            module: FOLLOW_UP_TYPE_MODULE,
+            _type: 'TEXT',
+            pos: BigInt(index + 1),
+            organizationId,
+            createTime: now,
+            updateTime: now,
+            createUser: 'system',
+            updateUser: 'system',
+          })
+        }
+      })
+    } catch (error) {
+      if ((error as { sqlState?: string }).sqlState !== '23505') throw error
+      // Another request initialized this tenant's dictionary concurrently.
+    }
+  }
+
+  private validateDictionaryName(module: DictionaryModule, name: string) {
+    if (module === FOLLOW_UP_TYPE_MODULE && name.length > 20) {
+      throw new BadRequestException('跟进方式名称不能超过 20 个字符')
+    }
   }
 
   private listRows(organizationId: string, module: DictionaryModule) {
@@ -33,6 +93,7 @@ export class DictionariesService {
   }
 
   async config(organizationId: string, module: DictionaryModule) {
+    await this.ensureFollowUpTypeDefaults(organizationId, module)
     const [dictList, config] = await Promise.all([
       this.listRows(organizationId, module),
       this.configs()
@@ -42,28 +103,33 @@ export class DictionariesService {
         })
         .first(),
     ])
+    const items =
+      module === FOLLOW_UP_TYPE_MODULE
+        ? dictList
+        : [
+            ...dictList,
+            {
+              id: 'system',
+              name: '系统自动回收',
+              module,
+              type: 'TEXT',
+              pos: BigInt(dictList.length + 1),
+              organizationId,
+              createTime: BigInt(0),
+              updateTime: BigInt(0),
+              createUser: 'system',
+              updateUser: 'system',
+            },
+          ]
     return {
-      dictList: [
-        ...dictList,
-        {
-          id: 'system',
-          name: '系统自动回收',
-          module,
-          type: 'TEXT',
-          pos: BigInt(dictList.length + 1),
-          organizationId,
-          createTime: BigInt(0),
-          updateTime: BigInt(0),
-          createUser: 'system',
-          updateUser: 'system',
-        },
-      ].map((item) => this.toVO(item)),
+      dictList: items.map((item) => this.toVO(item)),
       enable: config?.enabled ?? false,
     }
   }
 
   async add(user: AuthUser, dto: DictionaryAddDto) {
     const name = dto.name.trim()
+    if (!name) throw new BadRequestException('字典项名称不能为空')
     return this.prisma.client.transaction(async (tx) => {
       const rows = await tx.orm.public.SysDict.where({
         organizationId: user.tenantId,
@@ -71,8 +137,17 @@ export class DictionariesService {
       })
         .orderBy((row) => row.pos.asc())
         .all()
-      if (rows.length >= MAX_REASON_COUNT) throw new BadRequestException('原因最多配置 50 条')
-      if (rows.some((row) => row.name === name)) throw new BadRequestException('原因名称不能重复')
+      if (rows.length >= MAX_DICTIONARY_COUNT) {
+        throw new BadRequestException(
+          dto.module === FOLLOW_UP_TYPE_MODULE ? '跟进方式最多配置 50 条' : '原因最多配置 50 条',
+        )
+      }
+      this.validateDictionaryName(dto.module, name)
+      if (rows.some((row) => row.name === name)) {
+        throw new BadRequestException(
+          dto.module === FOLLOW_UP_TYPE_MODULE ? '跟进方式名称不能重复' : '原因名称不能重复',
+        )
+      }
       const now = BigInt(Date.now())
       const row = await tx.orm.public.SysDict.create({
         id: createLegacyId32(),
@@ -93,6 +168,8 @@ export class DictionariesService {
   async update(user: AuthUser, dto: DictionaryUpdateDto) {
     const row = await this.assertOwned(user.tenantId, dto.id)
     const name = dto.name.trim()
+    if (!name) throw new BadRequestException('字典项名称不能为空')
+    this.validateDictionaryName(row.module as DictionaryModule, name)
     const duplicate = await this.dicts()
       .where({
         organizationId: user.tenantId,
@@ -101,7 +178,11 @@ export class DictionariesService {
       })
       .select('id')
       .first()
-    if (duplicate && duplicate.id !== row.id) throw new BadRequestException('原因名称不能重复')
+    if (duplicate && duplicate.id !== row.id) {
+      throw new BadRequestException(
+        row.module === FOLLOW_UP_TYPE_MODULE ? '跟进方式名称不能重复' : '原因名称不能重复',
+      )
+    }
     const updated = await this.dicts()
       .where({ id: row.id })
       .update({
@@ -109,7 +190,7 @@ export class DictionariesService {
         updateUser: user.id,
         updateTime: BigInt(Date.now()),
       })
-    if (!updated) throw new NotFoundException('原因不存在')
+    if (!updated) throw new NotFoundException('字典项不存在')
     return this.toVO(updated)
   }
 
@@ -135,7 +216,7 @@ export class DictionariesService {
     })
   }
 
-  async switch(user: AuthUser, module: DictionaryModule, enable: boolean) {
+  async switch(user: AuthUser, module: ReasonDictionaryModule, enable: boolean) {
     if (enable) {
       const first = await this.dicts()
         .where({

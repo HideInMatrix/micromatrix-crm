@@ -1,8 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator'
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator'
 
-export const DICTIONARY_MODULES = ['CLUE_POOL_RS', 'CUSTOMER_POOL_RS'] as const
+export const DICTIONARY_MODULES = ['CLUE_POOL_RS', 'CUSTOMER_POOL_RS', 'FOLLOW_UP_TYPE'] as const
 export type DictionaryModule = (typeof DICTIONARY_MODULES)[number]
+export type ReasonDictionaryModule = Extract<DictionaryModule, 'CLUE_POOL_RS' | 'CUSTOMER_POOL_RS'>
 
 export class DictionaryAddDto {
   @ApiProperty({ maxLength: 255 })
@@ -30,9 +40,9 @@ export class DictionaryUpdateDto {
 }
 
 export class DictionarySwitchDto {
-  @ApiProperty({ enum: DICTIONARY_MODULES })
-  @IsIn(DICTIONARY_MODULES)
-  module!: DictionaryModule
+  @ApiProperty({ enum: ['CLUE_POOL_RS', 'CUSTOMER_POOL_RS'] })
+  @IsIn(['CLUE_POOL_RS', 'CUSTOMER_POOL_RS'])
+  module!: ReasonDictionaryModule
 
   @ApiProperty()
   @IsBoolean()

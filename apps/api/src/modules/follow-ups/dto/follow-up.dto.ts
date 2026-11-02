@@ -37,13 +37,12 @@ export class CreateFollowUpDto {
   @IsNotEmpty()
   targetId!: string
 
-
   @ApiPropertyOptional({ description: '负责人；省略时为当前用户' })
   @IsString()
   @IsOptional()
   ownerId?: string
 
-  @ApiPropertyOptional({ description: '跟进方式：电话/拜访/微信/邮件/会议/其他' })
+  @ApiPropertyOptional({ description: '跟进方式；选项由系统字典配置' })
   @IsString()
   @MaxLength(20)
   @IsOptional()
@@ -76,7 +75,6 @@ export class CreateFollowUpDto {
 export class UpdateFollowUpDto extends PartialType(
   OmitType(CreateFollowUpDto, ['sourcePlanId', 'type', 'followedAt'] as const),
 ) {
-
   @ApiPropertyOptional({ description: '跟进方式；null 表示清空', nullable: true })
   @IsString()
   @MaxLength(20)
