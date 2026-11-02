@@ -131,9 +131,11 @@ export class ModuleFormsService {
         tx.orm.public.SysModuleFormBlob.where({ id: form.id }).first(),
         this.findFields(tx, form.id),
       ])
+      const formProp = this.parseObject(blob?.prop)
+      this.sanitizeRetiredLeadStageConfig(formKey, formProp)
       return {
         formKey,
-        formProp: this.parseObject(blob?.prop),
+        formProp: formProp as ModuleFormProp,
         fields: fields
           .filter((field) => this.isVisibleModuleField(formKey, field))
           .map((field) => this.toVO(field, formKey)),
@@ -182,7 +184,6 @@ export class ModuleFormsService {
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     this.validateFormPropInput(formProp)
-    await this.validateLeadStageUsage(organizationId, formKey, formProp)
     await this.validateHomeAnalyticsUsage(organizationId, formKey, formProp)
     await this.validateFormPropLinkage(organizationId, formKey, formProp)
     await this.prisma.client.transaction(async (tx) => {
@@ -203,6 +204,7 @@ export class ModuleFormsService {
   }
 
   private mergeFormDesignerProp(
+    formKey: string,
     current: ModuleFormProp,
     requested: ModuleFormProp,
   ): ModuleFormProp {
@@ -210,6 +212,7 @@ export class ModuleFormsService {
     // Only these properties are edited by ModuleFormDesigner; the other properties
     // are owned by dedicated settings drawers or other capabilities.
     const next: ModuleFormProp = { ...requested, ...current }
+    this.sanitizeRetiredLeadStageConfig(formKey, next)
     const designerKeys = [
       'labelPos',
       'labelAlign',
@@ -236,13 +239,12 @@ export class ModuleFormsService {
     actorId: string,
   ): Promise<ModuleFormConfigVO> {
     // The form designer edits presentation, alerts and field linkage, but does not own
-    // search, lead-stage, deduplication or analytics settings. Its browser state may be
+    // search, deduplication or analytics settings. Its browser state may be
     // older than a setting saved from another drawer/tab, so preserve the latest stored
     // values for those properties (and unknown extensions) before validating or writing.
     const currentConfig = await this.loadConfig(organizationId, formKey)
-    const nextFormProp = this.mergeFormDesignerProp(currentConfig.formProp, formProp)
+    const nextFormProp = this.mergeFormDesignerProp(formKey, currentConfig.formProp, formProp)
     this.validateFormPropInput(nextFormProp)
-    await this.validateLeadStageUsage(organizationId, formKey, nextFormProp)
     await this.validateHomeAnalyticsDesignChange(organizationId, formKey, fields, nextFormProp)
     const labels = fields.map((field) => field.label.trim())
     if (labels.some((label) => !label)) throw new BadRequestException('字段名称不能为空')
@@ -1008,28 +1010,6 @@ export class ModuleFormsService {
     }
   }
 
-  private async validateLeadStageUsage(
-    organizationId: string,
-    formKey: string,
-    formProp: ModuleFormProp,
-  ): Promise<void> {
-    if (formKey !== 'lead' || !formProp.leadStages) return
-    const configuredKeys = new Set(formProp.leadStages.map((stage) => stage.key))
-    const used = await this.prisma.client.orm.public.Clue.where({
-      organizationId,
-    })
-      .select('stage')
-      .all()
-    const removedInUse = [
-      ...new Set(used.map((item) => item.stage).filter((key) => !configuredKeys.has(key))),
-    ]
-    if (removedInUse.length) {
-      throw new BadRequestException(
-        `仍有线索使用状态 ${removedInUse.join('、')}，请保留对应状态标识（可以停用）；如需删除，请先将相关线索迁移到其他状态`,
-      )
-    }
-  }
-
   private async validateHomeAnalyticsUsage(
     organizationId: string,
     formKey: string,
@@ -1386,39 +1366,6 @@ export class ModuleFormsService {
         }
         ids.add(alert.id)
       }
-    }
-    if (formProp.leadStages !== undefined) {
-      if (!Array.isArray(formProp.leadStages) || formProp.leadStages.length === 0) {
-        throw new BadRequestException('线索状态至少需要配置一项')
-      }
-      if (formProp.leadStages.length > 50) throw new BadRequestException('线索状态最多配置 50 项')
-      const keys = new Set<string>()
-      const names = new Set<string>()
-      let enabledCount = 0
-      for (const stage of formProp.leadStages) {
-        if (!stage || typeof stage !== 'object') throw new BadRequestException('线索状态配置不正确')
-        if (typeof stage.key !== 'string' || !/^[A-Za-z0-9_-]{1,30}$/.test(stage.key)) {
-          throw new BadRequestException(
-            '线索状态标识缺失或异常，请刷新页面后重试；如问题持续，请联系管理员',
-          )
-        }
-        const name = typeof stage.name === 'string' ? stage.name.trim() : ''
-        if (!name || name.length > 100) {
-          throw new BadRequestException('线索状态名称不能为空且最长 100 字')
-        }
-        if (!['ACTIVE', 'SUCCESS', 'FAILURE'].includes(stage.kind)) {
-          throw new BadRequestException('线索状态类型配置不正确')
-        }
-        if (stage.enabled !== undefined && typeof stage.enabled !== 'boolean') {
-          throw new BadRequestException('线索状态启用配置不正确')
-        }
-        if (keys.has(stage.key)) throw new BadRequestException('线索状态 key 不能重复')
-        if (names.has(name)) throw new BadRequestException('线索状态名称不能重复')
-        keys.add(stage.key)
-        names.add(name)
-        if (stage.enabled !== false) enabledCount++
-      }
-      if (enabledCount === 0) throw new BadRequestException('至少需要保留一个启用的线索状态')
     }
   }
 
@@ -2174,6 +2121,41 @@ export class ModuleFormsService {
     } catch {
       return {}
     }
+  }
+
+  private sanitizeRetiredLeadStageConfig(formKey: string, formProp: Record<string, unknown>): void {
+    if (formKey !== 'lead') return
+    delete formProp['leadStages']
+    const quickSearch = formProp['quickSearch']
+    if (!this.isRecord(quickSearch)) return
+    const items = quickSearch['items']
+    if (!Array.isArray(items)) return
+    const retiredKeys = new Set(['stage', 'status', 'lastStage'])
+    const sanitizedItems = items.flatMap((rawItem) => {
+      if (!this.isRecord(rawItem)) return []
+      if (retiredKeys.has(String(rawItem['fieldKey'] ?? ''))) return []
+      if (Array.isArray(rawItem['fieldKeys'])) {
+        rawItem['fieldKeys'] = rawItem['fieldKeys'].filter(
+          (key) => typeof key === 'string' && !retiredKeys.has(key),
+        )
+      }
+      const options = rawItem['options']
+      if (Array.isArray(options)) {
+        const sanitizedOptions = options.flatMap((rawOption) => {
+          if (!this.isRecord(rawOption) || !Array.isArray(rawOption['conditions'])) return []
+          const conditions = rawOption['conditions'].filter(
+            (rawCondition) =>
+              this.isRecord(rawCondition) && !retiredKeys.has(String(rawCondition['key'] ?? '')),
+          )
+          return conditions.length ? [{ ...rawOption, conditions }] : []
+        })
+        rawItem['options'] = sanitizedOptions
+        if (rawItem['kind'] === 'preset_select' && sanitizedOptions.length === 0) return []
+      }
+      return [rawItem]
+    })
+    quickSearch['items'] = sanitizedItems
+    if (sanitizedItems.length === 0) quickSearch['enabled'] = false
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

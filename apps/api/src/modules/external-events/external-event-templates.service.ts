@@ -197,13 +197,10 @@ export class ExternalEventTemplatesService {
     const flow = config.flow!
     if (!['lead', 'customer'].includes(flow.target))
       throw new BadRequestException('目标模块必须是线索或客户')
-    if (!['update', 'create', 'convert', 'stage'].includes(flow.action))
+    if (!['update', 'create', 'convert'].includes(flow.action))
       throw new BadRequestException('不支持的业务动作')
     if (flow.action === 'convert' && flow.target !== 'lead')
       throw new BadRequestException('只有线索支持转换为客户')
-    if (flow.action === 'stage' && flow.target !== 'lead')
-      throw new BadRequestException('只有线索支持状态变更')
-    if (flow.action === 'stage') requireKey(flow.stageExternalKey, '状态参数')
     if (flow.action === 'create') requireKey(flow.nameExternalKey, '名称参数')
     if (
       !Array.isArray(config.matches) ||
@@ -234,8 +231,6 @@ export class ExternalEventTemplatesService {
     }
     if (!Array.isArray(flow.fields) || flow.fields.length > 30)
       throw new BadRequestException('字段映射不能超过 30 个')
-    if (flow.action === 'stage' && flow.fields.length)
-      throw new BadRequestException('状态变更不接受额外字段映射')
     if (flow.action === 'update' && !flow.fields.length)
       throw new BadRequestException('字段更新至少需要一个映射')
     const writable = new Map(
@@ -278,6 +273,11 @@ export class ExternalEventTemplatesService {
   ) {
     const flow = template.config.flow
     if (!flow) throw new BadRequestException('不是通用事件配置')
+    if (!['update', 'create', 'convert'].includes(flow.action)) {
+      throw new BadRequestException(
+        '该外部事件使用已移除的线索状态动作，请编辑配置并重新选择业务动作',
+      )
+    }
     if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length > 80)
       throw new BadRequestException('外部事件 data 必须是至多 80 个属性的对象')
     const requireData = (key: string) => {
@@ -333,16 +333,12 @@ export class ExternalEventTemplatesService {
       (typeof rawName !== 'string' || !rawName.trim() || rawName.length > 100)
     )
       throw new BadRequestException('创建记录名称必须是长度 1～100 的字符串')
-    const rawStage = flow.action === 'stage' ? requireData(flow.stageExternalKey!) : null
-    if (rawStage !== null && (typeof rawStage !== 'string' || !rawStage.trim()))
-      throw new BadRequestException('线索状态标识必须为字符串')
     return {
       flow,
       resolved,
       set,
       ownerId,
       name: rawName as string | null,
-      stage: rawStage as string | null,
     }
   }
 
@@ -533,10 +529,6 @@ export class ExternalEventTemplatesService {
             customData: set,
             ownerId: ownerId ?? undefined,
           })
-      } else if (flow.action === 'stage') {
-        if (!resolved || resolved.kind !== 'LEAD')
-          throw new BadRequestException('状态变更目标不是线索')
-        await this.leads.prepareExternalStageUpdate(user, resolved.leadId, plan.stage!)
       }
       return {
         dryRun: true,

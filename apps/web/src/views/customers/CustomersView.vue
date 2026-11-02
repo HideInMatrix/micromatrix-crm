@@ -290,8 +290,7 @@ async function handleBatchTransferConfirm(userId: string) {
       selectedRows.value.map((row) => row.id),
       userId,
     )
-    if (data.fail > 0) ElMessage.warning(`转移完成：成功 ${data.success} 个，失败 ${data.fail} 个`)
-    else ElMessage.success(`已转移 ${data.success} 个客户`)
+    ElMessage.success(`已转移 ${data.count} 个客户`)
     batchTransferVisible.value = false
     await loadData()
   } catch (error) {

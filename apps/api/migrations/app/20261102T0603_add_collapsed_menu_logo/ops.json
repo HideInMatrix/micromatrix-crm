@@ -1,0 +1,44 @@
+[
+  {
+    "id": "column.public.enterprise_ui_settings.collapsedLogoAttachmentId",
+    "label": "Add column \"collapsedLogoAttachmentId\" to \"enterprise_ui_settings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "collapsedLogoAttachmentId",
+        "table": "enterprise_ui_settings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"collapsedLogoAttachmentId\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "enterprise_ui_settings",
+          "collapsedLogoAttachmentId"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"collapsedLogoAttachmentId\"",
+        "sql": "ALTER TABLE \"public\".\"enterprise_ui_settings\" ADD COLUMN \"collapsedLogoAttachmentId\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"collapsedLogoAttachmentId\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "enterprise_ui_settings",
+          "collapsedLogoAttachmentId"
+        ]
+      }
+    ]
+  }
+]

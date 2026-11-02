@@ -157,10 +157,7 @@ export function getCustomerModuleForm() {
 }
 
 export function batchTransferCustomers(ids: string[], owner: string) {
-  return http.post<{ success: number; fail: number; failedIds: string[] }>(
-    '/account/batch/transfer',
-    { ids, owner },
-  )
+  return http.post<{ count: number }>('/account/batch/transfer', { ids, owner })
 }
 
 export function moveCustomerToPool(id: string, poolId?: string, reasonId?: string) {

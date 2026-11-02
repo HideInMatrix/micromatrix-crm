@@ -55,10 +55,9 @@ export const metadataApi = {
     module: string,
     data: Pick<
       ModuleFormProp,
-      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'leadStages' | 'homeAnalytics' | 'quickSearch'
+      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'homeAnalytics' | 'quickSearch'
     >,
-  ) =>
-    http.patch<ModuleFormConfigVO>(`/metadata/${module}/form-prop`, data),
+  ) => http.patch<ModuleFormConfigVO>(`/metadata/${module}/form-prop`, data),
   fields: (module: string) => http.get<FieldVO[]>(`/metadata/${module}/fields`),
   createField: (module: string, data: FieldForm) =>
     http.post<FieldVO>(`/metadata/${module}/fields`, data),

@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
 import {
-  DEFAULT_LEAD_STAGES,
   type LeadVO,
-  type LeadStageConfig,
   type FieldVO,
   type HomeLeadStatistic,
   type FilterCondition,
@@ -14,8 +12,6 @@ import {
 } from '@micromatrix/shared'
 import {
   Bell,
-  Plus,
-  Minus,
   Building2,
   GitPullRequest,
   Layers3,
@@ -32,7 +28,6 @@ import {
   BellRing,
   MessageCircleMore,
   MessageSquareText,
-  Settings2,
 } from 'lucide-vue-next'
 import { ElButton } from 'element-plus'
 import type { Component } from 'vue'
@@ -93,7 +88,6 @@ watch(
   { flush: 'post' },
 )
 const leadFields = ref<FieldVO[]>([])
-const leadStages = ref<LeadStageConfig[]>([])
 const unreadNotifications = ref(0)
 const canAccessPool = computed(() => auth.hasPerm('leadPool:read'))
 const selectableFields = computed(() =>
@@ -118,12 +112,7 @@ const homeLeadTableWidths = computed(() => {
   const flexibleField = fields.find(isHomeLeadSourceField) ?? fields.at(-1)
   const flexibleFollowUp = !flexibleField
   const fixedBaseWidth =
-    88 +
-    108 +
-    (fields.length - (flexibleField ? 1 : 0)) * 72 +
-    72 +
-    88 +
-    (flexibleFollowUp ? 0 : 92)
+    88 + 108 + (fields.length - (flexibleField ? 1 : 0)) * 72 + 88 + (flexibleFollowUp ? 0 : 92)
   const preferredFlexMinWidth = flexibleField
     ? isHomeLeadSourceField(flexibleField)
       ? 120
@@ -142,18 +131,12 @@ const homeLeadTableWidths = computed(() => {
     name: scaled(88),
     phone: scaled(108),
     field: scaled(72),
-    status: scaled(72),
     followUp: flexibleFollowUp ? undefined : scaled(92),
     action: scaled(88),
     flexibleFieldKey: flexibleField?.key ?? null,
     flexMinWidth,
   }
 })
-const stageLabel = (stage: string) =>
-  leadStages.value.find((entry) => entry.key === stage)?.name ??
-  DEFAULT_LEAD_STAGES.find((entry) => entry.key === stage)?.name ??
-  stage
-
 const hasLeadRead = computed(() => auth.hasPerm('menu:lead'))
 
 function statisticRequest() {
@@ -209,7 +192,6 @@ function openLeadAnalytics(
   options: {
     period?: 'TODAY'
     filters?: FilterCondition[]
-    leadStageKey?: string
     converted?: boolean
     overdue?: boolean
   } = {},
@@ -376,7 +358,6 @@ async function loadMyLeads() {
     myLeads.value = list.data.items
     myLeadsTotal.value = list.data.total
     leadFields.value = form.data.fields
-    leadStages.value = form.data.formProp.leadStages ?? []
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
@@ -495,73 +476,21 @@ const quickAccessCatalog = computed<QuickAccessItem[]>(() => {
   return catalog.filter((item) => item.moduleEnabled() && hasAnyPermission(item.permissions))
 })
 
-const quickAccessKeys = ref<QuickAccessKey[]>([])
-const quickAccessDraft = ref<QuickAccessKey[]>([])
-const quickAccessDialogVisible = ref(false)
-
-function quickAccessStorageKey() {
-  return `micromatrix:home-quick-access:v2:${auth.user?.id ?? 'anonymous'}`
-}
-
-function loadQuickAccess() {
-  let saved: QuickAccessKey[] = []
-  try {
-    const raw = localStorage.getItem(quickAccessStorageKey())
-    if (raw) saved = JSON.parse(raw) as QuickAccessKey[]
-  } catch {
-    localStorage.removeItem(quickAccessStorageKey())
-  }
-  const allowed = new Set(quickAccessCatalog.value.map((item) => item.key))
-  const valid = saved.filter((key) => allowed.has(key)).slice(0, 5)
-  quickAccessKeys.value = valid.length
-    ? valid
-    : (['lead', 'leadImport', 'poolImport'] as QuickAccessKey[])
-        .filter((key) => allowed.has(key))
-        .concat(
-          quickAccessCatalog.value
-            .map((item) => item.key)
-            .filter((key) => !['lead', 'leadImport', 'poolImport'].includes(key)),
-        )
-        .slice(0, 3)
-}
-
-const displayedQuickAccess = computed(() =>
-  quickAccessKeys.value
-    .map((key) => quickAccessCatalog.value.find((item) => item.key === key))
-    .filter((item): item is QuickAccessItem => !!item),
-)
-
-const availableQuickAccess = computed(() =>
-  quickAccessCatalog.value.filter((item) => !quickAccessDraft.value.includes(item.key)),
-)
-
-function openQuickAccessSettings() {
-  quickAccessDraft.value = [...quickAccessKeys.value]
-  quickAccessDialogVisible.value = true
-}
-
-function addQuickAccess(key: QuickAccessKey) {
-  if (quickAccessDraft.value.length >= 5) {
-    ElMessage.warning('快捷入口最多选择 5 个')
-    return
-  }
-  quickAccessDraft.value.push(key)
-}
-
-function removeQuickAccess(key: QuickAccessKey) {
-  if (quickAccessDraft.value.length <= 1) {
-    ElMessage.warning('快捷入口至少保留 1 个')
-    return
-  }
-  quickAccessDraft.value = quickAccessDraft.value.filter((item) => item !== key)
-}
-
-function saveQuickAccess() {
-  if (!quickAccessDraft.value.length) return
-  quickAccessKeys.value = [...quickAccessDraft.value]
-  localStorage.setItem(quickAccessStorageKey(), JSON.stringify(quickAccessKeys.value))
-  quickAccessDialogVisible.value = false
-}
+const displayedQuickAccess = computed(() => {
+  const itemsByKey = new Map(quickAccessCatalog.value.map((item) => [item.key, item]))
+  const defaultOrder: QuickAccessKey[] = [
+    'lead',
+    'leadImport',
+    'poolImport',
+    'customer',
+    'followRecord',
+    'followPlan',
+  ]
+  return defaultOrder
+    .map((key) => itemsByKey.get(key))
+    .filter((item): item is QuickAccessItem => !!item)
+    .slice(0, 3)
+})
 
 function routeCreate(path: string) {
   void router.push({ path, query: { create: '1', from: 'home' } })
@@ -731,7 +660,6 @@ onMounted(async () => {
   showDefaultPasswordMessage()
   try {
     await Promise.all([moduleConfig.load(), loadMyLeads(), loadPendingPools(), loadNotifications()])
-    loadQuickAccess()
     await loadStatistics()
   } finally {
     pageLoading.value = false
@@ -854,14 +782,6 @@ onBeforeUnmount(() => {
             <Send :size="18" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
             <span class="text-[18px] font-semibold text-[#1D2129]">快捷入口</span>
           </div>
-          <el-button
-            v-if="quickAccessCatalog.length"
-            link
-            data-testid="home-quick-settings"
-            @click="openQuickAccessSettings"
-          >
-            <Settings2 :size="15" class="mr-1" aria-hidden="true" />自定义
-          </el-button>
         </div>
         <div
           class="grid min-h-[56px] grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3"
@@ -998,17 +918,6 @@ onBeforeUnmount(() => {
               <template #default="{ row }">{{ leadFieldValue(row as LeadVO, field) }}</template>
             </el-table-column>
             <el-table-column
-              label="当前状态"
-              :width="homeLeadTableWidths.status"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">
-                <el-tag size="small" type="warning" effect="light" class="!text-[12px]">
-                  {{ stageLabel(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
               label="最近跟进"
               :width="homeLeadTableWidths.followUp"
               :min-width="
@@ -1131,10 +1040,10 @@ onBeforeUnmount(() => {
       <section
         v-for="widget in analytics?.widgets ?? []"
         :key="widget.config.id"
-        class="h-full min-h-0 min-w-0 rounded-xl bg-white px-5 py-4"
+        class="flex h-full min-h-0 min-w-0 flex-col rounded-xl bg-white px-5 py-4"
         :data-testid="`home-statistic-widget-${widget.config.id}`"
       >
-        <div class="mb-3 flex items-center justify-between gap-2">
+        <div class="mb-3 flex shrink-0 items-center justify-between gap-2">
           <div class="flex min-w-0 items-center gap-2">
             <PieChart :size="18" class="shrink-0 text-[#2687FF]" aria-hidden="true" />
             <span class="truncate text-[18px] font-semibold text-[#1D2129]">{{
@@ -1177,11 +1086,11 @@ onBeforeUnmount(() => {
           </div>
           <div
             v-else-if="widget.config.chartType === 'donut'"
-            class="grid grid-cols-[minmax(0,1.1fr)_minmax(135px,0.9fr)] items-center gap-3"
+            class="grid min-h-0 flex-1 grid-cols-[minmax(0,1.1fr)_minmax(135px,0.9fr)] items-center gap-3"
           >
             <EChart :option="widgetChartOption(widget)" height="260px" />
             <div
-              class="max-h-[260px] space-y-3 overflow-y-auto pr-2"
+              class="h-full min-h-0 space-y-3 overflow-y-auto pr-2"
               data-testid="home-rose-legend"
             >
               <div
@@ -1221,68 +1130,6 @@ onBeforeUnmount(() => {
         <el-empty description="暂无统计组件" :image-size="65" />
       </section>
     </div>
-
-    <CrmDialog v-model="quickAccessDialogVisible" title="自定义快捷入口" width="620px">
-      <div class="text-sm text-[var(--el-text-color-secondary)] mb-4">
-        至少选择 1 个，最多选择 5 个。
-      </div>
-      <div class="font-medium mb-3">已选功能</div>
-      <div class="mb-6 grid grid-cols-4 gap-3">
-        <button
-          v-for="key in quickAccessDraft"
-          :key="key"
-          type="button"
-          class="relative flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[4px] border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-2.5 text-center text-[var(--el-text-color-primary)]"
-          @click="removeQuickAccess(key)"
-        >
-          <span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true">
-            <component
-              :is="quickAccessCatalog.find((item) => item.key === key)?.icon"
-              :size="28"
-              :stroke-width="2"
-              class="block h-7 w-7 shrink-0"
-            />
-          </span>
-          <span class="block w-full text-center">{{
-            quickAccessCatalog.find((item) => item.key === key)?.label
-          }}</span>
-          <span
-            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--el-color-danger)] text-white"
-            aria-label="移除快捷入口"
-            ><Minus :size="14" :stroke-width="2" aria-hidden="true"
-          /></span>
-        </button>
-      </div>
-      <div class="font-medium mb-3">待添加功能</div>
-      <div class="grid grid-cols-4 gap-3">
-        <button
-          v-for="item in availableQuickAccess"
-          :key="item.key"
-          type="button"
-          class="relative flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[4px] border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-2.5 text-center text-[var(--el-text-color-primary)]"
-          @click="addQuickAccess(item.key)"
-        >
-          <span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true">
-            <component
-              :is="item.icon"
-              :size="28"
-              :stroke-width="2"
-              class="block h-7 w-7 shrink-0"
-            />
-          </span>
-          <span class="block w-full text-center">{{ item.label }}</span>
-          <span
-            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--el-color-success)] text-white"
-            aria-label="添加快捷入口"
-            ><Plus :size="14" :stroke-width="2" aria-hidden="true"
-          /></span>
-        </button>
-      </div>
-      <template #footer>
-        <el-button @click="quickAccessDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveQuickAccess">保存</el-button>
-      </template>
-    </CrmDialog>
 
     <CrmDialog v-model="passwordDialogVisible" title="修改密码" width="352px">
       <PasswordFormFields

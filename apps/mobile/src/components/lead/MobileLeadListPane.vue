@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import {
-  DEFAULT_LEAD_STAGES,
   type FieldVO,
   type FilterCondition,
-  type LeadStageConfig,
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
   type LeadVO,
 } from '@micromatrix/shared'
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
 import leadEmptyImage from '@/assets/lead-empty.png'
@@ -31,7 +29,6 @@ const quickGroups = ref<QuickSearchQueryGroup[]>([])
 const filters = ref<FilterCondition[]>([])
 const items = ref<LeadVO[]>([])
 const fields = ref<FieldVO[]>([])
-const leadStages = ref<LeadStageConfig[]>([])
 const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
@@ -46,11 +43,6 @@ let loadingGeneration = -1
 
 const canFollow = (lead: LeadVO) =>
   auth.hasPerm('lead:update') && lead.transitionType !== 'CUSTOMER'
-const stageNames = computed(() =>
-  Object.fromEntries(
-    [...DEFAULT_LEAD_STAGES, ...leadStages.value].map((stage) => [stage.key, stage.name]),
-  ),
-)
 
 async function loadMore() {
   if (!viewsReady.value || finished.value || loadingGeneration === generation) return
@@ -124,7 +116,6 @@ async function init() {
   try {
     const [{ data: config }] = await Promise.all([metadataApi.formConfig('lead'), fieldRefs.load()])
     fields.value = config.fields
-    leadStages.value = config.formProp.leadStages ?? []
     quickSearch.value = config.formProp.quickSearch ?? null
   } catch (error) {
     showFailToast(extractErrorMessage(error))
@@ -147,7 +138,6 @@ onActivated(() => {
       v-model:quick-groups="quickGroups"
       :fields="fields"
       :config="quickSearch"
-      :stages="leadStages"
       @search="reload"
     />
     <div v-show="viewPickerShow" class="shrink-0 bg-white">
@@ -169,7 +159,6 @@ onActivated(() => {
             :fields="fields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
-            :stage-names="stageNames"
             :can-follow="canFollow(item)"
             @open="openDetail(item)"
             @call="callLead(item)"

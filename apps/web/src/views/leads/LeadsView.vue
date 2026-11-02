@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
 import {
-  DEFAULT_LEAD_STAGES,
   type HomeFilterPayload,
   isCustomFieldKey,
   type FieldVO,
@@ -9,7 +8,6 @@ import {
   type FilterCondition,
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
-  type LeadStageConfig,
   type LeadVO,
 } from '@micromatrix/shared'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -52,11 +50,10 @@ const formProp = ref<ModuleFormProp>({})
 const formDialogWidth = computed(
   () => ({ small: '640px', medium: '840px', large: '1080px' })[formProp.value.viewSize ?? 'small'],
 )
-const leadStages = ref<LeadStageConfig[]>([])
 const loading = ref(false)
 const items = ref<LeadVO[]>([])
 const total = ref(0)
-const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' })
+const query = reactive({ page: 1, pageSize: 10, keyword: '' })
 const filters = ref<FilterCondition[]>([])
 const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
 const quickFilters = ref<FilterCondition[]>([])
@@ -69,7 +66,6 @@ const activeHomeFilter = ref<HomeFilterPayload | null>(null)
 const activeSavedViewId = ref('')
 const visibleColumnKeys = ref<string[]>([])
 const selectedRows = ref<LeadVO[]>([])
-const batchInvalidLoading = ref(false)
 const leadListTableRef = ref<InstanceType<typeof LeadListTable>>()
 const batchEditVisible = ref(false)
 const batchTransferVisible = ref(false)
@@ -126,14 +122,13 @@ const contextFields = computed(() => {
   )
 })
 type LeadSystemColumn = {
-  key: 'status' | 'lastFollowedAt'
+  key: 'lastFollowedAt'
   label: string
   listWidth: number
   systemColumn: true
 }
 
 const leadSystemColumns: LeadSystemColumn[] = [
-  { key: 'status', label: '状态', listWidth: 150, systemColumn: true },
   { key: 'lastFollowedAt', label: '最近跟进', listWidth: 110, systemColumn: true },
 ]
 
@@ -162,73 +157,8 @@ async function loadFields() {
   fields.value = data.fields
   formProp.value = data.formProp
   quickSearch.value = data.formProp.quickSearch ?? null
-  if (quickSearch.value?.enabled) query.status = ''
   if (!showSavedViews.value) activeSavedViewId.value = ''
   if (quickSearch.value && !quickSearch.value.showAdvancedFilter) filters.value = []
-  leadStages.value = (
-    data.formProp.leadStages?.length ? data.formProp.leadStages : DEFAULT_LEAD_STAGES
-  ).map((stage) => ({ ...stage, enabled: stage.enabled !== false }))
-}
-
-async function handleStageChange(row: LeadVO, stageKey: string) {
-  if (!stageKey || row.status === stageKey) return
-  try {
-    const { data } = await leadApi.updateStage(row.id, stageKey)
-    row.status = data.stage
-    ElMessage.success('线索状态已更新')
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  }
-}
-
-async function handleBatchInvalid() {
-  if (batchInvalidLoading.value || isPoolMode.value || !auth.hasPerm('lead:update')) return
-  const selected = [...selectedRows.value]
-  if (!selected.length) return
-
-  // 与服务端 markInvalid 保持一致：状态由租户启用的失败类阶段决定。
-  const invalidStage = leadStages.value.find(
-    (stage) => stage.enabled !== false && stage.kind === 'FAILURE',
-  )
-  if (!invalidStage) {
-    ElMessage.warning('尚未配置启用的失败类线索状态，请先在线索状态设置中配置')
-    return
-  }
-
-  const needUpdate = selected.filter((row) => row.status !== invalidStage.key)
-  if (!needUpdate.length) {
-    ElMessage.info(`已选 ${selected.length} 条线索均处于「${invalidStage.name}」状态`)
-    return
-  }
-
-  const confirmed = await ElMessageBox.confirm(
-    `确定将选中的 ${needUpdate.length} 条线索状态修改为「${invalidStage.name}」？`,
-    '批量无效',
-    { type: 'warning', confirmButtonText: '确认修改', cancelButtonText: '取消' },
-  ).catch(() => false)
-  if (!confirmed) return
-
-  batchInvalidLoading.value = true
-  try {
-    let success = 0
-    let failed = 0
-    // 复用单条更新状态的权限、事件审计及历史记录处理，限制并发避免请求突增。
-    for (let index = 0; index < needUpdate.length; index += 5) {
-      const batch = needUpdate.slice(index, index + 5)
-      const results = await Promise.allSettled(
-        batch.map((row) => leadApi.updateStage(row.id, invalidStage.key)),
-      )
-      for (const result of results) {
-        if (result.status === 'fulfilled') success += 1
-        else failed += 1
-      }
-    }
-    if (failed) ElMessage.warning(`批量无效：成功 ${success} 条，失败 ${failed} 条`)
-    else ElMessage.success(`已将 ${success} 条线索状态修改为「${invalidStage.name}」`)
-    if (success) await loadData()
-  } finally {
-    batchInvalidLoading.value = false
-  }
 }
 
 async function loadPoolOptions() {
@@ -250,7 +180,6 @@ function currentListParams(): LeadListParams {
     keyword: query.keyword.trim() || undefined,
     scope: isPoolMode.value ? 'pool' : 'mine',
     poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
-    status: query.status || undefined,
     filters: [...filters.value, ...quickFilters.value].length
       ? JSON.stringify([...filters.value, ...quickFilters.value])
       : undefined,
@@ -541,7 +470,6 @@ function transferParams(): LeadListParams {
     keyword: query.keyword.trim() || undefined,
     scope: isPoolMode.value ? 'pool' : 'mine',
     poolId: isPoolMode.value ? selectedPoolId.value || undefined : undefined,
-    status: query.status || undefined,
     filters: [...filters.value, ...quickFilters.value].length
       ? JSON.stringify([...filters.value, ...quickFilters.value])
       : undefined,
@@ -805,7 +733,6 @@ onMounted(async () => {
         <ModuleQuickSearch
           :config="quickSearch"
           :fields="contextFields"
-          :lead-stages="leadStages"
           @search="handleQuickSearch"
           @reset="resetQuickSearch"
         />
@@ -834,7 +761,6 @@ onMounted(async () => {
       <LeadListToolbar
         v-model:selected-pool-id="selectedPoolId"
         v-model:keyword-value="query.keyword"
-        v-model:status-value="query.status"
         v-model:filters-value="filters"
         :is-pool-mode="isPoolMode"
         :can-import="canImport"
@@ -847,21 +773,18 @@ onMounted(async () => {
         :show-advanced="showAdvanced"
         :show-quick-search-panel="showQuickSearchPanel"
         :show-saved-views="showSavedViews"
-        :lead-stages="leadStages"
         :context-fields="contextFields"
         :members="fieldRefs.members.value"
         :dept-tree="fieldRefs.deptTree.value"
         :saved-view-module="savedViewModule"
         :default-column-keys="defaultColumnKeys"
         :selected-rows="selectedRows"
-        :batch-invalid-loading="batchInvalidLoading"
         @open-import="importVisible = true"
         @open-create="openCreate"
         @open-batch-transfer="openBatchTransfer"
         @open-batch-to-pool="handleBatchToPool"
         @open-batch-pool-assign="openBatchPoolAssign"
         @open-export="openExport"
-        @batch-invalid="handleBatchInvalid"
         @batch-delete="handleBatchDelete"
         @search="handleSearch"
         @pool-change="handlePoolChange"
@@ -883,12 +806,10 @@ onMounted(async () => {
         :can-export="canExport"
         :can-manual-convert="canManualConvert"
         :list-columns="listColumns"
-        :lead-stages="leadStages"
         :member-map="fieldRefs.memberMap.value"
         :dept-map="fieldRefs.deptMap.value"
         :total="total"
         @selection-change="handleSelectionChange"
-        @stage-change="handleStageChange"
         @open-overview="openOverview"
         @claim="handleClaim"
         @assign="handleAssign"
@@ -927,7 +848,6 @@ onMounted(async () => {
         :mode="isPoolMode ? 'pool' : 'lead'"
         :lead="overviewTarget"
         :fields="contextFields"
-        :lead-stages="leadStages"
         :can-convert="canManualConvert"
         @edit="handleOverviewEdit"
         @convert="handleOverviewConvert"
@@ -1011,7 +931,6 @@ onMounted(async () => {
         :cache-key="isPoolMode ? `lead-pool:${selectedPoolId}` : 'lead'"
         :fields="contextFields"
         :display-fields="[
-          { key: 'status', label: '状态' },
           { key: 'lastFollowedAt', label: '最近跟进' },
           { key: 'createdAt', label: '创建时间' },
           { key: 'updatedAt', label: '更新时间' },

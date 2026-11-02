@@ -1,6 +1,7 @@
 export type EnterpriseUiTheme = 'default' | 'custom'
 export type EnterpriseUiStyle = 'default' | 'follow' | 'custom'
-export type EnterpriseUiAssetSlot = 'icon' | 'loginLogo' | 'loginImage' | 'platformLogo'
+export type EnterpriseUiAssetSlot =
+  'icon' | 'loginLogo' | 'loginImage' | 'platformLogo' | 'collapsedLogo'
 
 export interface EnterpriseUiAssetVO {
   id: string
@@ -22,6 +23,7 @@ export interface EnterpriseUiSettingVO {
   loginLogo: EnterpriseUiAssetVO | null
   loginImage: EnterpriseUiAssetVO | null
   platformLogo: EnterpriseUiAssetVO | null
+  collapsedLogo: EnterpriseUiAssetVO | null
   updatedAt: string
 }
 
@@ -38,6 +40,7 @@ export interface EnterpriseUiBrandingVO {
   loginLogoConfigured: boolean
   loginImageConfigured: boolean
   platformLogoConfigured: boolean
+  collapsedLogoConfigured: boolean
   updatedAt: string | null
 }
 

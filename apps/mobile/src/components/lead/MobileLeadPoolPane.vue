@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import {
-  DEFAULT_LEAD_STAGES,
   type FieldVO,
   type FilterCondition,
-  type LeadStageConfig,
   type ModuleQuickSearchConfig,
   type QuickSearchQueryGroup,
   type LeadVO,
@@ -31,7 +29,6 @@ const router = useRouter()
 const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
 const quickGroups = ref<QuickSearchQueryGroup[]>([])
 const filters = ref<FilterCondition[]>([])
-const leadStages = ref<LeadStageConfig[]>([])
 const viewPickerShow = ref(false)
 const poolDropdownItem = ref<DropdownItemInstance | null>(null)
 const poolKeyword = ref('')
@@ -52,11 +49,6 @@ const viewsReady = computed(() => poolsReady.value && savedViewsReady.value)
 let generation = 0
 let loadingGeneration = -1
 
-const stageNames = computed(() =>
-  Object.fromEntries(
-    [...DEFAULT_LEAD_STAGES, ...leadStages.value].map((stage) => [stage.key, stage.name]),
-  ),
-)
 const memberColumns = computed(() =>
   fieldRefs.members.value.map((member) => ({ text: member.name, value: member.id })),
 )
@@ -81,7 +73,6 @@ async function init() {
     ])
     pools.value = poolData
     fields.value = config.fields
-    leadStages.value = config.formProp.leadStages ?? []
     quickSearch.value = config.formProp.quickSearch ?? null
     if (!poolData.some((pool) => pool.id === selectedPoolId.value))
       selectedPoolId.value = poolData[0]?.id ?? ''
@@ -225,7 +216,6 @@ onActivated(() => {
       v-model:keyword="poolKeyword"
       :fields="fields"
       :config="quickSearch"
-      :stages="leadStages"
       @search="reload"
     >
       <template #search-prefix>
@@ -279,7 +269,6 @@ onActivated(() => {
             :fields="listFields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
-            :stage-names="stageNames"
             mode="pool"
             :can-assign="auth.hasPerm('leadPool:assign')"
             :can-claim="auth.hasPerm('leadPool:pick')"

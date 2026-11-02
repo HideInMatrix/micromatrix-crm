@@ -12,7 +12,6 @@ import { buildQuickSearchPayload } from '@/utils/quick-search-query'
 const props = defineProps<{
   config: ModuleQuickSearchConfig
   fields: FieldVO[]
-  leadStages?: Array<{ key: string; name: string; enabled?: boolean }>
 }>()
 const emit = defineEmits<{
   search: [payload: { filters: FilterCondition[]; quickGroups: QuickSearchQueryGroup[] }]
@@ -31,9 +30,6 @@ function fieldOf(item: QuickSearchItem) {
   return fieldMap.value.get(item.fieldKey ?? '')
 }
 function choices(item: QuickSearchItem) {
-  if (item.fieldKey === 'status' && props.leadStages?.length) {
-    return props.leadStages.map((stage) => ({ value: stage.key, label: stage.name }))
-  }
   return (
     fieldOf(item)?.options?.map((option) => ({ value: option.value, label: option.label })) ?? []
   )

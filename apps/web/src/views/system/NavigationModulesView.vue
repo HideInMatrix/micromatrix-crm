@@ -25,7 +25,6 @@ import CustomerPoolSettingsDrawer from './components/CustomerPoolSettingsDrawer.
 import HomeAnalyticsSettingsDrawer from './components/HomeAnalyticsSettingsDrawer.vue'
 import HomeAnalyticsWidgetsDrawer from './components/HomeAnalyticsWidgetsDrawer.vue'
 import LeadDedupSettingsDrawer from './components/LeadDedupSettingsDrawer.vue'
-import LeadStageSettingsDrawer from './components/LeadStageSettingsDrawer.vue'
 import FollowUpMethodSettingsDrawer from './components/FollowUpMethodSettingsDrawer.vue'
 import ModuleFormSettingsDrawer from './components/ModuleFormSettingsDrawer.vue'
 import ModuleSearchSettingsDrawer from './components/ModuleSearchSettingsDrawer.vue'
@@ -43,7 +42,6 @@ interface ModuleAction {
     | 'customer-capacity'
     | 'customer-reason'
     | 'lead-dedup'
-    | 'lead-stage'
     | 'lead-home-analytics'
     | 'customer-home-analytics'
     | 'customer-home-widgets'
@@ -66,7 +64,6 @@ const moduleActions: Partial<Record<NavigationModuleKey, ModuleActionGroup>> = {
     more: [
       { label: '线索库容设置', drawer: 'lead-capacity' },
       { label: '移入线索池原因设置', drawer: 'lead-reason' },
-      { label: '线索状态设置', drawer: 'lead-stage' },
       { label: '首页统计组件设置', drawer: 'lead-home-analytics' },
     ],
   },
@@ -105,7 +102,6 @@ const customerPoolVisible = ref(false)
 const customerCapacityVisible = ref(false)
 const customerReasonVisible = ref(false)
 const leadDedupVisible = ref(false)
-const leadStageVisible = ref(false)
 const leadHomeAnalyticsVisible = ref(false)
 const customerHomeAnalyticsVisible = ref(false)
 const customerHomeWidgetsVisible = ref(false)
@@ -247,7 +243,6 @@ function openAction(action: ModuleAction) {
   if (action.drawer === 'customer-capacity') customerCapacityVisible.value = true
   if (action.drawer === 'customer-reason') customerReasonVisible.value = true
   if (action.drawer === 'lead-dedup') leadDedupVisible.value = true
-  if (action.drawer === 'lead-stage') leadStageVisible.value = true
   if (action.drawer === 'lead-home-analytics') leadHomeAnalyticsVisible.value = true
   if (action.drawer === 'customer-home-analytics') customerHomeAnalyticsVisible.value = true
   if (action.drawer === 'customer-home-widgets') customerHomeWidgetsVisible.value = true
@@ -420,7 +415,6 @@ onMounted(async () => {
     <CustomerPoolReasonSettingsDrawer v-model="customerReasonVisible" />
     <FollowUpMethodSettingsDrawer v-model="followUpMethodVisible" />
     <LeadDedupSettingsDrawer v-model="leadDedupVisible" />
-    <LeadStageSettingsDrawer v-model="leadStageVisible" />
     <HomeAnalyticsWidgetsDrawer v-model="leadHomeAnalyticsVisible" module="lead" />
     <HomeAnalyticsWidgetsDrawer v-model="customerHomeWidgetsVisible" module="customer" />
     <HomeAnalyticsSettingsDrawer v-model="customerHomeAnalyticsVisible" section="customer" />

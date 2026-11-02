@@ -76,19 +76,6 @@ export class ClueUpdateDto extends PartialType(ClueAddDto) {
   agentInvoke?: boolean
 }
 
-export class ClueStatusUpdateDto {
-  @ApiProperty({ description: '线索 ID' })
-  @IsString()
-  @IsNotEmpty()
-  id!: string
-
-  @ApiProperty({ description: '线索状态 key；必须存在于当前租户 Lead 状态配置中' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(30)
-  stage!: string
-}
-
 export class ClueSortDto {
   @ApiProperty({ description: '字段 ID 或字段 key' })
   @IsString()

@@ -86,8 +86,6 @@ namespace public {
     id             String     @id(map: "clue_pkey")
     name           String
     owner          String?
-    lastStage      String?    @map("last_stage")
-    stage          String
     collectionTime BigInt?         @map("collection_time")
     contact        String?
     phone          String?
@@ -117,8 +115,6 @@ namespace public {
     @@check(expression: "char_length(\"id\") <= 32", name: "text_len_5d8d38cd59")
     @@check(expression: "char_length(\"name\") <= 255", name: "text_len_360efc5562")
     @@check(expression: "char_length(\"owner\") <= 32", name: "text_len_f989239e7d")
-    @@check(expression: "char_length(\"last_stage\") <= 30", name: "text_len_28f6d7aae3")
-    @@check(expression: "char_length(\"stage\") <= 30", name: "text_len_8cb7c75bb9")
     @@check(expression: "char_length(\"contact\") <= 255", name: "text_len_f3ddda20be")
     @@check(expression: "char_length(\"phone\") <= 255", name: "text_len_29cbcd1af7")
     @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_9ba2743780")
@@ -130,32 +126,6 @@ namespace public {
     @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_8fa85e5ccf")
     @@check(expression: "char_length(\"reason_id\") <= 32", name: "text_len_131df97257")
     @@map("clue")
-  }
-
-  model LeadStageEvent {
-    id             String  @id(map: "lead_stage_event_pkey")
-    organizationId String  @map("organization_id")
-    leadId         String  @map("lead_id")
-    fromStageKey   String? @map("from_stage_key")
-    toStageKey     String  @map("to_stage_key")
-    occurredAt     BigInt  @map("occurred_at")
-    operatorId     String  @map("operator_id")
-    ownerId        String? @map("owner_id")
-    source         String
-
-    @@index([organizationId, occurredAt], map: "lead_stage_event_organization_id_occurred_at_idx")
-    @@index([organizationId, toStageKey, occurredAt], map: "lead_stage_event_organization_id_to_stage_key_occurred_at_idx")
-    @@index([leadId, occurredAt], map: "lead_stage_event_lead_id_occurred_at_idx")
-    @@index([organizationId, ownerId, occurredAt], map: "lead_stage_event_organization_id_owner_id_occurred_at_idx")
-    @@check(expression: "char_length(\"id\") <= 32", name: "lead_stage_event_id_len")
-    @@check(expression: "char_length(\"organization_id\") <= 32", name: "lead_stage_event_organization_id_len")
-    @@check(expression: "char_length(\"lead_id\") <= 32", name: "lead_stage_event_lead_id_len")
-    @@check(expression: "char_length(\"from_stage_key\") <= 30", name: "lead_stage_event_from_stage_key_len")
-    @@check(expression: "char_length(\"to_stage_key\") <= 30", name: "lead_stage_event_to_stage_key_len")
-    @@check(expression: "char_length(\"operator_id\") <= 32", name: "lead_stage_event_operator_id_len")
-    @@check(expression: "char_length(\"owner_id\") <= 32", name: "lead_stage_event_owner_id_len")
-    @@check(expression: "char_length(\"source\") <= 30", name: "lead_stage_event_source_len")
-    @@map("lead_stage_event")
   }
 
   model ClueCapacity {
@@ -1049,7 +1019,8 @@ namespace public {
     iconAttachmentId         String?
     loginLogoAttachmentId    String?
     loginImageAttachmentId   String?
-    platformLogoAttachmentId String?
+    platformLogoAttachmentId  String?
+    collapsedLogoAttachmentId String?
     createdAt                Timestamptz(3) @default(now())
     updatedAt                Timestamptz(3)
     tenant                   Tenants      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "enterprise_ui_settings_tenantId_fkey")

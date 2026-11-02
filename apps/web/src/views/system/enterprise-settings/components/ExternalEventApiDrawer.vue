@@ -35,12 +35,21 @@ const sampleData = computed(() => {
       data[mapping.externalKey] = 'EXAMPLE_VALUE'
   }
   if (flow?.action === 'create' && flow.nameExternalKey) data[flow.nameExternalKey] = '张三'
-  if (flow?.action === 'stage' && flow.stageExternalKey) data[flow.stageExternalKey] = 'STAGE_KEY'
   const owner = flow ? flow.owner : props.template?.config.owner
   if (owner)
     data[owner.externalKey] = owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
   return data
 })
+function flowActionLabel(action: string) {
+  return (
+    {
+      update: '更新自定义字段',
+      create: '创建记录',
+      convert: '线索转客户',
+    }[action as 'update' | 'create' | 'convert'] ?? '已移除动作，请重新配置'
+  )
+}
+
 const examplePayload = computed(() => ({
   eventType: props.template?.eventType ?? '',
   data: sampleData.value,
@@ -76,9 +85,6 @@ const sortedFields = computed(() => [
       .map((x) => x.externalKey),
     ...(props.template?.config.flow?.nameExternalKey
       ? [props.template.config.flow.nameExternalKey]
-      : []),
-    ...(props.template?.config.flow?.stageExternalKey
-      ? [props.template.config.flow.stageExternalKey]
       : []),
     ...(props.template?.config.flow?.owner
       ? [props.template.config.flow.owner.externalKey]
@@ -173,14 +179,7 @@ async function simulate() {
               <template v-if="template.config.flow">
                 <p class="text-sm">
                   目标模块：{{ template.config.flow.target === 'lead' ? '线索' : '客户' }}；
-                  业务动作：{{
-                    {
-                      update: '更新自定义字段',
-                      create: '创建记录',
-                      convert: '线索转客户',
-                      stage: '更新线索状态',
-                    }[template.config.flow.action]
-                  }}。
+                  业务动作：{{ flowActionLabel(template.config.flow.action) }}。
                 </p>
                 <p class="text-sm">
                   {{

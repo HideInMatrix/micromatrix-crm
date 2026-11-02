@@ -37,13 +37,14 @@ const previewUrls = reactive<Record<EnterpriseUiAssetSlot, string>>({
   loginLogo: '',
   loginImage: '',
   platformLogo: '',
+  collapsedLogo: '',
 })
 
 const assetCards: Array<{
   slot: EnterpriseUiAssetSlot
   title: string
   tip: string
-  property: 'icon' | 'loginLogo' | 'loginImage' | 'platformLogo'
+  property: 'icon' | 'loginLogo' | 'loginImage' | 'platformLogo' | 'collapsedLogo'
 }> = [
   { slot: 'icon', title: '浏览器图标', tip: '建议使用正方形 PNG / SVG / WEBP', property: 'icon' },
   { slot: 'loginLogo', title: '登录页 Logo', tip: '用于登录页品牌区域', property: 'loginLogo' },
@@ -53,6 +54,12 @@ const assetCards: Array<{
     title: '平台 Logo',
     tip: '用于登录后的平台头部',
     property: 'platformLogo',
+  },
+  {
+    slot: 'collapsedLogo',
+    title: '折叠菜单 Logo',
+    tip: '用于左侧菜单收起后的图标区域，建议使用正方形透明底图；未配置时沿用平台 Logo',
+    property: 'collapsedLogo',
   },
 ]
 
@@ -226,7 +233,7 @@ onBeforeUnmount(revokePreviews)
 
     <el-card shadow="never" class="rounded-1.5">
       <template #header><strong>品牌图片资源</strong></template>
-      <div class="grid grid-cols-4 gap-4 max-[1100px]:grid-cols-2 max-[700px]:grid-cols-1">
+      <div class="grid grid-cols-5 gap-4 max-[1100px]:grid-cols-2 max-[700px]:grid-cols-1">
         <div
           v-for="asset in assetCards"
           :key="asset.slot"

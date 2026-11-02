@@ -3,7 +3,6 @@ import type {
   FieldConfig,
   FieldType,
   HomeAnalyticsConfig,
-  LeadStageConfig,
   ModuleFormProp,
 } from '@micromatrix/shared'
 import { Type } from 'class-transformer'
@@ -20,7 +19,6 @@ import {
   Max,
   MaxLength,
   Min,
-  Matches,
   ValidateNested,
 } from 'class-validator'
 
@@ -264,30 +262,6 @@ export class HomeAnalyticsConfigDto implements HomeAnalyticsConfig {
   customerResultAmountFieldKey?: string
 }
 
-export class LeadStageConfigDto {
-  @ApiProperty({ description: '系统生成的稳定状态标识' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(30)
-  @Matches(/^[A-Za-z0-9_-]+$/)
-  key!: string
-
-  @ApiProperty({ description: '状态名称' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  name!: string
-
-  @ApiProperty({ enum: ['ACTIVE', 'SUCCESS', 'FAILURE'], description: '状态业务类型' })
-  @IsIn(['ACTIVE', 'SUCCESS', 'FAILURE'])
-  kind!: LeadStageConfig['kind']
-
-  @ApiPropertyOptional({ description: '是否启用' })
-  @IsBoolean()
-  @IsOptional()
-  enabled?: boolean
-}
-
 export class UpdateFormPropDto {
   @ApiPropertyOptional({ enum: [1, 2, 3, 4], description: 'PC 表单列布局' })
   @IsIn([1, 2, 3, 4])
@@ -316,16 +290,6 @@ export class UpdateFormPropDto {
   @IsIn(['RESOURCE_POOL', 'ORGANIZATION'])
   @IsOptional()
   leadUniqueScope?: 'RESOURCE_POOL' | 'ORGANIZATION'
-
-  @ApiPropertyOptional({
-    type: [LeadStageConfigDto],
-    description: 'Lead 可配置业务状态；数组顺序即状态顺序',
-  })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => LeadStageConfigDto)
-  @IsOptional()
-  leadStages?: LeadStageConfig[]
 
   @ApiPropertyOptional({ type: HomeAnalyticsConfigDto, description: '首页业务分析配置' })
   @ValidateNested()

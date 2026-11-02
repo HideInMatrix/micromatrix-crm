@@ -43,7 +43,7 @@ async function load() {
 
 function confirm() {
   if (loading.value) return
-  if (enabled.value && !reasonId.value) return ElMessage.warning('请选择移入线索池原因')
+  if (enabled.value && !reasonId.value) return ElMessage.warning('请选择移入原因')
   const poolId = selectedPoolId.value === '__auto__' ? undefined : selectedPoolId.value
   if (poolId && !pools.value.some((item) => item.id === poolId)) {
     return ElMessage.warning('目标线索池不可用，请重新选择')
@@ -82,7 +82,7 @@ watch(visible, (open) => {
             <el-option v-for="pool in pools" :key="pool.id" :label="pool.name" :value="pool.id" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="enabled" label="移入线索池原因" required>
+        <el-form-item v-if="enabled" label="移入原因" required>
           <el-select v-model="reasonId" class="w-full" placeholder="请选择原因">
             <el-option v-for="item in reasons" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>

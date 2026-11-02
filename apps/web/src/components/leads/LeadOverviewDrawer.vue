@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FieldVO, LeadStageConfig, LeadVO } from '@micromatrix/shared'
+import type { FieldVO, LeadVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { extractErrorMessage } from '@/api/http'
@@ -17,7 +17,6 @@ const props = defineProps<{
   mode: 'lead' | 'pool'
   lead: LeadVO | null
   fields: FieldVO[]
-  leadStages?: LeadStageConfig[]
   canConvert?: boolean
 }>()
 const visible = defineModel<boolean>({ required: true })
@@ -50,11 +49,6 @@ const descriptionFields = computed(() => props.fields.filter((field) => !field.h
 const isAdmissionsConfig = computed(() =>
   props.fields.some((field) => /(学员|学生|家长|招生)/.test(field.label)),
 )
-const currentStage = computed(() =>
-  props.leadStages?.find((stage) => stage.key === lead.value?.status),
-)
-const stageLabel = computed(() => currentStage.value?.name ?? lead.value?.status)
-const isFailureStage = computed(() => currentStage.value?.kind === 'FAILURE')
 
 function displayValue(field: FieldVO) {
   if (!lead.value) return '-'
@@ -166,16 +160,6 @@ watch(
                 <strong class="truncate text-[20px] leading-none font-medium text-[#000000]">{{
                   lead.name
                 }}</strong>
-                <span
-                  v-if="stageLabel"
-                  class="shrink-0 rounded-[4px] px-2 py-[3px] text-[12px] leading-none"
-                  :class="
-                    isFailureStage
-                      ? 'bg-[#FEEDEC] text-[#F04438]'
-                      : 'bg-[var(--el-color-primary-light-9)] text-[var(--el-color-primary)]'
-                  "
-                  >{{ stageLabel }}</span
-                >
               </div>
               <div v-if="lead.phone" class="text-[14px] leading-none text-[#999999]">
                 {{ lead.phone }}

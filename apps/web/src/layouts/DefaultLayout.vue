@@ -42,6 +42,11 @@ const userRoleLabel = computed(
   () => auth.user?.roles.map((role) => role.name).join('、') || '未分配角色',
 )
 const brandInitial = computed(() => enterpriseUi.branding.title.trim().slice(0, 1) || 'M')
+const sidebarLogoUrl = computed(() =>
+  sidebarCollapsed.value
+    ? enterpriseUi.collapsedLogoUrl || enterpriseUi.platformLogoUrl
+    : enterpriseUi.platformLogoUrl,
+)
 const activeMenu = computed(() => route.meta.activeMenu ?? route.path)
 const isEnterpriseSettings = computed(() => route.path === '/system/settings')
 const personalVisible = ref(false)
@@ -117,8 +122,8 @@ function handlePersonalCommand(command: string) {
         :style="{ width: sidebarWidth }"
       >
         <img
-          v-if="enterpriseUi.platformLogoUrl"
-          :src="enterpriseUi.platformLogoUrl"
+          v-if="sidebarLogoUrl"
+          :src="sidebarLogoUrl"
           :alt="enterpriseUi.branding.title"
           class="shrink-0 object-contain"
           :class="sidebarCollapsed ? 'h-7 max-w-7' : 'h-[40px] w-[184px] max-w-none'"

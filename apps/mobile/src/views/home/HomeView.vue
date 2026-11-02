@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import {
-  DEFAULT_LEAD_STAGES,
   type FieldVO,
   type HomeAnalyticsVO,
   type HomeLeadStatistic,
-  type LeadStageConfig,
   type LeadVO,
   type NotificationVO,
 } from '@micromatrix/shared'
@@ -38,7 +36,6 @@ const unreadCount = ref<number | null>(null)
 const notifications = ref<NotificationVO[]>([])
 const leads = ref<LeadVO[]>([])
 const leadFields = ref<FieldVO[]>([])
-const leadStages = ref<LeadStageConfig[]>([])
 const followTarget = ref<LeadVO | null>(null)
 const followVisible = ref(false)
 let requestId = 0
@@ -55,11 +52,6 @@ const greeting = computed(() => {
 })
 
 // 首页与线索大厅使用同一张卡片、字段展示及操作区域。
-const leadStageNames = computed(() =>
-  Object.fromEntries(
-    [...DEFAULT_LEAD_STAGES, ...leadStages.value].map((stage) => [stage.key, stage.name]),
-  ),
-)
 
 function messageTime(date: string): string {
   const value = new Date(date)
@@ -119,7 +111,6 @@ async function loadMyLeads() {
   ])
   leads.value = list.data.items.slice(0, 3)
   leadFields.value = metadata.data.fields
-  leadStages.value = metadata.data.formProp.leadStages ?? []
 }
 
 async function refresh() {
@@ -382,7 +373,6 @@ onActivated(() => void refresh())
               :fields="leadFields"
               :member-map="fieldRefs.memberMap.value"
               :dept-map="fieldRefs.deptMap.value"
-              :stage-names="leadStageNames"
               :can-follow="canFollowLead(lead)"
               @open="openLead(lead)"
               @call="callLead(lead)"

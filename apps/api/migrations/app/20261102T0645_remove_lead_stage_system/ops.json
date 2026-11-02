@@ -1,0 +1,207 @@
+[
+  {
+    "id": "dropCheckConstraint.clue.text_len_28f6d7aae3_ced8e2eb",
+    "label": "Drop check constraint \"text_len_28f6d7aae3_ced8e2eb\" on \"clue\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "text_len_28f6d7aae3_ced8e2eb",
+        "table": "clue"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"text_len_28f6d7aae3_ced8e2eb\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "text_len_28f6d7aae3_ced8e2eb",
+          "public",
+          "\"public\".\"clue\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop check constraint \"text_len_28f6d7aae3_ced8e2eb\"",
+        "sql": "ALTER TABLE \"public\".\"clue\" DROP CONSTRAINT \"text_len_28f6d7aae3_ced8e2eb\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"text_len_28f6d7aae3_ced8e2eb\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "text_len_28f6d7aae3_ced8e2eb",
+          "public",
+          "\"public\".\"clue\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropCheckConstraint.clue.text_len_8cb7c75bb9_8e04cd04",
+    "label": "Drop check constraint \"text_len_8cb7c75bb9_8e04cd04\" on \"clue\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "text_len_8cb7c75bb9_8e04cd04",
+        "table": "clue"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"text_len_8cb7c75bb9_8e04cd04\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "text_len_8cb7c75bb9_8e04cd04",
+          "public",
+          "\"public\".\"clue\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop check constraint \"text_len_8cb7c75bb9_8e04cd04\"",
+        "sql": "ALTER TABLE \"public\".\"clue\" DROP CONSTRAINT \"text_len_8cb7c75bb9_8e04cd04\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"text_len_8cb7c75bb9_8e04cd04\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "text_len_8cb7c75bb9_8e04cd04",
+          "public",
+          "\"public\".\"clue\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.clue.last_stage",
+    "label": "Drop column \"last_stage\" from \"clue\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "last_stage",
+        "table": "clue"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"last_stage\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "clue",
+          "last_stage"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"last_stage\"",
+        "sql": "ALTER TABLE \"public\".\"clue\" DROP COLUMN \"last_stage\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"last_stage\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "clue",
+          "last_stage"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropColumn.clue.stage",
+    "label": "Drop column \"stage\" from \"clue\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "stage",
+        "table": "clue"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"stage\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "clue",
+          "stage"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop column \"stage\"",
+        "sql": "ALTER TABLE \"public\".\"clue\" DROP COLUMN \"stage\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"stage\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "clue",
+          "stage"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropTable.lead_stage_event",
+    "label": "Drop table \"lead_stage_event\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "lead_stage_event"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"lead_stage_event\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"lead_stage_event\"",
+        "sql": "DROP TABLE \"public\".\"lead_stage_event\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"lead_stage_event\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"lead_stage_event\""
+        ]
+      }
+    ]
+  }
+]

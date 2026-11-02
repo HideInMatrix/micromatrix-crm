@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'64049bfca7242c507d98c1aee2ef571b04780557fe299dff6b72299f54f0b105'>;
+  StorageHashBase<'53f2de2363c0f079fbeffa0cec23330fe675854e5682a47eb88207af861418e1'>;
 export type ExecutionHash =
   ExecutionHashBase<'4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a'>;
 export type ProfileHash =
@@ -276,8 +276,6 @@ export type FieldOutputTypes = {
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly name: CodecTypes['pg/text@1']['output'];
       readonly owner: CodecTypes['pg/text@1']['output'] | null;
-      readonly lastStage: CodecTypes['pg/text@1']['output'] | null;
-      readonly stage: CodecTypes['pg/text@1']['output'];
       readonly collectionTime: CodecTypes['pg/int8@1']['output'] | null;
       readonly contact: CodecTypes['pg/text@1']['output'] | null;
       readonly phone: CodecTypes['pg/text@1']['output'] | null;
@@ -731,6 +729,7 @@ export type FieldOutputTypes = {
       readonly loginLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
       readonly loginImageAttachmentId: CodecTypes['pg/text@1']['output'] | null;
       readonly platformLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
+      readonly collapsedLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
@@ -933,17 +932,6 @@ export type FieldOutputTypes = {
       readonly commentCount: CodecTypes['pg/int4@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
-    };
-    readonly LeadStageEvent: {
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly organizationId: CodecTypes['pg/text@1']['output'];
-      readonly leadId: CodecTypes['pg/text@1']['output'];
-      readonly fromStageKey: CodecTypes['pg/text@1']['output'] | null;
-      readonly toStageKey: CodecTypes['pg/text@1']['output'];
-      readonly occurredAt: CodecTypes['pg/int8@1']['output'];
-      readonly operatorId: CodecTypes['pg/text@1']['output'];
-      readonly ownerId: CodecTypes['pg/text@1']['output'] | null;
-      readonly source: CodecTypes['pg/text@1']['output'];
     };
     readonly LoginLogs: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -1311,8 +1299,6 @@ export type FieldInputTypes = {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly name: CodecTypes['pg/text@1']['input'];
       readonly owner: CodecTypes['pg/text@1']['input'] | null;
-      readonly lastStage: CodecTypes['pg/text@1']['input'] | null;
-      readonly stage: CodecTypes['pg/text@1']['input'];
       readonly collectionTime: CodecTypes['pg/int8@1']['input'] | null;
       readonly contact: CodecTypes['pg/text@1']['input'] | null;
       readonly phone: CodecTypes['pg/text@1']['input'] | null;
@@ -1766,6 +1752,7 @@ export type FieldInputTypes = {
       readonly loginLogoAttachmentId: CodecTypes['pg/text@1']['input'] | null;
       readonly loginImageAttachmentId: CodecTypes['pg/text@1']['input'] | null;
       readonly platformLogoAttachmentId: CodecTypes['pg/text@1']['input'] | null;
+      readonly collapsedLogoAttachmentId: CodecTypes['pg/text@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
     };
@@ -1968,17 +1955,6 @@ export type FieldInputTypes = {
       readonly commentCount: CodecTypes['pg/int4@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
-    };
-    readonly LeadStageEvent: {
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly organizationId: CodecTypes['pg/text@1']['input'];
-      readonly leadId: CodecTypes['pg/text@1']['input'];
-      readonly fromStageKey: CodecTypes['pg/text@1']['input'] | null;
-      readonly toStageKey: CodecTypes['pg/text@1']['input'];
-      readonly occurredAt: CodecTypes['pg/int8@1']['input'];
-      readonly operatorId: CodecTypes['pg/text@1']['input'];
-      readonly ownerId: CodecTypes['pg/text@1']['input'] | null;
-      readonly source: CodecTypes['pg/text@1']['input'];
     };
     readonly LoginLogs: {
       readonly id: CodecTypes['pg/text@1']['input'];
@@ -2351,14 +2327,12 @@ export type StorageColumnTypes = {
       readonly follower: CodecTypes['pg/text@1']['output'] | null;
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly in_shared_pool: CodecTypes['pg/bool@1']['output'];
-      readonly last_stage: CodecTypes['pg/text@1']['output'] | null;
       readonly name: CodecTypes['pg/text@1']['output'];
       readonly organization_id: CodecTypes['pg/text@1']['output'];
       readonly owner: CodecTypes['pg/text@1']['output'] | null;
       readonly phone: CodecTypes['pg/text@1']['output'] | null;
       readonly pool_id: CodecTypes['pg/text@1']['output'] | null;
       readonly reason_id: CodecTypes['pg/text@1']['output'] | null;
-      readonly stage: CodecTypes['pg/text@1']['output'];
       readonly transition_id: CodecTypes['pg/text@1']['output'] | null;
       readonly transition_type: CodecTypes['pg/text@1']['output'] | null;
       readonly update_time: CodecTypes['pg/int8@1']['output'];
@@ -2788,6 +2762,7 @@ export type StorageColumnTypes = {
       readonly useCase: CodecTypes['pg/text@1']['output'];
     };
     readonly enterprise_ui_settings: {
+      readonly collapsedLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly customStyle: CodecTypes['pg/text@1']['output'];
       readonly customTheme: CodecTypes['pg/text@1']['output'];
@@ -3003,17 +2978,6 @@ export type StorageColumnTypes = {
       readonly tenantId: CodecTypes['pg/text@1']['output'];
       readonly type: CodecTypes['pg/text@1']['output'] | null;
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
-    };
-    readonly lead_stage_event: {
-      readonly from_stage_key: CodecTypes['pg/text@1']['output'] | null;
-      readonly id: CodecTypes['pg/text@1']['output'];
-      readonly lead_id: CodecTypes['pg/text@1']['output'];
-      readonly occurred_at: CodecTypes['pg/int8@1']['output'];
-      readonly operator_id: CodecTypes['pg/text@1']['output'];
-      readonly organization_id: CodecTypes['pg/text@1']['output'];
-      readonly owner_id: CodecTypes['pg/text@1']['output'] | null;
-      readonly source: CodecTypes['pg/text@1']['output'];
-      readonly to_stage_key: CodecTypes['pg/text@1']['output'];
     };
     readonly login_logs: {
       readonly authType: CodecTypes['pg/text@1']['output'];
@@ -3386,14 +3350,12 @@ export type StorageColumnInputTypes = {
       readonly follower: CodecTypes['pg/text@1']['input'] | null;
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly in_shared_pool: CodecTypes['pg/bool@1']['input'];
-      readonly last_stage: CodecTypes['pg/text@1']['input'] | null;
       readonly name: CodecTypes['pg/text@1']['input'];
       readonly organization_id: CodecTypes['pg/text@1']['input'];
       readonly owner: CodecTypes['pg/text@1']['input'] | null;
       readonly phone: CodecTypes['pg/text@1']['input'] | null;
       readonly pool_id: CodecTypes['pg/text@1']['input'] | null;
       readonly reason_id: CodecTypes['pg/text@1']['input'] | null;
-      readonly stage: CodecTypes['pg/text@1']['input'];
       readonly transition_id: CodecTypes['pg/text@1']['input'] | null;
       readonly transition_type: CodecTypes['pg/text@1']['input'] | null;
       readonly update_time: CodecTypes['pg/int8@1']['input'];
@@ -3823,6 +3785,7 @@ export type StorageColumnInputTypes = {
       readonly useCase: CodecTypes['pg/text@1']['input'];
     };
     readonly enterprise_ui_settings: {
+      readonly collapsedLogoAttachmentId: CodecTypes['pg/text@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly customStyle: CodecTypes['pg/text@1']['input'];
       readonly customTheme: CodecTypes['pg/text@1']['input'];
@@ -4038,17 +4001,6 @@ export type StorageColumnInputTypes = {
       readonly tenantId: CodecTypes['pg/text@1']['input'];
       readonly type: CodecTypes['pg/text@1']['input'] | null;
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
-    };
-    readonly lead_stage_event: {
-      readonly from_stage_key: CodecTypes['pg/text@1']['input'] | null;
-      readonly id: CodecTypes['pg/text@1']['input'];
-      readonly lead_id: CodecTypes['pg/text@1']['input'];
-      readonly occurred_at: CodecTypes['pg/int8@1']['input'];
-      readonly operator_id: CodecTypes['pg/text@1']['input'];
-      readonly organization_id: CodecTypes['pg/text@1']['input'];
-      readonly owner_id: CodecTypes['pg/text@1']['input'] | null;
-      readonly source: CodecTypes['pg/text@1']['input'];
-      readonly to_stage_key: CodecTypes['pg/text@1']['input'];
     };
     readonly login_logs: {
       readonly authType: CodecTypes['pg/text@1']['input'];
@@ -4434,8 +4386,6 @@ export namespace Models {
     id: CodecTypes['pg/text@1']['output'];
     name: CodecTypes['pg/text@1']['output'];
     owner: CodecTypes['pg/text@1']['output'] | null;
-    lastStage: CodecTypes['pg/text@1']['output'] | null;
-    stage: CodecTypes['pg/text@1']['output'];
     collectionTime: CodecTypes['pg/int8@1']['output'] | null;
     contact: CodecTypes['pg/text@1']['output'] | null;
     phone: CodecTypes['pg/text@1']['output'] | null;
@@ -4456,18 +4406,6 @@ export namespace Models {
     clueOwners: public_ClueOwner[];
     pool: public_CluePool | null;
     readonly [RelationKeys]?: 'clueFieldBlobs' | 'clueFields' | 'clueOwners' | 'pool';
-  };
-  export type public_LeadStageEvent = {
-    id: CodecTypes['pg/text@1']['output'];
-    organizationId: CodecTypes['pg/text@1']['output'];
-    leadId: CodecTypes['pg/text@1']['output'];
-    fromStageKey: CodecTypes['pg/text@1']['output'] | null;
-    toStageKey: CodecTypes['pg/text@1']['output'];
-    occurredAt: CodecTypes['pg/int8@1']['output'];
-    operatorId: CodecTypes['pg/text@1']['output'];
-    ownerId: CodecTypes['pg/text@1']['output'] | null;
-    source: CodecTypes['pg/text@1']['output'];
-    readonly [RelationKeys]?: never;
   };
   export type public_ClueCapacity = {
     id: CodecTypes['pg/text@1']['output'];
@@ -5083,6 +5021,7 @@ export namespace Models {
     loginLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
     loginImageAttachmentId: CodecTypes['pg/text@1']['output'] | null;
     platformLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
+    collapsedLogoAttachmentId: CodecTypes['pg/text@1']['output'] | null;
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     tenant: public_Tenants;
@@ -5731,7 +5670,6 @@ export declare const models: {
     Attachments: Models.public_Attachments;
     CluePool: Models.public_CluePool;
     Clue: Models.public_Clue;
-    LeadStageEvent: Models.public_LeadStageEvent;
     ClueCapacity: Models.public_ClueCapacity;
     ClueField: Models.public_ClueField;
     ClueFieldBlob: Models.public_ClueFieldBlob;
@@ -6034,16 +5972,6 @@ type ContractBase = Omit<
                   readonly nativeType: 'text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
-                };
-                readonly last_stage: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly stage: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
                 };
                 readonly collection_time: {
                   readonly nativeType: 'int8';
@@ -9611,6 +9539,11 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
                 };
+                readonly collapsedLogoAttachmentId: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
                 readonly createdAt: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-temporal@1';
@@ -11324,83 +11257,6 @@ type ContractBase = Omit<
                 {
                   readonly name: 'follow_up_records_tenantId_targetType_targetId_idx';
                   readonly columns: readonly ['tenantId', 'targetType', 'targetId'];
-                  readonly unique: false;
-                },
-              ];
-              foreignKeys: readonly [];
-            };
-            readonly lead_stage_event: {
-              columns: {
-                readonly id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly organization_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly lead_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly from_stage_key: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly to_stage_key: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly occurred_at: {
-                  readonly nativeType: 'int8';
-                  readonly codecId: 'pg/int8@1';
-                  readonly nullable: false;
-                };
-                readonly operator_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly owner_id: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly source: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-              };
-              primaryKey: {
-                readonly columns: readonly ['id'];
-                readonly name: 'lead_stage_event_pkey';
-              };
-              uniques: readonly [];
-              indexes: readonly [
-                {
-                  readonly name: 'lead_stage_event_organization_id_occurred_at_idx';
-                  readonly columns: readonly ['organization_id', 'occurred_at'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'lead_stage_event_organization_id_to_stage_key_occurred_at_idx';
-                  readonly columns: readonly ['organization_id', 'to_stage_key', 'occurred_at'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'lead_stage_event_lead_id_occurred_at_idx';
-                  readonly columns: readonly ['lead_id', 'occurred_at'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'lead_stage_event_organization_id_owner_id_occurred_at_idx';
-                  readonly columns: readonly ['organization_id', 'owner_id', 'occurred_at'];
                   readonly unique: false;
                 },
               ];
@@ -14010,10 +13866,6 @@ type ContractBase = Omit<
     };
     readonly clue_pool: { readonly namespace: 'public' & NamespaceId; readonly model: 'CluePool' };
     readonly clue: { readonly namespace: 'public' & NamespaceId; readonly model: 'Clue' };
-    readonly lead_stage_event: {
-      readonly namespace: 'public' & NamespaceId;
-      readonly model: 'LeadStageEvent';
-    };
     readonly clue_capacity: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'ClueCapacity';
@@ -14517,14 +14369,6 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly lastStage: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly stage: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
               readonly collectionTime: {
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
@@ -14640,8 +14484,6 @@ type ContractBase = Omit<
                 readonly id: { readonly column: 'id' };
                 readonly name: { readonly column: 'name' };
                 readonly owner: { readonly column: 'owner' };
-                readonly lastStage: { readonly column: 'last_stage' };
-                readonly stage: { readonly column: 'stage' };
                 readonly collectionTime: { readonly column: 'collection_time' };
                 readonly contact: { readonly column: 'contact' };
                 readonly phone: { readonly column: 'phone' };
@@ -17772,6 +17614,10 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly collapsedLogoAttachmentId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly createdAt: {
                 readonly nullable: false;
                 readonly type: {
@@ -17820,6 +17666,9 @@ type ContractBase = Omit<
                 readonly loginLogoAttachmentId: { readonly column: 'loginLogoAttachmentId' };
                 readonly loginImageAttachmentId: { readonly column: 'loginImageAttachmentId' };
                 readonly platformLogoAttachmentId: { readonly column: 'platformLogoAttachmentId' };
+                readonly collapsedLogoAttachmentId: {
+                  readonly column: 'collapsedLogoAttachmentId';
+                };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
               };
@@ -19378,62 +19227,6 @@ type ContractBase = Omit<
                 readonly commentCount: { readonly column: 'commentCount' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
-              };
-            };
-          };
-          readonly LeadStageEvent: {
-            readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly organizationId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly leadId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly fromStageKey: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly toStageKey: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly occurredAt: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
-              };
-              readonly operatorId: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly ownerId: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly source: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-            };
-            readonly relations: Record<string, never>;
-            readonly storage: {
-              readonly table: 'lead_stage_event';
-              readonly namespaceId: 'public';
-              readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly organizationId: { readonly column: 'organization_id' };
-                readonly leadId: { readonly column: 'lead_id' };
-                readonly fromStageKey: { readonly column: 'from_stage_key' };
-                readonly toStageKey: { readonly column: 'to_stage_key' };
-                readonly occurredAt: { readonly column: 'occurred_at' };
-                readonly operatorId: { readonly column: 'operator_id' };
-                readonly ownerId: { readonly column: 'owner_id' };
-                readonly source: { readonly column: 'source' };
               };
             };
           };

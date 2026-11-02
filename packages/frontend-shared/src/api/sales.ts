@@ -32,7 +32,6 @@ export interface LeadListParams extends PageQuery {
   quickGroups?: QuickSearchQueryGroup[]
   scope?: 'mine' | 'pool'
   poolId?: string
-  status?: string
   filters?: string
   filterMode?: 'AND' | 'OR'
   viewId?: string
@@ -59,7 +58,6 @@ function parseLeadFilters(raw?: string) {
 
 function cluePageBody(params: LeadListParams) {
   const filters = parseLeadFilters(params.filters)
-  if (params.status) filters.push({ key: 'stage', op: 'eq', value: params.status })
   return {
     current: params.page ?? 1,
     pageSize: params.pageSize ?? 10,
@@ -463,11 +461,6 @@ export const leadApi = {
     http.post<{ success: number; fail: number; failedIds: string[] }>('/pool/lead/batch-delete', {
       poolId,
       ids,
-    }),
-  updateStage: (id: string, stage: string) =>
-    http.post<{ id: string; stage: string; lastStage: string | null }>('/lead/status/update', {
-      id,
-      stage,
     }),
   transform: (data: { clueId: string }) =>
     http.post<{

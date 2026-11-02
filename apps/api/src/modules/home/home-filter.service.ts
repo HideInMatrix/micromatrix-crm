@@ -60,9 +60,6 @@ export class HomeFilterService {
     ) {
       throw new BadRequestException('首页筛选时间字段无效')
     }
-    if (candidate.leadStageKey !== undefined && typeof candidate.leadStageKey !== 'string') {
-      throw new BadRequestException('首页状态筛选无效')
-    }
     if (candidate.converted !== undefined && typeof candidate.converted !== 'boolean') {
       throw new BadRequestException('首页转化筛选无效')
     }
@@ -73,9 +70,7 @@ export class HomeFilterService {
       candidate.filters !== undefined &&
       (!Array.isArray(candidate.filters) ||
         candidate.filters.length > 50 ||
-        candidate.filters.some(
-          (item) => !item || typeof item !== 'object' || Array.isArray(item),
-        ))
+        candidate.filters.some((item) => !item || typeof item !== 'object' || Array.isArray(item)))
     ) {
       throw new BadRequestException('首页附加筛选格式错误')
     }
@@ -99,7 +94,6 @@ export class HomeFilterService {
     const result = {
       ...baseWhere,
       ...(ownerScope !== undefined ? { AND: [...existingAnd, { owner: ownerScope }] } : {}),
-      ...(payload.leadStageKey ? { stage: payload.leadStageKey } : {}),
       ...(payload.converted === true ? { converted: true } : {}),
     }
     if (!payload.overdue) return result
@@ -121,11 +115,7 @@ export class HomeFilterService {
     return this.scopeOnlyWhere(user, payload, 'menu:customer')
   }
 
-  private async scopeOnlyWhere(
-    user: AuthUser,
-    payload: HomeFilterPayload,
-    permission: string,
-  ) {
+  private async scopeOnlyWhere(user: AuthUser, payload: HomeFilterPayload, permission: string) {
     const scope = await this.scopes.resolve(
       user,
       permission,

@@ -123,9 +123,12 @@ onMounted(async () => {
               <span
                 >{{ row.config.flow.target === 'lead' ? '线索' : '客户' }} ·
                 {{
-                  { update: '更新字段', create: '创建记录', convert: '转客户', stage: '更新状态' }[
-                    row.config.flow.action as 'update' | 'create' | 'convert' | 'stage'
-                  ]
+                  (
+                    { update: '更新字段', create: '创建记录', convert: '转客户' } as Record<
+                      string,
+                      string
+                    >
+                  )[row.config.flow.action] ?? '已移除动作'
                 }}</span
               >
               <div class="text-[12px] text-[var(--el-text-color-secondary)]">

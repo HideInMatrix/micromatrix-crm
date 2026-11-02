@@ -150,15 +150,6 @@ export interface FormLinkScenario {
 /** key 为来源 formKey；配置保存在目标表单 formProp.linkProp。 */
 export type FormLinkProp = Record<string, FormLinkScenario[]>
 
-export type LeadStageKind = 'ACTIVE' | 'SUCCESS' | 'FAILURE'
-
-export interface LeadStageConfig {
-  key: string
-  name: string
-  kind: LeadStageKind
-  enabled?: boolean
-}
-
 export type HomeWidgetModule = 'lead' | 'customer'
 export type HomeWidgetChartType = 'donut' | 'bar' | 'list'
 export type HomeWidgetPeriod = '7d' | '30d' | 'all'
@@ -261,8 +252,6 @@ export interface ModuleFormProp {
    * ORGANIZATION：沿用历史行为，在整个组织的 Lead 范围内校验。
    */
   leadUniqueScope?: 'RESOURCE_POOL' | 'ORGANIZATION'
-  /** Lead 当前阶段定义；顺序即流程顺序，第一个启用项作为新建 Lead 默认阶段。 */
-  leadStages?: LeadStageConfig[]
   /**
    * 工作台/首页分析维度配置。
    * Lead formProp 只保存 leadSourceFieldKey；Customer formProp 保存 customerResult*。

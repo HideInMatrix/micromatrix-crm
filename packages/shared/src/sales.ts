@@ -1,29 +1,11 @@
 // ============ 销售核心：线索 / 跟进 / 公海 ============
 
-import type { LeadStageConfig } from './metadata'
-
-export const DEFAULT_LEAD_STAGES = [
-  { key: 'NEW', name: '新建', kind: 'ACTIVE', enabled: true },
-  { key: 'FOLLOWING', name: '跟进中', kind: 'ACTIVE', enabled: true },
-  { key: 'INTERESTED', name: '感兴趣', kind: 'ACTIVE', enabled: true },
-  { key: 'SUCCESS', name: '成功', kind: 'SUCCESS', enabled: true },
-  { key: 'FAIL', name: '失败', kind: 'FAILURE', enabled: true },
-] as const satisfies readonly LeadStageConfig[]
-
-export type LeadStatus = string
-
-/** 旧调用方兼容；新页面应优先读取租户 leadStages 配置。 */
-export const LEAD_STATUS_LABELS: Record<string, string> = Object.fromEntries(
-  DEFAULT_LEAD_STAGES.map((stage) => [stage.key, stage.name]),
-)
-
 export interface LeadVO {
   id: string
   name: string
   contactName: string | null
   phone: string | null
   email: string | null
-  status: LeadStatus
   inPool: boolean
   poolId: string | null
   ownerId: string | null
@@ -214,7 +196,6 @@ export interface OwnerHistoryVO {
   collectedAt: string | null
   endedAt: string
 }
-
 
 // ============ 公海/线索池规则 ============
 

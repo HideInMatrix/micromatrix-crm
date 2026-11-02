@@ -13,7 +13,6 @@ import { computed, reactive, ref } from 'vue'
 const props = defineProps<{
   fields: FieldVO[]
   config: ModuleQuickSearchConfig | null
-  stages?: Array<{ key: string; name: string; enabled?: boolean }>
 }>()
 const emit = defineEmits<{ search: [] }>()
 const keyword = defineModel<string>('keyword', { default: '' })
@@ -52,11 +51,6 @@ function isInputItem(item: QuickSearchItem) {
   return item.kind === 'field' && !isDropdownItem(item) && !isDateItem(item)
 }
 function choices(item: QuickSearchItem) {
-  if (item.fieldKey === 'status' && props.stages?.length) {
-    return props.stages
-      .filter((stage) => stage.enabled !== false)
-      .map((stage) => ({ label: stage.name, value: stage.key }))
-  }
   if (item.kind === 'preset_select') {
     return (item.options ?? []).map((option) => ({ label: option.label, value: option.id }))
   }

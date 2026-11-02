@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import {
-  DEFAULT_LEAD_STAGES,
   hasPermission,
   type FieldVO,
   type HomeAnalyticsChannelItem,
@@ -45,10 +44,15 @@ export class HomeAnalyticsService {
   async overview(user: AuthUser, request: HomeStatisticRequest): Promise<HomeAnalyticsVO> {
     // 时间筛选由首页视图提供，绝不采用模块配置里曾经保存的 period。
     const widgetPeriods = request.widgetPeriods ?? {}
-    if (!widgetPeriods || typeof widgetPeriods !== 'object' || Array.isArray(widgetPeriods) ||
-        Object.keys(widgetPeriods).length > 12 ||
-        Object.entries(widgetPeriods).some(([id, period]) =>
-          !/^[\w-]{1,64}$/.test(id) || !['7d', '30d', 'all'].includes(period))) {
+    if (
+      !widgetPeriods ||
+      typeof widgetPeriods !== 'object' ||
+      Array.isArray(widgetPeriods) ||
+      Object.keys(widgetPeriods).length > 12 ||
+      Object.entries(widgetPeriods).some(
+        ([id, period]) => !/^[\w-]{1,64}$/.test(id) || !['7d', '30d', 'all'].includes(period),
+      )
+    ) {
       throw new BadRequestException('首页统计时间范围无效')
     }
     const [leadConfig, customerConfig, leadScope, customerScope] = await Promise.all([
@@ -68,18 +72,20 @@ export class HomeAnalyticsService {
       this.fieldByKey(leadConfig.fields, leadAnalytics.leadSourceFieldKey) ??
       this.fieldByKey(leadConfig.fields, 'cf_source')
     // widgets 缺失时展示一次兼容性默认组件；明确配置 [] 则不展示。
-    const widgetConfigs: HomeAnalyticsWidgetConfig[] = leadAnalytics.widgets ?? (
-      sourceField && !sourceField.system && !sourceField.hidden
-        ? [{
-            id: 'default-lead-source',
-            title: '渠道来源分析',
-            module: 'lead',
-            fieldKey: sourceField.key,
-            chartType: 'donut',
-            period: '7d',
-          }]
-        : []
-    )
+    const widgetConfigs: HomeAnalyticsWidgetConfig[] =
+      leadAnalytics.widgets ??
+      (sourceField && !sourceField.system && !sourceField.hidden
+        ? [
+            {
+              id: 'default-lead-source',
+              title: '渠道来源分析',
+              module: 'lead',
+              fieldKey: sourceField.key,
+              chartType: 'donut',
+              period: '7d',
+            },
+          ]
+        : [])
     const canReadCustomers = (user.roles ?? []).some((role) =>
       hasPermission(role.permissions, 'menu:customer'),
     )
@@ -89,7 +95,9 @@ export class HomeAnalyticsService {
         widget.module === 'lead' ? leadConfig.fields : customerConfig.fields,
         widget.fieldKey,
       )
-      return Boolean(field && !field.system && !field.hidden && ['text', 'select', 'radio'].includes(field.type))
+      return Boolean(
+        field && !field.system && !field.hidden && ['text', 'select', 'radio'].includes(field.type),
+      )
     })
     const resultField = this.fieldByKey(
       customerConfig.fields,
@@ -104,10 +112,9 @@ export class HomeAnalyticsService {
       customerAnalytics.customerResultAmountFieldKey,
     )
 
-    const [leads, customers, stageEvents] = await Promise.all([
+    const [leads, customers] = await Promise.all([
       this.loadLeads(user, leadScope),
       this.loadCustomers(user, customerScope),
-      this.loadStageEvents(user, leadScope),
     ])
     const [leadValues, customerValues] = await Promise.all([
       sourceField || validWidgets.some((widget) => widget.module === 'lead')
@@ -117,7 +124,10 @@ export class HomeAnalyticsService {
             leads.map((lead) => String(lead.id)),
           )
         : Promise.resolve(new Map<string, Record<string, unknown>>()),
-      resultField || resultTimeField || resultAmountField || validWidgets.some((widget) => widget.module === 'customer')
+      resultField ||
+      resultTimeField ||
+      resultAmountField ||
+      validWidgets.some((widget) => widget.module === 'customer')
         ? this.fieldValues.load(
             user.tenantId,
             'customer',
@@ -158,11 +168,6 @@ export class HomeAnalyticsService {
       user.tenantId,
       leads.flatMap((lead) => (lead.owner ? [String(lead.owner)] : [])),
     )
-    const stages = (leadConfig.formProp.leadStages?.length
-      ? leadConfig.formProp.leadStages
-      : DEFAULT_LEAD_STAGES
-    ).map((stage) => ({ ...stage, enabled: stage.enabled !== false }))
-
     const widgets = validWidgets.map((widget) => {
       const fields = widget.module === 'lead' ? leadConfig.fields : customerConfig.fields
       const field = this.fieldByKey(fields, widget.fieldKey)!
@@ -193,7 +198,6 @@ export class HomeAnalyticsService {
         resultCustomers: resultCustomerIds.size,
         resultAmount: resultAmount === null ? null : Math.round(resultAmount * 100) / 100,
       },
-      funnel: this.funnel(stages, leads, stageEvents),
       trend: this.trend(leads, customers, customerValues, resultCustomerIds, resultTimeField),
       channels: this.channels(leads, leadValues, sourceField, resultCustomerIds),
       performance: this.performance(leads, ownerNameMap, resultCustomerIds),
@@ -220,7 +224,8 @@ export class HomeAnalyticsService {
     let total = 0
     for (const row of rows) {
       const createdAt = Number(row.createTime)
-      if (start !== null && (!Number.isFinite(createdAt) || createdAt < start || createdAt > now)) continue
+      if (start !== null && (!Number.isFinite(createdAt) || createdAt < start || createdAt > now))
+        continue
       const key = this.scalarValue(values.get(String(row.id))?.[field.key]) || '__EMPTY__'
       groups.set(key, (groups.get(key) ?? 0) + 1)
       total++
@@ -230,11 +235,13 @@ export class HomeAnalyticsService {
       period,
       fieldLabel: field.label,
       total,
-      items: [...groups].map(([value, count]) => ({
-        value,
-        label: value === '__EMPTY__' ? '未填写' : this.optionLabel(field, value),
-        count,
-      })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
+      items: [...groups]
+        .map(([value, count]) => ({
+          value,
+          label: value === '__EMPTY__' ? '未填写' : this.optionLabel(field, value),
+          count,
+        }))
+        .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
     }
   }
 
@@ -248,9 +255,7 @@ export class HomeAnalyticsService {
       inSharedPool: false,
     })
     if (!scope.all) query = query.where((row) => row.owner.in(scope.userIds ?? []))
-    return query
-      .select('id', 'owner', 'stage', 'transitionType', 'transitionId', 'createTime')
-      .all()
+    return query.select('id', 'owner', 'transitionType', 'transitionId', 'createTime').all()
   }
 
   private async loadCustomers(
@@ -264,56 +269,6 @@ export class HomeAnalyticsService {
     })
     if (!scope.all) query = query.where((row) => row.owner.in(scope.userIds ?? []))
     return query.select('id', 'owner', 'createTime').all()
-  }
-
-  private async loadStageEvents(
-    user: AuthUser,
-    scope: Awaited<ReturnType<HomeDepartmentScopeService['resolve']>>,
-  ) {
-    if (!scope.all && (scope.userIds?.length ?? 0) === 0) return []
-    let query = this.prisma.client.orm.public.LeadStageEvent.where({
-      organizationId: user.tenantId,
-    })
-    if (!scope.all) query = query.where((row) => row.ownerId.in(scope.userIds ?? []))
-    return query.select('leadId', 'fromStageKey', 'toStageKey').all()
-  }
-
-  private funnel(
-    stages: Array<{
-      key: string
-      name: string
-      kind: 'ACTIVE' | 'SUCCESS' | 'FAILURE'
-      enabled?: boolean
-    }>,
-    leads: Awaited<ReturnType<HomeAnalyticsService['loadLeads']>>,
-    events: Awaited<ReturnType<HomeAnalyticsService['loadStageEvents']>>,
-  ) {
-    const reached = new Map<string, Set<string>>()
-    const eventLeadIds = new Set<string>()
-    const add = (stageKey: string | null, leadId: string) => {
-      if (!stageKey) return
-      const ids = reached.get(stageKey) ?? new Set<string>()
-      ids.add(leadId)
-      reached.set(stageKey, ids)
-    }
-
-    for (const event of events) {
-      const leadId = String(event.leadId)
-      eventLeadIds.add(leadId)
-      add(event.fromStageKey, leadId)
-      add(event.toStageKey, leadId)
-    }
-    for (const lead of leads) {
-      const leadId = String(lead.id)
-      if (!eventLeadIds.has(leadId)) add(lead.stage, leadId)
-    }
-
-    return stages.map((stage) => ({
-      stageKey: stage.key,
-      name: stage.name,
-      kind: stage.kind,
-      count: reached.get(stage.key)?.size ?? 0,
-    }))
   }
 
   private channels(

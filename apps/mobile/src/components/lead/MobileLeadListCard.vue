@@ -16,13 +16,12 @@ const props = withDefaults(
     fields: FieldVO[]
     memberMap: Map<string, string>
     deptMap: Map<string, string>
-    stageNames?: Record<string, string>
     mode?: 'mine' | 'pool'
     canFollow?: boolean
     canAssign?: boolean
     canClaim?: boolean
   }>(),
-  { mode: 'mine', canFollow: false, canAssign: false, canClaim: false, stageNames: () => ({}) },
+  { mode: 'mine', canFollow: false, canAssign: false, canClaim: false },
 )
 
 // 字段由 PC 表单配置决定：列表显示、移动端显示、字段顺序同时生效。
@@ -41,8 +40,6 @@ const visibleFields = computed(() =>
 const showActions = computed(() => props.mode === 'mine' || props.canAssign || props.canClaim)
 
 function displayValue(field: FieldVO) {
-  if (field.key === 'stage' || field.key === 'status')
-    return props.stageNames?.[props.lead.status] ?? props.lead.status
   if (field.key === 'lastFollowedAt') {
     const value = props.lead.lastFollowedAt
     if (!value) return '-'

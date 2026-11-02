@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  Ban,
   Columns3,
   Download,
   FolderInput,
@@ -11,13 +10,7 @@ import {
   UserRoundCog,
   UserRoundPlus,
 } from 'lucide-vue-next'
-import type {
-  DepartmentVO,
-  FieldVO,
-  FilterCondition,
-  LeadStageConfig,
-  LeadVO,
-} from '@micromatrix/shared'
+import type { DepartmentVO, FieldVO, FilterCondition, LeadVO } from '@micromatrix/shared'
 import type { ResourcePoolVO } from '@/api/sales'
 import type { MemberOption } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
@@ -39,21 +32,17 @@ const props = defineProps<{
   showQuickSearchPanel: boolean
   showSavedViews: boolean
   keywordValue: string
-  statusValue: string
   filtersValue: FilterCondition[]
-  leadStages: LeadStageConfig[]
   contextFields: FieldVO[]
   members: MemberOption[]
   deptTree: DepartmentVO[]
   savedViewModule: 'lead' | 'lead_pool'
   defaultColumnKeys: string[]
   selectedRows: LeadVO[]
-  batchInvalidLoading: boolean
 }>()
 const emit = defineEmits<{
   'update:selectedPoolId': [value: string]
   'update:keywordValue': [value: string]
-  'update:statusValue': [value: string]
   'update:filtersValue': [value: FilterCondition[]]
   clearSelection: []
   openImport: []
@@ -62,7 +51,6 @@ const emit = defineEmits<{
   openBatchToPool: []
   openBatchPoolAssign: []
   openExport: [mode: 'all' | 'selected']
-  batchInvalid: []
   batchDelete: []
   search: []
   poolChange: []
@@ -82,10 +70,6 @@ const poolId = computed({
 const keyword = computed({
   get: () => props.keywordValue,
   set: (value: string) => emit('update:keywordValue', value),
-})
-const status = computed({
-  get: () => props.statusValue,
-  set: (value: string) => emit('update:statusValue', value),
 })
 const filters = computed({
   get: () => props.filtersValue,
@@ -124,9 +108,6 @@ function openBatchTransfer() {
 function handleBatchToPool() {
   emit('openBatchToPool')
 }
-function handleBatchInvalid() {
-  emit('batchInvalid')
-}
 function handleBatchPick() {
   emit('batchPick')
 }
@@ -147,21 +128,6 @@ function openBatchPoolAssign() {
       placeholder="搜索名称 / 手机号"
       @search="handleSearch"
     />
-    <el-select
-      v-if="showLegacySearch"
-      v-model="status"
-      clearable
-      placeholder="状态"
-      class="!w-32"
-      @change="handleSearch"
-    >
-      <el-option
-        v-for="stage in leadStages"
-        :key="stage.key"
-        :label="stage.enabled === false ? stage.name + '（已停用）' : stage.name"
-        :value="stage.key"
-      />
-    </el-select>
     <AdvancedFilter
       v-if="showAdvanced && !showQuickSearchPanel"
       v-model="filters"
@@ -177,10 +143,7 @@ function openBatchPoolAssign() {
       ref="savedViewBarRef"
       :module="savedViewModule"
       :fields="contextFields"
-      :extra-column-options="[
-        { key: 'status', label: '状态' },
-        { key: 'lastFollowedAt', label: '最近跟进' },
-      ]"
+      :extra-column-options="[{ key: 'lastFollowedAt', label: '最近跟进' }]"
       :members="members"
       :dept-tree="deptTree"
       :current-filters="filters"
@@ -226,19 +189,6 @@ function openBatchPoolAssign() {
             @click="handleBatchToPool"
           >
             <FolderInput :size="14" :stroke-width="1.8" aria-hidden="true" />批量移入线索池
-          </el-button>
-          <el-button
-            v-if="auth.hasPerm('lead:update')"
-            class="lead-table-toolbar-action lead-table-toolbar-action--danger"
-            :loading="batchInvalidLoading"
-            @click="handleBatchInvalid"
-          >
-            <Ban
-              v-if="!batchInvalidLoading"
-              :size="14"
-              :stroke-width="1.8"
-              aria-hidden="true"
-            />批量无效
           </el-button>
           <el-button
             v-if="auth.hasPerm('lead:delete')"

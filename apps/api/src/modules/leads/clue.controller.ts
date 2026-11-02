@@ -30,7 +30,6 @@ import {
   ClueExportSelectDto,
   CluePageDto,
   ClueRetransitionCustomerDto,
-  ClueStatusUpdateDto,
   ClueToPoolDto,
   ClueTransitionCustomerDto,
   ClueTransitionCustomerPageDto,
@@ -87,14 +86,6 @@ export class ClueController {
   @ApiOperation({ summary: '更新线索' })
   update(@CurrentUser() user: AuthUser, @Body() dto: ClueUpdateDto) {
     return this.service.updateClue(user, dto)
-  }
-
-  @Post('status/update')
-  @RequirePermissions('lead:update')
-  @LogOperation('lead', 'updateStatus')
-  @ApiOperation({ summary: '更新线索状态' })
-  updateStatus(@CurrentUser() user: AuthUser, @Body() dto: ClueStatusUpdateDto) {
-    return this.service.updateStatus(user, dto)
   }
 
   @Get('delete/:id')

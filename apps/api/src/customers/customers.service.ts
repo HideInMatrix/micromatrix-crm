@@ -624,7 +624,7 @@ export class CustomersService {
 
     let leadQuery = this.prisma.client.orm.public.Clue.where({
       organizationId: user.tenantId,
-    }).where((row) => row.stage.neq('FAIL'))
+    })
     if (name && phone) {
       leadQuery = leadQuery.where((row) =>
         or(row.name.ilike('%' + name + '%'), row.phone.eq(phone)),
@@ -648,13 +648,23 @@ export class CustomersService {
       inSharedPool: lead.inSharedPool,
     }))
     const [inScopeCustomers, inScopeLeads, ownerMap, customerValues] = await Promise.all([
-      this.inScopeCustomerIds(user, customers.map((customer) => customer.id)),
-      this.inScopeLeadIds(user, leads.map((lead) => lead.id)),
+      this.inScopeCustomerIds(
+        user,
+        customers.map((customer) => customer.id),
+      ),
+      this.inScopeLeadIds(
+        user,
+        leads.map((lead) => lead.id),
+      ),
       this.userNames([
         ...customers.map((customer) => customer.owner),
         ...leads.map((lead) => lead.owner),
       ]),
-      this.fieldValues.load(user.tenantId, 'customer', customers.map((customer) => customer.id)),
+      this.fieldValues.load(
+        user.tenantId,
+        'customer',
+        customers.map((customer) => customer.id),
+      ),
     ])
 
     const hits: DuplicateHitVO[] = []

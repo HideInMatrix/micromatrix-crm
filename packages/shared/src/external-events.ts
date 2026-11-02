@@ -5,7 +5,7 @@ export type ExternalEventUserProvider = 'CRM' | 'WECOM' | 'DINGTALK' | 'LARK'
  * Omitted flow means the original customer-sync/conversion behavior (v1).
  */
 export type ExternalEventTarget = 'lead' | 'customer'
-export type ExternalEventAction = 'update' | 'convert' | 'create' | 'stage'
+export type ExternalEventAction = 'update' | 'convert' | 'create'
 export interface ExternalEventFlow {
   target: ExternalEventTarget
   action: ExternalEventAction
@@ -19,8 +19,6 @@ export interface ExternalEventFlow {
   nameExternalKey?: string
   /** Optional source identity for new owner (create/convert). */
   owner?: { externalKey: string; provider: ExternalEventUserProvider } | null
-  /** Required by lead stage changes. */
-  stageExternalKey?: string
 }
 
 export interface ExternalEventTemplateConfig {

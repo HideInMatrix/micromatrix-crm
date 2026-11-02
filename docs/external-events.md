@@ -55,20 +55,19 @@
   "flow": {
     "target": "lead",
     "action": "update",
-    "fields": [{"source": "event", "externalKey": "note", "fieldKey": "cf_note"}],
+    "fields": [{ "source": "event", "externalKey": "note", "fieldKey": "cf_note" }],
     "owner": null
   },
-  "matches": [{"externalKey": "phone", "crmFieldKey": "phone"}],
-  "actions": {"convertLead": false, "updateCustomer": false},
+  "matches": [{ "externalKey": "phone", "crmFieldKey": "phone" }],
+  "actions": { "convertLead": false, "updateCustomer": false },
   "fields": [],
   "owner": null
 }
 ```
 
-创建时使用 `nameExternalKey` 指定外部数据中的名称字段；修改线索状态时使用 `stageExternalKey`；创建或转换时的负责人使用 `flow.owner`，支持 CRM 或同步过映射的外部成员身份。转换动作的目标模块是 lead，但动态字段映射到新客户；`leadOwner` 来源仅在转换动作中有效。
+创建时使用 `nameExternalKey` 指定外部数据中的名称字段；创建或转换时的负责人使用 `flow.owner`，支持 CRM 或同步过映射的外部成员身份。线索业务不再提供阶段状态更新动作。转换动作的目标模块是 lead，但动态字段映射到新客户；`leadOwner` 来源仅在转换动作中有效。
 
 所有新动作使用已有 CRM 服务的业务验证；业务写入与 Inbox 的 SUCCESS 状态处于同一数据库事务。当前不开放独立负责人转移、跟进记录及任意多动作串联，防止异步通知与独立业务事务引入半成功/重复执行。
-
 
 ## API Key 调用审计
 

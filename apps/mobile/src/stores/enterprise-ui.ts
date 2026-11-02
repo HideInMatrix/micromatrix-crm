@@ -21,6 +21,7 @@ const DEFAULT_BRANDING: EnterpriseUiBrandingVO = {
   loginLogoConfigured: false,
   loginImageConfigured: false,
   platformLogoConfigured: false,
+  collapsedLogoConfigured: false,
   updatedAt: null,
 }
 
@@ -58,7 +59,8 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
     if (slot === 'icon') return branding.value.iconConfigured
     if (slot === 'loginLogo') return branding.value.loginLogoConfigured
     if (slot === 'loginImage') return branding.value.loginImageConfigured
-    return branding.value.platformLogoConfigured
+    if (slot === 'platformLogo') return branding.value.platformLogoConfigured
+    return branding.value.collapsedLogoConfigured
   }
 
   function assetUrl(slot: EnterpriseUiAssetSlot) {
@@ -113,6 +115,7 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
       loginLogoConfigured: Boolean(value.loginLogo),
       loginImageConfigured: Boolean(value.loginImage),
       platformLogoConfigured: Boolean(value.platformLogo),
+      collapsedLogoConfigured: Boolean(value.collapsedLogo),
       updatedAt: value.updatedAt,
     })
   }
@@ -142,6 +145,7 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
   const loginLogoUrl = computed(() => assetUrl('loginLogo'))
   const loginImageUrl = computed(() => assetUrl('loginImage'))
   const platformLogoUrl = computed(() => assetUrl('platformLogo'))
+  const collapsedLogoUrl = computed(() => assetUrl('collapsedLogo'))
 
   return {
     branding,
@@ -149,6 +153,7 @@ export const useEnterpriseUiStore = defineStore('enterprise-ui', () => {
     loginLogoUrl,
     loginImageUrl,
     platformLogoUrl,
+    collapsedLogoUrl,
     load,
     loadLoginBranding,
     acceptBranding,

@@ -27,7 +27,7 @@ interface PreparedWhere {
 }
 
 const CUSTOMER_SYSTEM_FIELDS = new Set(['id', 'name', 'owner'])
-const LEAD_SYSTEM_FIELDS = new Set(['id', 'name', 'contact', 'phone', 'owner', 'stage'])
+const LEAD_SYSTEM_FIELDS = new Set(['id', 'name', 'contact', 'phone', 'owner'])
 
 /**
  * External Event 专用严格定位器。
@@ -333,8 +333,6 @@ export class ExternalResourceResolverService {
         return query.where({ phone: value })
       case 'owner':
         return query.where({ owner: value })
-      case 'stage':
-        return query.where({ stage: value })
       default:
         throw new BadRequestException({
           code: 'INVALID_QUERY_FIELD',

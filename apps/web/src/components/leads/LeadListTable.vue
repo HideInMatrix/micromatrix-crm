@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import type { FieldVO, LeadStageConfig, LeadVO } from '@micromatrix/shared'
+import type { FieldVO, LeadVO } from '@micromatrix/shared'
 
 type LeadSystemColumn = {
-  key: 'status' | 'lastFollowedAt'
+  key: 'lastFollowedAt'
   label: string
   listWidth: number
   systemColumn: true
@@ -20,7 +20,6 @@ const props = defineProps<{
   canExport: boolean
   canManualConvert: boolean
   listColumns: (FieldVO | LeadSystemColumn)[]
-  leadStages: LeadStageConfig[]
   memberMap: Map<string, string>
   deptMap: Map<string, string>
   total: number
@@ -32,7 +31,6 @@ const emit = defineEmits<{
   'update:page': [value: number]
   'update:pageSize': [value: number]
   selectionChange: [rows: LeadVO[]]
-  stageChange: [row: LeadVO, stageKey: string]
   openOverview: [row: LeadVO]
   claim: [row: LeadVO]
   assign: [row: LeadVO]
@@ -68,21 +66,8 @@ const currentPageSize = computed({
   get: () => props.pageSize,
   set: (value: number) => emit('update:pageSize', value),
 })
-const stageByKey = computed(() => new Map(props.leadStages.map((stage) => [stage.key, stage])))
-function leadStageLabel(stageKey: string) {
-  return stageByKey.value.get(stageKey)?.name ?? stageKey
-}
-function leadStageTagType(stageKey: string): 'primary' | 'success' | 'info' {
-  const kind = stageByKey.value.get(stageKey)?.kind
-  if (kind === 'SUCCESS') return 'success'
-  if (kind === 'FAILURE') return 'info'
-  return 'primary'
-}
 function handleSelectionChange(rows: LeadVO[]) {
   emit('selectionChange', rows)
-}
-function handleStageChange(row: LeadVO, key: string) {
-  emit('stageChange', row, key)
 }
 function openOverview(row: LeadVO) {
   emit('openOverview', row)
@@ -167,26 +152,6 @@ function handleToPool(row: LeadVO) {
               })
             }}
           </el-button>
-          <template v-else-if="column.key === 'status'">
-            <el-select
-              v-if="!isPoolMode && auth.hasPerm('lead:update') && !row.transitionId"
-              :model-value="row.status"
-              size="small"
-              class="w-full"
-              @change="handleStageChange(row as LeadVO, String($event))"
-            >
-              <el-option
-                v-for="stage in leadStages"
-                :key="stage.key"
-                :label="stage.name"
-                :value="stage.key"
-                :disabled="stage.enabled === false"
-              />
-            </el-select>
-            <el-tag v-else :type="leadStageTagType(row.status)" size="small">
-              {{ leadStageLabel(row.status) }}
-            </el-tag>
-          </template>
           <template v-else-if="column.key === 'lastFollowedAt'">
             {{ row.lastFollowedAt ? new Date(row.lastFollowedAt).toLocaleDateString() : '-' }}
           </template>

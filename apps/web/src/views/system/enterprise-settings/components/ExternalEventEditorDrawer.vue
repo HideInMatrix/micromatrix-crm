@@ -100,8 +100,6 @@ function sample() {
   for (const m of flow.value.fields)
     if (m.source === 'event' && m.externalKey) data[m.externalKey] = 'EXAMPLE_VALUE'
   if (creating.value && flow.value.nameExternalKey) data[flow.value.nameExternalKey] = '张三'
-  if (flow.value.action === 'stage' && flow.value.stageExternalKey)
-    data[flow.value.stageExternalKey] = 'STAGE_KEY'
   if (flow.value.owner?.externalKey)
     data[flow.value.owner.externalKey] =
       flow.value.owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
@@ -132,6 +130,13 @@ watch(visible, async (open) => {
     ),
   )
   previewResult.value = null
+  const legacyFlow = form.config.flow as
+    { action: string; fields: ExternalEventFlow['fields'] } | undefined
+  if (legacyFlow?.action === 'stage') {
+    legacyFlow.action = 'update'
+    legacyFlow.fields = []
+    ElMessage.warning('此事件原先使用的线索状态动作已移除，请重新配置业务动作和字段映射')
+  }
   try {
     const [lead, customer, people] = await Promise.all([
       metadataApi.fields('lead'),
@@ -169,11 +174,6 @@ async function save() {
   if (flow.value.action === 'create' && !flow.value.nameExternalKey) {
     step.value = 4
     ElMessage.warning('请指定名称参数')
-    return
-  }
-  if (flow.value.action === 'stage' && !flow.value.stageExternalKey) {
-    step.value = 4
-    ElMessage.warning('请指定状态参数')
     return
   }
   busy.value = true
@@ -343,7 +343,6 @@ async function preview() {
             >
             <el-radio value="create">创建{{ flow.target === 'lead' ? '线索' : '客户' }}</el-radio>
             <el-radio v-if="flow.target === 'lead'" value="convert">转换线索为客户</el-radio>
-            <el-radio v-if="flow.target === 'lead'" value="stage">更新线索状态</el-radio>
           </el-radio-group>
           <el-alert
             type="info"
@@ -357,81 +356,66 @@ async function preview() {
             :closable="false"
             title="仅展示目标动作允许写入的字段；系统负责人使用单独的身份映射。"
           />
-          <el-form
-            v-if="creating || flow.action === 'stage'"
-            label-position="top"
-            class="max-w-[440px]"
-          >
+          <el-form v-if="creating" label-position="top" class="max-w-[440px]">
             <el-form-item v-if="creating" label="创建记录的名称来自哪个外部参数">
               <el-input v-model="flow.nameExternalKey" placeholder="例如 studentName" />
             </el-form-item>
-            <el-form-item v-if="flow.action === 'stage'" label="线索阶段 Key 来自哪个外部参数">
-              <el-input v-model="flow.stageExternalKey" placeholder="例如 stageKey" />
-            </el-form-item>
           </el-form>
-          <template v-if="flow.action !== 'stage'">
-            <div
-              v-for="(m, index) in flow.fields"
-              :key="index"
-              class="flex flex-wrap items-center gap-2 rounded-md border border-[var(--el-border-color-lighter)] p-3"
+          <div
+            v-for="(m, index) in flow.fields"
+            :key="index"
+            class="flex flex-wrap items-center gap-2 rounded-md border border-[var(--el-border-color-lighter)] p-3"
+          >
+            <el-select v-model="m.source" class="!w-[148px]" @change="m.externalKey = ''">
+              <el-option label="外部事件参数" value="event" />
+              <el-option v-if="flow.action === 'convert'" label="原线索负责人" value="leadOwner" />
+            </el-select>
+            <el-input
+              v-if="m.source === 'event'"
+              v-model="m.externalKey"
+              class="!w-[185px]"
+              placeholder="外部参数名"
+            />
+            <span v-else class="w-[185px] text-xs">Clue.owner</span>
+            <span>→</span>
+            <el-select
+              v-model="m.fieldKey"
+              filterable
+              class="!min-w-[190px] flex-1"
+              placeholder="目标自定义字段"
             >
-              <el-select v-model="m.source" class="!w-[148px]" @change="m.externalKey = ''">
-                <el-option label="外部事件参数" value="event" />
-                <el-option
-                  v-if="flow.action === 'convert'"
-                  label="原线索负责人"
-                  value="leadOwner"
-                />
-              </el-select>
-              <el-input
-                v-if="m.source === 'event'"
-                v-model="m.externalKey"
-                class="!w-[185px]"
-                placeholder="外部参数名"
+              <el-option
+                v-for="f in writable.filter((x) => m.source !== 'leadOwner' || x.type === 'member')"
+                :key="f.id"
+                :value="f.key"
+                :label="f.label + '（' + f.key + '）'"
               />
-              <span v-else class="w-[185px] text-xs">Clue.owner</span>
-              <span>→</span>
-              <el-select
-                v-model="m.fieldKey"
-                filterable
-                class="!min-w-[190px] flex-1"
-                placeholder="目标自定义字段"
-              >
-                <el-option
-                  v-for="f in writable.filter(
-                    (x) => m.source !== 'leadOwner' || x.type === 'member',
-                  )"
-                  :key="f.id"
-                  :value="f.key"
-                  :label="f.label + '（' + f.key + '）'"
-                />
-              </el-select>
-              <el-select
-                v-if="
-                  m.source === 'event' &&
-                  writable.find((f) => f.key === m.fieldKey)?.type === 'member'
-                "
-                v-model="m.provider"
-                clearable
-                class="!w-[160px]"
-                placeholder="成员来源"
-              >
-                <el-option label="CRM" value="CRM" /><el-option label="企业微信" value="WECOM" />
-                <el-option label="钉钉" value="DINGTALK" /><el-option label="飞书" value="LARK" />
-              </el-select>
-              <el-button link type="danger" @click="flow.fields.splice(index, 1)"
-                ><Trash2 :size="16"
-              /></el-button>
-            </div>
-            <el-button
-              plain
-              class="self-start"
-              :disabled="flow.fields.length >= 30"
-              @click="addField"
+            </el-select>
+            <el-select
+              v-if="
+                m.source === 'event' &&
+                writable.find((f) => f.key === m.fieldKey)?.type === 'member'
+              "
+              v-model="m.provider"
+              clearable
+              class="!w-[160px]"
+              placeholder="成员来源"
             >
-              <Plus :size="14" class="mr-1" />新增字段映射
-            </el-button>
-          </template>
+              <el-option label="CRM" value="CRM" /><el-option label="企业微信" value="WECOM" />
+              <el-option label="钉钉" value="DINGTALK" /><el-option label="飞书" value="LARK" />
+            </el-select>
+            <el-button link type="danger" @click="flow.fields.splice(index, 1)"
+              ><Trash2 :size="16"
+            /></el-button>
+          </div>
+          <el-button
+            plain
+            class="self-start"
+            :disabled="flow.fields.length >= 30"
+            @click="addField"
+          >
+            <Plus :size="14" class="mr-1" />新增字段映射
+          </el-button>
           <div
             v-if="flow.action === 'convert' || creating"
             class="rounded-md border border-[var(--el-border-color-lighter)] p-3"

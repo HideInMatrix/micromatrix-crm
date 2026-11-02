@@ -244,10 +244,6 @@
       "model": "FollowUpRecords",
       "namespace": "public"
     },
-    "lead_stage_event": {
-      "model": "LeadStageEvent",
-      "namespace": "public"
-    },
     "login_logs": {
       "model": "LoginLogs",
       "namespace": "public"
@@ -720,13 +716,6 @@
                   "kind": "scalar"
                 }
               },
-              "lastStage": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
               "name": {
                 "nullable": false,
                 "type": {
@@ -764,13 +753,6 @@
               },
               "reasonId": {
                 "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "stage": {
-                "nullable": false,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -894,9 +876,6 @@
                 "inSharedPool": {
                   "column": "in_shared_pool"
                 },
-                "lastStage": {
-                  "column": "last_stage"
-                },
                 "name": {
                   "column": "name"
                 },
@@ -914,9 +893,6 @@
                 },
                 "reasonId": {
                   "column": "reason_id"
-                },
-                "stage": {
-                  "column": "stage"
                 },
                 "transitionId": {
                   "column": "transition_id"
@@ -5968,6 +5944,13 @@
           },
           "EnterpriseUiSettings": {
             "fields": {
+              "collapsedLogoAttachmentId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "createdAt": {
                 "nullable": false,
                 "type": {
@@ -6100,6 +6083,9 @@
             },
             "storage": {
               "fields": {
+                "collapsedLogoAttachmentId": {
+                  "column": "collapsedLogoAttachmentId"
+                },
                 "createdAt": {
                   "column": "createdAt"
                 },
@@ -8618,107 +8604,6 @@
               },
               "namespaceId": "public",
               "table": "follow_up_records"
-            }
-          },
-          "LeadStageEvent": {
-            "fields": {
-              "fromStageKey": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "id": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "leadId": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "occurredAt": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/int8@1",
-                  "kind": "scalar"
-                }
-              },
-              "operatorId": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "organizationId": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "ownerId": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "source": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "toStageKey": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              }
-            },
-            "relations": {},
-            "storage": {
-              "fields": {
-                "fromStageKey": {
-                  "column": "from_stage_key"
-                },
-                "id": {
-                  "column": "id"
-                },
-                "leadId": {
-                  "column": "lead_id"
-                },
-                "occurredAt": {
-                  "column": "occurred_at"
-                },
-                "operatorId": {
-                  "column": "operator_id"
-                },
-                "organizationId": {
-                  "column": "organization_id"
-                },
-                "ownerId": {
-                  "column": "owner_id"
-                },
-                "source": {
-                  "column": "source"
-                },
-                "toStageKey": {
-                  "column": "to_stage_key"
-                }
-              },
-              "namespaceId": "public",
-              "table": "lead_stage_event"
             }
           },
           "LoginLogs": {
@@ -13327,11 +13212,6 @@
                   "prefix": "text_len_131df97257"
                 },
                 {
-                  "expression": "char_length(\"last_stage\") <= 30",
-                  "name": "text_len_28f6d7aae3_ced8e2eb",
-                  "prefix": "text_len_28f6d7aae3"
-                },
-                {
                   "expression": "char_length(\"phone\") <= 255",
                   "name": "text_len_29cbcd1af7_5c2191a8",
                   "prefix": "text_len_29cbcd1af7"
@@ -13355,11 +13235,6 @@
                   "expression": "char_length(\"id\") <= 32",
                   "name": "text_len_5d8d38cd59_3d66fb56",
                   "prefix": "text_len_5d8d38cd59"
-                },
-                {
-                  "expression": "char_length(\"stage\") <= 30",
-                  "name": "text_len_8cb7c75bb9_8e04cd04",
-                  "prefix": "text_len_8cb7c75bb9"
                 },
                 {
                   "expression": "char_length(\"pool_id\") <= 32",
@@ -13442,11 +13317,6 @@
                   "nativeType": "bool",
                   "nullable": false
                 },
-                "last_stage": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
                 "name": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -13476,11 +13346,6 @@
                   "codecId": "pg/text@1",
                   "nativeType": "text",
                   "nullable": true
-                },
-                "stage": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
                 },
                 "transition_id": {
                   "codecId": "pg/text@1",
@@ -18311,6 +18176,11 @@
             },
             "enterprise_ui_settings": {
               "columns": {
+                "collapsedLogoAttachmentId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "createdAt": {
                   "codecId": "pg/timestamptz-temporal@1",
                   "default": {
@@ -20821,141 +20691,6 @@
                   "id"
                 ],
                 "name": "follow_up_records_pkey"
-              },
-              "uniques": []
-            },
-            "lead_stage_event": {
-              "checks": [
-                {
-                  "expression": "char_length(\"from_stage_key\") <= 30",
-                  "name": "lead_stage_event_from_stage_key_len_fbe4a7ae",
-                  "prefix": "lead_stage_event_from_stage_key_len"
-                },
-                {
-                  "expression": "char_length(\"id\") <= 32",
-                  "name": "lead_stage_event_id_len_3d66fb56",
-                  "prefix": "lead_stage_event_id_len"
-                },
-                {
-                  "expression": "char_length(\"lead_id\") <= 32",
-                  "name": "lead_stage_event_lead_id_len_014967bd",
-                  "prefix": "lead_stage_event_lead_id_len"
-                },
-                {
-                  "expression": "char_length(\"operator_id\") <= 32",
-                  "name": "lead_stage_event_operator_id_len_436760a5",
-                  "prefix": "lead_stage_event_operator_id_len"
-                },
-                {
-                  "expression": "char_length(\"organization_id\") <= 32",
-                  "name": "lead_stage_event_organization_id_len_0ac99d67",
-                  "prefix": "lead_stage_event_organization_id_len"
-                },
-                {
-                  "expression": "char_length(\"owner_id\") <= 32",
-                  "name": "lead_stage_event_owner_id_len_dc83cd8f",
-                  "prefix": "lead_stage_event_owner_id_len"
-                },
-                {
-                  "expression": "char_length(\"source\") <= 30",
-                  "name": "lead_stage_event_source_len_5b27430a",
-                  "prefix": "lead_stage_event_source_len"
-                },
-                {
-                  "expression": "char_length(\"to_stage_key\") <= 30",
-                  "name": "lead_stage_event_to_stage_key_len_f854f770",
-                  "prefix": "lead_stage_event_to_stage_key_len"
-                }
-              ],
-              "columns": {
-                "from_stage_key": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
-                "id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "lead_id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "occurred_at": {
-                  "codecId": "pg/int8@1",
-                  "nativeType": "int8",
-                  "nullable": false
-                },
-                "operator_id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "organization_id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "owner_id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
-                "source": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "to_stage_key": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                }
-              },
-              "foreignKeys": [],
-              "indexes": [
-                {
-                  "columns": [
-                    "lead_id",
-                    "occurred_at"
-                  ],
-                  "name": "lead_stage_event_lead_id_occurred_at_idx",
-                  "unique": false
-                },
-                {
-                  "columns": [
-                    "organization_id",
-                    "occurred_at"
-                  ],
-                  "name": "lead_stage_event_organization_id_occurred_at_idx",
-                  "unique": false
-                },
-                {
-                  "columns": [
-                    "organization_id",
-                    "owner_id",
-                    "occurred_at"
-                  ],
-                  "name": "lead_stage_event_organization_id_owner_id_occurred_at_idx",
-                  "unique": false
-                },
-                {
-                  "columns": [
-                    "organization_id",
-                    "to_stage_key",
-                    "occurred_at"
-                  ],
-                  "name": "lead_stage_event_organization_id_to_stage_key_occurred_at_idx",
-                  "unique": false
-                }
-              ],
-              "primaryKey": {
-                "columns": [
-                  "id"
-                ],
-                "name": "lead_stage_event_pkey"
               },
               "uniques": []
             },
@@ -24505,7 +24240,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "64049bfca7242c507d98c1aee2ef571b04780557fe299dff6b72299f54f0b105"
+    "storageHash": "53f2de2363c0f079fbeffa0cec23330fe675854e5682a47eb88207af861418e1"
   },
   "execution": {
     "executionHash": "4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a",

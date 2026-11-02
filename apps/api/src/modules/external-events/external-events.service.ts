@@ -387,21 +387,6 @@ export class ExternalEventsService {
       return this.successResponse(inbox, false)
     }
 
-    if (flow.action === 'stage') {
-      if (!resolved || resolved.kind !== 'LEAD')
-        throw new BadRequestException('状态变更目标必须是线索')
-      const prepared = await this.leads.prepareExternalStageUpdate(
-        user,
-        resolved.leadId,
-        plan.stage!,
-      )
-      const inbox = await this.prisma.client.transaction(async (tx) => {
-        await this.leads.applyPreparedExternalStageUpdateInTransaction(user, prepared, tx)
-        return commit(tx, 'LEAD', resolved.leadId, null)
-      })
-      return this.successResponse(inbox, false)
-    }
-
     throw new BadRequestException('不支持的外部事件业务动作')
   }
 

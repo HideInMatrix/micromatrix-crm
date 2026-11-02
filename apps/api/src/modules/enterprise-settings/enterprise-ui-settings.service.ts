@@ -30,12 +30,14 @@ type AssetField =
   | 'loginLogoAttachmentId'
   | 'loginImageAttachmentId'
   | 'platformLogoAttachmentId'
+  | 'collapsedLogoAttachmentId'
 
 const SLOT_FIELD: Record<EnterpriseUiAssetSlot, AssetField> = {
   icon: 'iconAttachmentId',
   loginLogo: 'loginLogoAttachmentId',
   loginImage: 'loginImageAttachmentId',
   platformLogo: 'platformLogoAttachmentId',
+  collapsedLogo: 'collapsedLogoAttachmentId',
 }
 
 @Injectable()
@@ -226,6 +228,7 @@ export class EnterpriseUiSettingsService {
       loginLogoConfigured: Boolean(row?.loginLogoAttachmentId),
       loginImageConfigured: Boolean(row?.loginImageAttachmentId),
       platformLogoConfigured: Boolean(row?.platformLogoAttachmentId),
+      collapsedLogoConfigured: Boolean(row?.collapsedLogoAttachmentId),
       updatedAt: row ? instantToISOString(row.updatedAt) : null,
     }
   }
@@ -239,6 +242,7 @@ export class EnterpriseUiSettingsService {
       row.loginLogoAttachmentId,
       row.loginImageAttachmentId,
       row.platformLogoAttachmentId,
+      row.collapsedLogoAttachmentId,
     ].filter((id): id is string => Boolean(id))
     const attachmentRows = ids.length
       ? await this.prisma.client.orm.public.Attachments.where({ tenantId })
@@ -265,6 +269,7 @@ export class EnterpriseUiSettingsService {
       loginLogo: asset(row.loginLogoAttachmentId),
       loginImage: asset(row.loginImageAttachmentId),
       platformLogo: asset(row.platformLogoAttachmentId),
+      collapsedLogo: asset(row.collapsedLogoAttachmentId),
       updatedAt: instantToISOString(row.updatedAt),
     }
   }
@@ -288,7 +293,9 @@ export class EnterpriseUiSettingsService {
           ? await rows.update({ loginLogoAttachmentId: attachmentId, updatedAt })
           : slot === 'loginImage'
             ? await rows.update({ loginImageAttachmentId: attachmentId, updatedAt })
-            : await rows.update({ platformLogoAttachmentId: attachmentId, updatedAt })
+            : slot === 'platformLogo'
+              ? await rows.update({ platformLogoAttachmentId: attachmentId, updatedAt })
+              : await rows.update({ collapsedLogoAttachmentId: attachmentId, updatedAt })
     if (!row) throw new NotFoundException('界面设置不存在')
     return row
   }

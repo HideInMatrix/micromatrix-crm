@@ -41,7 +41,6 @@ export class MetadataService {
       | 'labelAlign'
       | 'viewSize'
       | 'leadUniqueScope'
-      | 'leadStages'
       | 'homeAnalytics'
       | 'quickSearch'
     >,

@@ -60,13 +60,6 @@ export interface HomeAnalyticsSummary {
   resultAmount: number | null
 }
 
-export interface HomeAnalyticsFunnelItem {
-  stageKey: string
-  name: string
-  kind: 'ACTIVE' | 'SUCCESS' | 'FAILURE'
-  count: number
-}
-
 export interface HomeAnalyticsTrend {
   months: string[]
   leads: number[]
@@ -107,7 +100,6 @@ export interface HomeAnalyticsVO {
   widgets: HomeAnalyticsWidgetResult[]
   config: HomeAnalyticsResolvedConfig
   summary: HomeAnalyticsSummary
-  funnel: HomeAnalyticsFunnelItem[]
   trend: HomeAnalyticsTrend
   channels: HomeAnalyticsChannelItem[]
   performance: HomeAnalyticsPerformanceItem[]
@@ -133,8 +125,6 @@ export interface HomeFilterPayload {
   deptIds: string[]
   userField?: HomeUserField
   timeField?: HomeTimeField
-  /** Dashboard 内部 Lead 状态筛选，不暴露为通用查询 DSL。 */
-  leadStageKey?: string
   /** Dashboard 内部“已转 Customer”筛选。 */
   converted?: boolean
   /** Dashboard 内部 SLA 超时筛选，服务端复用 LeadPoolSlaService。 */
