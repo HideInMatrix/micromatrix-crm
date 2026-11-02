@@ -1,6 +1,6 @@
 :root {
   --mobile-page-background: var(--text-n9);
-  --mobile-hall-create-gradient: linear-gradient(180deg, #ffb65b 0%, #ff8a3d 100%);
+  --mobile-hall-create-color: #ffb65b;
 
   --van-primary-color: var(--primary-8);
   --van-success-color: var(--success-green);

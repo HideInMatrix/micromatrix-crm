@@ -65,15 +65,6 @@ function choices(item: QuickSearchItem) {
     value: option.value,
   }))
 }
-function orderedChoices(item: QuickSearchItem) {
-  const list = choices(item)
-  const selected = values[item.id]
-  if (!selected) return list
-  return [
-    ...list.filter((option) => option.value === selected),
-    ...list.filter((option) => option.value !== selected),
-  ]
-}
 function displayLabel(item: QuickSearchItem) {
   return choices(item).find((option) => option.value === values[item.id])?.label ?? item.label
 }
@@ -278,7 +269,7 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
             "
           >
             <van-button
-              v-for="option in orderedChoices(item)"
+              v-for="option in choices(item)"
               :key="option.value"
               size="small"
               :type="values[item.id] === option.value ? 'primary' : 'default'"
