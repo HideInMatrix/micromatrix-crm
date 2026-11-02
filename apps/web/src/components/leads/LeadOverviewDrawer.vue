@@ -9,6 +9,7 @@ import FollowRecordFormDrawer from '@/components/follow-records/FollowRecordForm
 import { formatFieldValue } from '@/components/form-engine/field-display'
 import LeadChangeHistoryTimeline from './LeadChangeHistoryTimeline.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
 import { useAuthStore } from '@/stores/auth'
 
 type TabName = 'overview' | 'followRecord' | 'history'
@@ -35,6 +36,10 @@ const auth = useAuthStore()
 const fieldRefs = useFieldRefs()
 const detail = ref<LeadVO | null>(null)
 const lead = computed(() => (detail.value?.id === props.lead?.id ? detail.value : props.lead))
+const dataSourceMap = useDataSourceLabels(
+  computed(() => props.fields),
+  computed(() => (lead.value ? [lead.value] : [])),
+)
 const activeTab = ref<TabName>('overview')
 const loading = ref(false)
 const followVisible = ref(false)
@@ -55,6 +60,7 @@ function displayValue(field: FieldVO) {
   return formatFieldValue(field, lead.value as unknown as Record<string, unknown>, {
     memberMap: fieldRefs.memberMap.value,
     deptMap: fieldRefs.deptMap.value,
+    dataSourceMap: dataSourceMap.value,
   })
 }
 

@@ -18,6 +18,7 @@ import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import MobileQuickSearchBar from '@/components/MobileQuickSearchBar.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
 import { useAuthStore } from '@/stores/auth'
 import { showSuccessFeedback } from '@/utils/feedback'
 import type { MobileViewSelection } from '@/types/mobile-view'
@@ -38,6 +39,7 @@ const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
 const fields = ref<FieldVO[]>([])
 const items = ref<LeadVO[]>([])
+const dataSourceMap = useDataSourceLabels(fields, items)
 const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
@@ -269,6 +271,7 @@ onActivated(() => {
             :fields="listFields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
+            :data-source-map="dataSourceMap"
             mode="pool"
             :can-assign="auth.hasPerm('leadPool:assign')"
             :can-claim="auth.hasPerm('leadPool:pick')"

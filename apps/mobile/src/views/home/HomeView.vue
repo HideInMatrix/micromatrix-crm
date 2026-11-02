@@ -19,6 +19,7 @@ import { notificationApi } from '@/api/system'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
 import { useAuthStore } from '@/stores/auth'
 
 // 头像资源由移动端 public 独立维护，避免依赖 PC 端静态资源。
@@ -36,6 +37,7 @@ const unreadCount = ref<number | null>(null)
 const notifications = ref<NotificationVO[]>([])
 const leads = ref<LeadVO[]>([])
 const leadFields = ref<FieldVO[]>([])
+const dataSourceMap = useDataSourceLabels(leadFields, leads)
 const followTarget = ref<LeadVO | null>(null)
 const followVisible = ref(false)
 let requestId = 0
@@ -373,6 +375,7 @@ onActivated(() => void refresh())
               :fields="leadFields"
               :member-map="fieldRefs.memberMap.value"
               :dept-map="fieldRefs.deptMap.value"
+            :data-source-map="dataSourceMap"
               :can-follow="canFollowLead(lead)"
               @open="openLead(lead)"
               @call="callLead(lead)"

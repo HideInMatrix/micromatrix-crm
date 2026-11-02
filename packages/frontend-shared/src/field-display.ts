@@ -116,3 +116,39 @@ export function formatFieldValue(
       return String(value)
   }
 }
+
+/** 解析当前列表或详情用到的数据源记录 ID，避免将持久化 ID 当成用户可读名称。 */
+export async function resolveDataSourceDisplayMap(
+  fields: readonly FieldVO[],
+  rows: readonly { customData: Record<string, unknown> }[],
+  resolve: (sourceType: string, ids: string[]) => Promise<readonly { id: string; name: string }[]>,
+): Promise<Map<string, string>> {
+  const grouped = new Map<string, Set<string>>()
+  for (const field of fields) {
+    if (field.type !== 'data_source' && field.type !== 'data_source_multiple') continue
+    const sourceType = field.config?.dataSourceType
+    if (!sourceType) continue
+    const ids = grouped.get(sourceType) ?? new Set<string>()
+    for (const row of rows) {
+      const value = fieldValue(field, row as Record<string, unknown>)
+      for (const entry of Array.isArray(value) ? value : [value]) {
+        if (typeof entry === 'string' && entry) ids.add(entry)
+      }
+    }
+    if (ids.size) grouped.set(sourceType, ids)
+  }
+
+  const names = new Map<string, string>()
+  await Promise.all(
+    [...grouped].map(async ([sourceType, ids]) => {
+      try {
+        for (const item of await resolve(sourceType, [...ids])) {
+          names.set(dataSourceDisplayKey(sourceType, item.id), item.name)
+        }
+      } catch {
+        // 引用记录已被删除或无访问权限时，仅对应来源降级，其他来源继续展示名称。
+      }
+    }),
+  )
+  return names
+}

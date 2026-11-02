@@ -119,7 +119,9 @@ async function transferOwner(userId: string) {
     await customerExtraApi.assign(props.customerId, userId)
     transferVisible.value = false
     ElMessage.success('客户已转移')
-    await loadBase()
+    // 负责人变更后，原操作人可能不再具备该客户的数据访问权限。
+    // 不再重新请求详情，直接关闭抽屉并刷新列表，避免把权限范围变化误报为转移失败。
+    emit('close')
     emit('changed')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))

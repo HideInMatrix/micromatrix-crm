@@ -26,6 +26,7 @@ import ModuleQuickSearch from '@/components/ModuleQuickSearch.vue'
 import AdvancedFilter from '@/components/form-engine/AdvancedFilter.vue'
 import DynamicForm from '@/components/form-engine/DynamicForm.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
 import { useLeadBatchActions } from '@/composables/useLeadBatchActions'
 import { useHomeQuickCreate } from '@/composables/useHomeQuickCreate'
 import { useAuthStore } from '@/stores/auth'
@@ -53,6 +54,7 @@ const formDialogWidth = computed(
 const loading = ref(false)
 const items = ref<LeadVO[]>([])
 const total = ref(0)
+const dataSourceMap = useDataSourceLabels(fields, items)
 const query = reactive({ page: 1, pageSize: 10, keyword: '' })
 const filters = ref<FilterCondition[]>([])
 const quickSearch = ref<ModuleQuickSearchConfig | null>(null)
@@ -808,6 +810,7 @@ onMounted(async () => {
         :list-columns="listColumns"
         :member-map="fieldRefs.memberMap.value"
         :dept-map="fieldRefs.deptMap.value"
+        :data-source-map="dataSourceMap"
         :total="total"
         @selection-change="handleSelectionChange"
         @open-overview="openOverview"

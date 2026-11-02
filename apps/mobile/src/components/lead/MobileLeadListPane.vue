@@ -18,6 +18,7 @@ import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileQuickSearchBar from '@/components/MobileQuickSearchBar.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
 import { useAuthStore } from '@/stores/auth'
 import type { MobileViewSelection } from '@/types/mobile-view'
 
@@ -29,6 +30,7 @@ const quickGroups = ref<QuickSearchQueryGroup[]>([])
 const filters = ref<FilterCondition[]>([])
 const items = ref<LeadVO[]>([])
 const fields = ref<FieldVO[]>([])
+const dataSourceMap = useDataSourceLabels(fields, items)
 const page = ref(1)
 const loading = ref(false)
 const finished = ref(false)
@@ -159,6 +161,7 @@ onActivated(() => {
             :fields="fields"
             :member-map="fieldRefs.memberMap.value"
             :dept-map="fieldRefs.deptMap.value"
+            :data-source-map="dataSourceMap"
             :can-follow="canFollow(item)"
             @open="openDetail(item)"
             @call="callLead(item)"

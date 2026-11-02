@@ -22,6 +22,7 @@ const props = defineProps<{
   listColumns: (FieldVO | LeadSystemColumn)[]
   memberMap: Map<string, string>
   deptMap: Map<string, string>
+  dataSourceMap: Map<string, string>
   total: number
   page: number
   pageSize: number
@@ -149,6 +150,7 @@ function handleToPool(row: LeadVO) {
               formatFieldValue(column as FieldVO, row, {
                 memberMap: memberMap,
                 deptMap: deptMap,
+                dataSourceMap: dataSourceMap,
               })
             }}
           </el-button>
@@ -160,6 +162,7 @@ function handleToPool(row: LeadVO) {
               formatFieldValue(column as FieldVO, row, {
                 memberMap: memberMap,
                 deptMap: deptMap,
+                dataSourceMap: dataSourceMap,
               })
             }}
           </template>

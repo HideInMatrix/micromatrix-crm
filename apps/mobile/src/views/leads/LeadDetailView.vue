@@ -13,6 +13,7 @@ import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileLeadOperationSheet from '@/components/MobileLeadOperationSheet.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
+import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
 import { useAuthStore } from '@/stores/auth'
 import { showActionConfirm } from '@/utils/dialog'
 import { showSuccessFeedback } from '@/utils/feedback'
@@ -29,6 +30,7 @@ const activeTab = ref<HistoryTab>('record')
 const loading = ref(false)
 const lead = ref<LeadVO | null>(null)
 const fields = ref<FieldVO[]>([])
+const dataSourceMap = useDataSourceLabels(fields, computed(() => (lead.value ? [lead.value] : [])))
 const records = ref<FollowUpVO[]>([])
 const ownerHistory = ref<OwnerHistoryVO[]>([])
 const followShow = ref(false)
@@ -90,6 +92,7 @@ function displayField(field: FieldVO) {
   return formatFieldValue(field, lead.value as unknown as Record<string, unknown>, {
     memberMap: fieldRefs.memberMap.value,
     deptMap: fieldRefs.deptMap.value,
+    dataSourceMap: dataSourceMap.value,
   })
 }
 

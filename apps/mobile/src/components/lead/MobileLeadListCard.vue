@@ -16,6 +16,7 @@ const props = withDefaults(
     fields: FieldVO[]
     memberMap: Map<string, string>
     deptMap: Map<string, string>
+    dataSourceMap: Map<string, string>
     mode?: 'mine' | 'pool'
     canFollow?: boolean
     canAssign?: boolean
@@ -50,6 +51,7 @@ function displayValue(field: FieldVO) {
   return formatFieldValue(field, props.lead as unknown as Record<string, unknown>, {
     memberMap: props.memberMap,
     deptMap: props.deptMap,
+    dataSourceMap: props.dataSourceMap,
   })
 }
 </script>

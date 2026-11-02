@@ -190,7 +190,8 @@ async function transferOwner(value: { ownerId?: string }) {
     await customerExtraApi.assign(customerId.value, value.ownerId)
     showSuccessFeedback('客户已转移')
     transferShow.value = false
-    await load()
+    // 转移后原操作人可能失去客户详情访问权限，返回列表而不是再次请求详情。
+    await router.replace('/customers')
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   } finally {
