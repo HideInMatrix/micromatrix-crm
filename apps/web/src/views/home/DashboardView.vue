@@ -744,11 +744,11 @@ onBeforeUnmount(() => {
           <Layers3 :size="35" :stroke-width="2.3" aria-hidden="true" />
         </span>
         <span class="min-w-0 flex flex-col gap-1">
-          <span class="text-[16px] text-[#333333]">待分配线索</span>
+          <span class="text-[16px] text-[#333333]">待分配</span>
           <strong class="text-[32px] leading-9 tabular-nums text-[#171C26] font-[DingBold]">
             {{ formatCount(pendingPoolCount) }}
           </strong>
-          <span class="text-[12px] text-[#6B7A99]">可进行领取线索</span>
+          <span class="text-[12px] text-[#6B7A99]">可领取线索</span>
         </span>
       </button>
       <button
@@ -765,7 +765,7 @@ onBeforeUnmount(() => {
           <Clock3 :size="35" :stroke-width="2.4" aria-hidden="true" />
         </span>
         <span class="min-w-0 flex flex-col gap-1">
-          <span class="text-[16px] text-[#333333]">超时未跟进</span>
+          <span class="text-[16px] text-[#333333]">已超时</span>
           <strong class="text-[32px] leading-9 tabular-nums text-[#171C26] font-[DingBold]">
             {{ formatCount(analytics?.summary.overdueLeads) }}
           </strong>
