@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import CrmDialog from '@/components/CrmDialog.vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { MessageCircleMore, MessagesSquare } from 'lucide-vue-next'
+import { MessageCircleMore } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -168,11 +168,12 @@ async function handleSubmit() {
             <el-button
               circle
               size="large"
-              :icon="MessagesSquare"
               aria-label="企业微信扫码登录"
               data-testid="wecom-login-entry"
               @click="openWeComLogin"
-            />
+            >
+              <img src="/images/wechat.png" alt="" class="h-5 w-5 object-contain" />
+            </el-button>
           </el-tooltip>
           <el-tooltip v-else-if="collaborationProvider === 'DINGTALK'" content="钉钉登录">
             <el-button
