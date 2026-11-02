@@ -218,6 +218,7 @@ function displayValue(field: FieldVO): string {
       :multiple="multiple"
       filterable
       remote
+      remote-show-suffix
       clearable
       reserve-keyword
       :remote-method="search"

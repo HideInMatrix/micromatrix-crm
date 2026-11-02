@@ -36,7 +36,7 @@ import {
 } from 'lucide-vue-next'
 import { ElButton } from 'element-plus'
 import type { Component } from 'vue'
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { changePassword } from '@/api/auth'
 import { listCustomerOptions } from '@/api/customers'
@@ -74,6 +74,24 @@ const pendingPoolCount = ref(0)
 const myLeads = ref<LeadVO[]>([])
 const myLeadsTotal = ref(0)
 const myLeadsLoading = ref(false)
+const myLeadsTableContainerRef = ref<HTMLElement | null>(null)
+const myLeadsTableWidth = ref(656)
+let myLeadsTableResizeObserver: ResizeObserver | null = null
+watch(
+  myLeadsTableContainerRef,
+  (element) => {
+    myLeadsTableResizeObserver?.disconnect()
+    if (!element) return
+    const updateWidth = () => {
+      const table = element.querySelector<HTMLElement>('.el-table')
+      myLeadsTableWidth.value = Math.max(1, Math.floor(table?.clientWidth ?? element.clientWidth))
+    }
+    updateWidth()
+    myLeadsTableResizeObserver = new ResizeObserver(updateWidth)
+    myLeadsTableResizeObserver.observe(element)
+  },
+  { flush: 'post' },
+)
 const leadFields = ref<FieldVO[]>([])
 const leadStages = ref<LeadStageConfig[]>([])
 const unreadNotifications = ref(0)
@@ -92,6 +110,44 @@ const homeLeadColumns = computed(() => {
     0,
     2,
   )
+})
+const isHomeLeadSourceField = (field: FieldVO) => /渠道|来源/.test(field.label)
+const homeLeadTableWidths = computed(() => {
+  const fields = homeLeadColumns.value
+  // 渠道来源优先作为弹性列；没有来源字段时，使用最后一个动态字段承接剩余宽度。
+  const flexibleField = fields.find(isHomeLeadSourceField) ?? fields.at(-1)
+  const flexibleFollowUp = !flexibleField
+  const fixedBaseWidth =
+    88 +
+    108 +
+    (fields.length - (flexibleField ? 1 : 0)) * 72 +
+    72 +
+    88 +
+    (flexibleFollowUp ? 0 : 92)
+  const preferredFlexMinWidth = flexibleField
+    ? isHomeLeadSourceField(flexibleField)
+      ? 120
+      : 80
+    : 92
+  const availableWidth = myLeadsTableWidth.value
+  const flexMinWidth =
+    availableWidth >= fixedBaseWidth + preferredFlexMinWidth
+      ? preferredFlexMinWidth
+      : Math.max(1, Math.floor(availableWidth * 0.18))
+  const fixedWidthBudget = Math.max(0, availableWidth - flexMinWidth)
+  const scale = fixedBaseWidth > 0 ? Math.min(1, fixedWidthBudget / fixedBaseWidth) : 1
+  const scaled = (width: number) => Math.max(1, Math.floor(width * scale))
+
+  return {
+    name: scaled(88),
+    phone: scaled(108),
+    field: scaled(72),
+    status: scaled(72),
+    followUp: flexibleFollowUp ? undefined : scaled(92),
+    action: scaled(88),
+    flexibleFieldKey: flexibleField?.key ?? null,
+    flexMinWidth,
+  }
 })
 const stageLabel = (stage: string) =>
   leadStages.value.find((entry) => entry.key === stage)?.name ??
@@ -684,6 +740,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('crm:home-refresh', handleHomeRefresh)
+  myLeadsTableResizeObserver?.disconnect()
   defaultPasswordMessage?.close()
 })
 </script>
@@ -881,73 +938,110 @@ onBeforeUnmount(() => {
           :description="hasLeadRead ? '新的跟进任务会显示在这里' : '请联系管理员开通线索查看权限'"
           data-testid="home-my-leads-empty"
         />
-        <el-table
-          v-else
-          v-loading="myLeadsLoading"
-          :data="myLeads"
-          size="small"
-          class="!w-full"
-          :header-cell-style="{
-            background: '#F5F7FA',
-            color: '#666666',
-            fontSize: '14px',
-            height: '42px',
-            fontWeight: 500,
-          }"
-          :cell-style="{ height: '43px', color: '#344054', fontSize: '14px' }"
-          :empty-text="hasLeadRead ? '暂无属于我的线索' : '暂无线索查看权限'"
-          data-testid="home-my-leads-table"
-        >
-          <el-table-column prop="name" label="学员姓名" min-width="112" show-overflow-tooltip>
-            <template #default="{ row }">
-              <el-button
-                link
-                type="primary"
-                class="!text-[14px] !text-[var(--el-color-primary)]"
-                @click="openMyLead(row as LeadVO)"
-                >{{ row.name }}</el-button
-              >
-            </template>
-          </el-table-column>
-          <el-table-column label="手机号" min-width="117">
-            <template #default="{ row }">{{ row.phone || '-' }}</template>
-          </el-table-column>
-          <el-table-column
-            v-for="field in homeLeadColumns"
-            :key="field.key"
-            :label="field.label"
-            min-width="100"
-            show-overflow-tooltip
+        <div v-else ref="myLeadsTableContainerRef" class="w-full min-w-0">
+          <el-table
+            v-loading="myLeadsLoading"
+            :data="myLeads"
+            size="small"
+            class="!w-full !max-w-full"
+            :header-cell-style="{
+              background: '#F5F7FA',
+              color: '#666666',
+              fontSize: '14px',
+              height: '42px',
+              fontWeight: 500,
+            }"
+            :cell-style="{ height: '43px', color: '#344054', fontSize: '14px' }"
+            :empty-text="hasLeadRead ? '暂无属于我的线索' : '暂无线索查看权限'"
+            data-testid="home-my-leads-table"
           >
-            <template #default="{ row }">{{ leadFieldValue(row as LeadVO, field) }}</template>
-          </el-table-column>
-          <el-table-column label="当前状态" min-width="94" show-overflow-tooltip>
-            <template #default="{ row }">
-              <el-tag size="small" type="warning" effect="light" class="!text-[12px]">{{
-                stageLabel(row.status)
-              }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="最近跟进" min-width="85">
-            <template #default="{ row }">
-              <span class="text-[14px] text-[#F04438]">
-                {{ elapsedLabel(row.lastFollowedAt) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" min-width="82" align="center">
-            <template #default="{ row }">
-              <el-button
-                link
-                type="primary"
-                :disabled="!auth.hasPerm('lead:update')"
-                class="!text-[14px] !text-[var(--el-color-primary)]"
-                @click="followMyLead(row as LeadVO)"
-                >立即跟进</el-button
-              >
-            </template>
-          </el-table-column>
-        </el-table>
+            <el-table-column
+              prop="name"
+              label="学员姓名"
+              :width="homeLeadTableWidths.name"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  class="!max-w-full !truncate !overflow-hidden !text-[14px] !text-[var(--el-color-primary)]"
+                  @click="openMyLead(row as LeadVO)"
+                >
+                  {{ row.name }}
+                </el-button>
+              </template>
+            </el-table-column>
+            <el-table-column
+              label="手机号"
+              :width="homeLeadTableWidths.phone"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">{{ row.phone || '-' }}</template>
+            </el-table-column>
+            <el-table-column
+              v-for="field in homeLeadColumns"
+              :key="field.key"
+              :label="field.label"
+              :width="
+                field.key === homeLeadTableWidths.flexibleFieldKey
+                  ? undefined
+                  : homeLeadTableWidths.field
+              "
+              :min-width="
+                field.key === homeLeadTableWidths.flexibleFieldKey
+                  ? homeLeadTableWidths.flexMinWidth
+                  : undefined
+              "
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">{{ leadFieldValue(row as LeadVO, field) }}</template>
+            </el-table-column>
+            <el-table-column
+              label="当前状态"
+              :width="homeLeadTableWidths.status"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                <el-tag size="small" type="warning" effect="light" class="!text-[12px]">
+                  {{ stageLabel(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              label="最近跟进"
+              :width="homeLeadTableWidths.followUp"
+              :min-width="
+                homeLeadTableWidths.flexibleFieldKey ? undefined : homeLeadTableWidths.flexMinWidth
+              "
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                <span class="text-[14px] text-[#F04438]">
+                  {{ elapsedLabel(row.lastFollowedAt) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              label="操作"
+              :width="homeLeadTableWidths.action"
+              align="center"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  :disabled="!auth.hasPerm('lead:update')"
+                  class="!max-w-full !truncate !overflow-hidden !text-[14px] !text-[var(--el-color-primary)]"
+                  @click="followMyLead(row as LeadVO)"
+                >
+                  立即跟进
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </section>
 
       <section

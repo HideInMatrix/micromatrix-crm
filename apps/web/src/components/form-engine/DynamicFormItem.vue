@@ -116,29 +116,27 @@ const fieldOptions = computed(() => {
   />
 
   <!-- 选项类 -->
-  <el-select
+  <el-select-v2
     v-else-if="field.type === 'select'"
     :model-value="stringValue"
+    :options="fieldOptions"
     :placeholder="placeholder"
     clearable
     filterable
     class="w-full"
     @update:model-value="model = $event"
-  >
-    <el-option v-for="opt in fieldOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-  </el-select>
-  <el-select
+  />
+  <el-select-v2
     v-else-if="field.type === 'multiselect'"
     :model-value="stringArrayValue"
+    :options="fieldOptions"
     multiple
     clearable
     filterable
     :placeholder="placeholder"
     class="w-full"
     @update:model-value="model = $event"
-  >
-    <el-option v-for="opt in fieldOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-  </el-select>
+  />
   <el-radio-group
     v-else-if="field.type === 'radio'"
     :model-value="stringValue"

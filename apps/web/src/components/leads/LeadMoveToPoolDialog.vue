@@ -6,10 +6,7 @@ import { extractErrorMessage } from '@/api/http'
 import { leadApi, type ResourcePoolVO } from '@/api/sales'
 import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 
-withDefaults(
-  defineProps<{ title?: string; description?: string; width?: string }>(),
-  { width: 'max-content' },
-)
+defineProps<{ title?: string; description?: string }>()
 const visible = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ confirm: [poolId?: string, reasonId?: string] }>()
 const loading = ref(false)
@@ -64,7 +61,7 @@ watch(visible, (open) => {
   <CrmDialog
     v-model="visible"
     :title="title ?? '移入线索池'"
-    :width="width"
+    width="540px"
     destroy-on-close
     :close-on-click-modal="false"
     data-testid="lead-move-to-pool-dialog"
