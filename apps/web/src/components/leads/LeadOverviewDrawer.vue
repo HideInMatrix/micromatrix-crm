@@ -176,7 +176,7 @@ watch(
           <el-tabs v-model="activeTab" class="flex min-h-0 flex-1 flex-col">
             <el-tab-pane label="概览" name="overview">
               <div
-                class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[20px] pb-5 [scrollbar-gutter:stable]"
+                class="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pt-[10px] pb-5 [scrollbar-gutter:stable]"
               >
                 <section v-if="descriptionFields.length">
                   <h3
