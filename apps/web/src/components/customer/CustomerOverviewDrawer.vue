@@ -6,6 +6,8 @@ defineProps<{
   pool?: boolean
   poolId?: string
   hiddenFieldIds?: string[]
+  focusFollowUpId?: string | null
+  focusCommentId?: string | null
 }>()
 
 const visible = defineModel<boolean>({ required: true })
@@ -29,6 +31,8 @@ const emit = defineEmits<{
       :pool="pool"
       :pool-id="poolId"
       :hidden-field-ids="hiddenFieldIds"
+      :focus-follow-up-id="focusFollowUpId"
+      :focus-comment-id="focusCommentId"
       @close="visible = false"
       @changed="emit('changed')"
       @deleted="emit('deleted')"

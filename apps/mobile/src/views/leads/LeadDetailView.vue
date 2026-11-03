@@ -8,9 +8,10 @@ import { showFailToast } from 'vant'
 import homeBackground from '../../../../web/public/images/home-background.png'
 import { extractErrorMessage } from '@/api/http'
 import { fetchFields, pageFollowUps } from '@/api/mobile'
-import { leadApi } from '@/api/sales'
+import { followUpApi, leadApi } from '@/api/sales'
 import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
+import MobileFollowCommentSheet from '@/components/MobileFollowCommentSheet.vue'
 import MobileLeadOperationSheet from '@/components/MobileLeadOperationSheet.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useDataSourceLabels } from '@/composables/useDataSourceLabels'
@@ -33,6 +34,9 @@ const fields = ref<FieldVO[]>([])
 const dataSourceMap = useDataSourceLabels(fields, computed(() => (lead.value ? [lead.value] : [])))
 const records = ref<FollowUpVO[]>([])
 const ownerHistory = ref<OwnerHistoryVO[]>([])
+const commentShow = ref(false)
+const commentRecordId = ref('')
+const commentFocusId = ref<string | null>(null)
 const followShow = ref(false)
 const transferShow = ref(false)
 const moveShow = ref(false)
@@ -86,6 +90,39 @@ const sortedHistory = computed(() =>
     (a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime(),
   ),
 )
+
+function openRecordComments(record: FollowUpVO, focusCommentId?: string | null) {
+  commentRecordId.value = record.id
+  commentFocusId.value = focusCommentId || null
+  commentShow.value = true
+}
+
+function updateRecordCommentCount(count: number) {
+  records.value = records.value.map((record) =>
+    record.id === commentRecordId.value ? { ...record, commentCount: count } : record,
+  )
+}
+
+async function openLinkedFollowComment() {
+  const recordId = typeof route.query.followUpId === 'string' ? route.query.followUpId : ''
+  if (!recordId) return
+  try {
+    let record = records.value.find((item) => item.id === recordId)
+    if (!record) {
+      const { data } = await followUpApi.get(recordId)
+      if (data.targetType !== 'lead' || data.targetId !== leadId.value) return
+      record = data
+      records.value = [data, ...records.value]
+    }
+    activeTab.value = 'record'
+    openRecordComments(
+      record,
+      typeof route.query.commentId === 'string' ? route.query.commentId : null,
+    )
+  } catch (error) {
+    showFailToast(extractErrorMessage(error))
+  }
+}
 
 function displayField(field: FieldVO) {
   if (!lead.value) return '-'
@@ -240,7 +277,10 @@ async function transferOwner(value: { ownerId?: string; note?: string }) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (lead.value) await openLinkedFollowComment()
+})
 </script>
 
 <template>
@@ -373,10 +413,15 @@ onMounted(load)
                 >
                   {{ record.content || record.type || '跟进记录' }}
                 </p>
-                <span
-                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
-                  >{{ record.ownerName ? `操作人：${record.ownerName}` : '操作人：-' }}</span
-                >
+                <div class="mt-[7px] flex items-center justify-between gap-2">
+                  <span
+                    class="block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                    >{{ record.ownerName ? `操作人：${record.ownerName}` : '操作人：-' }}</span
+                  >
+                  <van-button size="mini" plain type="primary" @click="openRecordComments(record)">
+                    评论{{ record.commentCount ? ` ${record.commentCount}` : '' }}
+                  </van-button>
+                </div>
               </li>
             </ol>
           </div>
@@ -463,6 +508,14 @@ onMounted(load)
       :target-id="leadId"
       :target-name="lead?.name"
       @followed="reloadRecords"
+    />
+    <MobileFollowCommentSheet
+      v-if="commentRecordId"
+      v-model="commentShow"
+      resource-type="record"
+      :resource-id="commentRecordId"
+      :focus-comment-id="commentFocusId"
+      @count-changed="updateRecordCommentCount"
     />
 
     <MobileLeadOperationSheet

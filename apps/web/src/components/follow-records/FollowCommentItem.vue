@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FollowCommentVO } from '@micromatrix/shared'
 
-defineProps<{ comment: FollowCommentVO }>()
+defineProps<{ comment: FollowCommentVO; highlightedCommentId?: string | null }>()
 const emit = defineEmits<{
   reply: [comment: FollowCommentVO]
   edit: [comment: FollowCommentVO]
@@ -15,7 +15,8 @@ function formatTime(value: string) {
 
 <template>
   <div
-    class="rounded border border-[var(--el-border-color-lighter)] p-3"
+    class="rounded border border-[var(--el-border-color-lighter)] p-3 transition-colors"
+    :class="highlightedCommentId === comment.id ? 'border-[var(--el-color-primary)] bg-[var(--el-color-primary-light-9)]' : ''"
     data-testid="follow-comment-item"
     :data-comment-id="comment.id"
   >
@@ -68,7 +69,8 @@ function formatTime(value: string) {
           <div
             v-for="replyItem in comment.replies"
             :key="replyItem.id"
-            class="rounded bg-[var(--el-fill-color-lighter)] p-2"
+            class="rounded bg-[var(--el-fill-color-lighter)] p-2 transition-colors"
+            :class="highlightedCommentId === replyItem.id ? 'ring-1 ring-[var(--el-color-primary)] bg-[var(--el-color-primary-light-9)]' : ''"
             data-testid="follow-comment-reply-item"
             :data-comment-id="replyItem.id"
           >

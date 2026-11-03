@@ -80,6 +80,21 @@ export function useFollowComments(
     await load()
   }
 
+  async function goToComment(commentId: string): Promise<boolean> {
+    if (!commentId) return false
+    const pageCount = Math.max(1, Math.ceil(total.value / pageSize))
+    for (let targetPage = 1; targetPage <= pageCount; targetPage += 1) {
+      page.value = targetPage
+      await load()
+      const found = comments.value.some(
+        (comment) =>
+          comment.id === commentId || comment.replies.some((reply) => reply.id === commentId),
+      )
+      if (found) return true
+    }
+    return false
+  }
+
   return {
     comments,
     loading,
@@ -90,6 +105,7 @@ export function useFollowComments(
     commentCount,
     load,
     reset,
+    goToComment,
     add,
     update,
     remove,

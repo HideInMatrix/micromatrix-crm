@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
 import { notificationApi } from '@/api/system'
+import { resolveMobileNotificationPath } from '@/utils/notification-link'
 
 type MessageTab = 'all' | 'unread'
 
@@ -61,23 +62,32 @@ async function handleRefresh() {
 }
 
 async function openItem(item: NotificationVO) {
-  try {
-    if (!item.readAt) {
+  if (!item.readAt) {
+    try {
       await notificationApi.markRead(item.id)
       item.readAt = new Date().toISOString()
       unreadCount.value = Math.max(0, unreadCount.value - 1)
       if (activeTab.value === 'unread') items.value = items.value.filter((row) => row.id !== item.id)
+    } catch (error) {
+      // 阅读状态更新失败不应阻断通知的业务跳转。
+      showFailToast(extractErrorMessage(error))
     }
+  }
 
-    if (!item.link) return
-    if (/^https?:\/\//i.test(item.link)) {
-      window.location.href = item.link
-      return
-    }
-    if (item.link.startsWith('/mobile/')) {
-      await router.push(item.link.slice('/mobile'.length) || '/home')
-      return
-    }
+  if (!item.link) return
+  if (/^https?:\/\//i.test(item.link)) {
+    window.location.href = item.link
+    return
+  }
+
+  const target = resolveMobileNotificationPath(item.link)
+  if (!target) {
+    showFailToast('该消息没有可打开的移动端链接')
+    return
+  }
+
+  try {
+    await router.push(target)
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }

@@ -156,7 +156,14 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       return created
     })
 
-    await this.sendNotifications(user, resource, dto.replyToUserId, mentionedUserIds, content)
+    await this.sendNotifications(
+      user,
+      resource,
+      dto.replyToUserId,
+      mentionedUserIds,
+      content,
+      comment.id,
+    )
     const vo = (await this.toVOs(user, [comment], []))[0]
     return withOperationLogResult(vo, {
       targetId: dto.resourceId,
@@ -187,6 +194,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       comment.replyToUserId ?? undefined,
       mentionedUserIds,
       content,
+      updated.id,
     )
     const vo = (await this.toVOs(user, [updated], []))[0]
     return withOperationLogResult(vo, {
@@ -365,10 +373,11 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     replyToUserId: string | undefined,
     mentionedUserIds: string[],
     commentContent: string,
+    commentId: string,
   ): Promise<void> {
     const mentioned = [...new Set([...mentionedUserIds, ...(replyToUserId ? [replyToUserId] : [])])]
     const targetName = await this.targetName(operator.tenantId, resource)
-    const link = this.targetLink(resource)
+    const link = this.targetLink(resource, commentId)
 
     if (resource.ownerId && !mentioned.includes(resource.ownerId)) {
       await this.notifications.send({
@@ -447,7 +456,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     }
   }
 
-  private targetLink(resource: TResource): string {
+  protected targetLink(resource: TResource, _commentId?: string): string {
     if (resource.targetType === 'lead') return '/leads'
     return '/customers'
   }

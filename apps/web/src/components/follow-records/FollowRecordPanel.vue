@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { FollowTargetType, FollowUpVO } from '@micromatrix/shared'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
+import { followUpApi } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import { useFollowRecords } from '@/composables/useFollowRecords'
 import FollowCommentPanel from './FollowCommentPanel.vue'
@@ -40,7 +41,9 @@ const fieldRefs = useFieldRefs()
 const formVisible = ref(false)
 const editingRecordId = ref<string>()
 const commentRecord = ref<FollowUpVO | null>(null)
+const focusCommentId = ref<string | null>(null)
 let refsLoaded = false
+let recordsLoad: Promise<void> | null = null
 
 async function ensureRefs() {
   if (refsLoaded) return
@@ -53,7 +56,8 @@ async function ensureRefs() {
 }
 
 async function refresh() {
-  await load()
+  recordsLoad = load()
+  await recordsLoad
 }
 
 function openCreate() {
@@ -86,10 +90,27 @@ async function removeRecord(record: FollowUpVO) {
 async function openComments(record: FollowUpVO) {
   if (commentRecord.value?.id === record.id) {
     commentRecord.value = null
+    focusCommentId.value = null
     return
   }
+  focusCommentId.value = null
   commentRecord.value = record
   await ensureRefs()
+}
+
+async function openCommentsById(recordId: string, commentId?: string | null) {
+  if (recordsLoad) await recordsLoad
+  const { data } = await followUpApi.get(recordId)
+  if (data.targetId !== props.targetId || data.targetType !== props.targetType) {
+    throw new Error('通知关联的跟进记录与当前业务对象不匹配')
+  }
+  const recordIndex = records.value.findIndex((record) => record.id === recordId)
+  if (recordIndex >= 0) records.value[recordIndex] = data
+  else records.value.unshift(data)
+  focusCommentId.value = commentId || null
+  commentRecord.value = data
+  await ensureRefs()
+  await nextTick()
 }
 
 function handleCommentCount(count: number) {
@@ -107,15 +128,17 @@ async function handleSaved() {
 watch(
   () => [props.targetType, props.targetId, props.refreshKey] as const,
   () => {
-    if (props.autoLoad) void load()
+    commentRecord.value = null
+    focusCommentId.value = null
+    if (props.autoLoad) void refresh()
   },
 )
 
 onMounted(() => {
-  if (props.autoLoad) void load()
+  if (props.autoLoad) void refresh()
 })
 
-defineExpose({ refresh, openCreate })
+defineExpose({ refresh, openCreate, openCommentsById })
 </script>
 
 <template>
@@ -144,6 +167,7 @@ defineExpose({ refresh, openCreate })
               resource-type="record"
               :resource-id="record.id"
               :members="fieldRefs.members.value"
+              :focus-comment-id="focusCommentId"
               @count-changed="handleCommentCount"
             />
           </div>
@@ -172,6 +196,7 @@ defineExpose({ refresh, openCreate })
               resource-type="record"
               :resource-id="record.id"
               :members="fieldRefs.members.value"
+              :focus-comment-id="focusCommentId"
               @count-changed="handleCommentCount"
             />
           </div>

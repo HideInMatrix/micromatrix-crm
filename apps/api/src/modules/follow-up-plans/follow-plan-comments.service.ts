@@ -29,6 +29,10 @@ export class FollowPlanCommentsService extends FollowCommentServiceBase<FollowUp
     return this.plans.assertPlanAccess(user, resourceId, write)
   }
 
+  protected targetLink(plan: FollowUpPlan): string {
+    return `/follow-plans?id=${encodeURIComponent(plan.id)}`
+  }
+
   protected async loadParents(
     tenantId: string,
     resourceId: string,

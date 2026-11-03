@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FollowCommentVO } from '@micromatrix/shared'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
 import { extractErrorMessage } from '@/api/http'
 import { showActionConfirm } from '@/utils/dialog'
@@ -18,6 +18,7 @@ import MobileDrawer from '@/components/MobileDrawer.vue'
 const props = defineProps<{
   resourceType: 'record' | 'plan'
   resourceId: string
+  focusCommentId?: string | null
 }>()
 
 const show = defineModel<boolean>({ required: true })
@@ -34,6 +35,8 @@ const editorMode = ref<'create' | 'reply' | 'edit'>('create')
 const editorTarget = ref<FollowCommentVO | null>(null)
 const content = ref('')
 const mentionedUserIds = ref<string[]>([])
+const commentScrollRef = ref<HTMLElement | null>(null)
+const focusedCommentId = ref<string | null>(null)
 
 const currentApi = computed(() =>
   props.resourceType === 'plan' ? followPlanCommentApi : followRecordCommentApi,
@@ -70,6 +73,34 @@ async function load(refresh = false) {
   } finally {
     loading.value = false
   }
+}
+
+async function focusComment(commentId: string) {
+  focusedCommentId.value = commentId
+  const containsTarget = () =>
+    comments.value.some(
+      (comment) =>
+        comment.id === commentId || comment.replies.some((reply) => reply.id === commentId),
+    )
+
+  const maxPages = Math.max(1, Math.ceil(total.value / 10))
+  let scannedPages = 1
+  while (!containsTarget() && comments.value.length < total.value && scannedPages < maxPages) {
+    const previousPage = page.value
+    await load(false)
+    if (page.value === previousPage) break
+    scannedPages += 1
+  }
+
+  if (!containsTarget()) {
+    showFailToast('这条评论可能已被删除，或当前账号无权查看')
+    return
+  }
+
+  await nextTick()
+  commentScrollRef.value
+    ?.querySelector<HTMLElement>(`[data-comment-id="${commentId}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 function reply(comment: FollowCommentVO) {
@@ -144,12 +175,13 @@ async function remove(comment: FollowCommentVO) {
 }
 
 watch(
-  () => [show.value, props.resourceType, props.resourceId] as const,
+  () => [show.value, props.resourceType, props.resourceId, props.focusCommentId] as const,
   async ([visible]) => {
     if (!visible || !props.resourceId) return
     page.value = 1
     comments.value = []
     total.value = 0
+    focusedCommentId.value = null
     resetEditor()
     try {
       if (!fieldRefs.members.value.length) await fieldRefs.load()
@@ -157,6 +189,7 @@ watch(
       showFailToast(extractErrorMessage(error))
     }
     await load(true)
+    if (props.focusCommentId) await focusComment(props.focusCommentId)
   },
   { immediate: true },
 )
@@ -169,14 +202,15 @@ watch(
     height="82%"
   >
     <div class="flex h-full min-h-0 flex-col" data-testid="mobile-follow-comment-sheet">
-      <div class="min-h-0 flex-1 overflow-auto p-4">
+      <div ref="commentScrollRef" class="min-h-0 flex-1 overflow-auto p-4">
         <van-loading v-if="loading && !comments.length" class="py-10 text-center" />
         <van-empty v-else-if="!comments.length" description="暂无评论" />
         <div v-else class="space-y-3">
           <div
             v-for="comment in comments"
             :key="comment.id"
-            class="rounded-lg border border-gray-100 p-3"
+            class="rounded-lg border border-gray-100 p-3 transition-colors"
+            :class="focusedCommentId === comment.id ? 'border-[var(--van-primary-color)] bg-[#F0F6FF]' : ''"
             data-testid="mobile-follow-comment-item"
             :data-comment-id="comment.id"
           >
@@ -208,7 +242,13 @@ watch(
               v-if="comment.replies.length"
               class="mt-3 space-y-2 border-l-2 border-gray-100 pl-3"
             >
-              <div v-for="replyItem in comment.replies" :key="replyItem.id" class="text-sm">
+              <div
+                v-for="replyItem in comment.replies"
+                :key="replyItem.id"
+                class="rounded p-2 text-sm transition-colors"
+                :class="focusedCommentId === replyItem.id ? 'bg-[#F0F6FF] ring-1 ring-[var(--van-primary-color)]' : ''"
+                :data-comment-id="replyItem.id"
+              >
                 <div class="flex items-center gap-1 text-xs text-gray-500">
                   <span>{{ replyItem.createdByName || '成员' }}</span>
                   <span v-if="replyItem.replyToUserName">回复 {{ replyItem.replyToUserName }}</span>

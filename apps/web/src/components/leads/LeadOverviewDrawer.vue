@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FieldVO, LeadVO } from '@micromatrix/shared'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { extractErrorMessage } from '@/api/http'
 import { leadApi } from '@/api/sales'
@@ -19,6 +19,8 @@ const props = defineProps<{
   lead: LeadVO | null
   fields: FieldVO[]
   canConvert?: boolean
+  focusFollowUpId?: string | null
+  focusCommentId?: string | null
 }>()
 const visible = defineModel<boolean>({ required: true })
 const emit = defineEmits<{
@@ -107,7 +109,13 @@ async function handleFollowCreated() {
 }
 
 watch(
-  () => [visible.value, props.lead?.id, props.mode] as const,
+  () => [
+    visible.value,
+    props.lead?.id,
+    props.mode,
+    props.focusFollowUpId,
+    props.focusCommentId,
+  ] as const,
   async ([open]) => {
     ++loadGeneration
     detail.value = null
@@ -119,7 +127,21 @@ watch(
     } catch (error) {
       ElMessage.error(extractErrorMessage(error))
     }
-    if (visible.value) await refresh()
+    if (visible.value) {
+      await refresh()
+      if (props.focusFollowUpId) {
+        activeTab.value = 'followRecord'
+        await nextTick()
+        try {
+          await followRecordRef.value?.openCommentsById(
+            props.focusFollowUpId,
+            props.focusCommentId,
+          )
+        } catch (error) {
+          ElMessage.error(extractErrorMessage(error))
+        }
+      }
+    }
   },
   { immediate: true },
 )

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FollowCommentVO } from '@micromatrix/shared'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { extractErrorMessage } from '@/api/http'
 import type { MemberOption } from '@/api/system'
 import { useFollowComments, type FollowCommentResourceType } from '@/composables/useFollowComments'
@@ -12,6 +12,7 @@ const props = defineProps<{
   resourceType: FollowCommentResourceType
   resourceId: string
   members: MemberOption[]
+  focusCommentId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +23,8 @@ const pageSize = 10
 const editorMode = ref<'create' | 'reply' | 'edit'>('create')
 const editorRevision = ref(0)
 const editorTarget = ref<FollowCommentVO | null>(null)
+const commentListRef = ref<HTMLElement | null>(null)
+const highlightedCommentId = ref<string | null>(null)
 const {
   comments,
   loading,
@@ -31,6 +34,7 @@ const {
   commentCount,
   load,
   reset,
+  goToComment,
   add,
   update,
   remove: removeComment,
@@ -60,6 +64,19 @@ const editorMentions = computed(() =>
 function resetEditor() {
   editorMode.value = 'create'
   editorTarget.value = null
+}
+
+async function focusComment(commentId: string) {
+  const found = await goToComment(commentId)
+  if (!found) {
+    ElMessage.warning('这条评论可能已被删除，或当前账号无权查看')
+    return
+  }
+  highlightedCommentId.value = commentId
+  await nextTick()
+  commentListRef.value
+    ?.querySelector<HTMLElement>(`[data-comment-id="${commentId}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 function reply(comment: FollowCommentVO) {
@@ -130,14 +147,28 @@ watch(
   () => [props.resourceType, props.resourceId],
   async () => {
     resetEditor()
+    highlightedCommentId.value = null
     try {
       await reset()
       emit('countChanged', commentCount.value)
+      if (props.focusCommentId) await focusComment(props.focusCommentId)
     } catch (error) {
       ElMessage.error(extractErrorMessage(error))
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => props.focusCommentId,
+  async (commentId) => {
+    if (!commentId) return
+    try {
+      await focusComment(commentId)
+    } catch (error) {
+      ElMessage.error(extractErrorMessage(error))
+    }
+  },
 )
 </script>
 
@@ -155,14 +186,17 @@ watch(
     />
 
     <el-empty v-if="!comments.length" description="暂无评论" :image-size="56" />
-    <FollowCommentItem
-      v-for="comment in comments"
-      :key="comment.id"
-      :comment="comment"
-      @reply="reply"
-      @edit="edit"
-      @remove="remove"
-    />
+    <div ref="commentListRef" class="space-y-3">
+      <FollowCommentItem
+        v-for="comment in comments"
+        :key="comment.id"
+        :comment="comment"
+        :highlighted-comment-id="highlightedCommentId"
+        @reply="reply"
+        @edit="edit"
+        @remove="remove"
+      />
+    </div>
 
     <div v-if="total > pageSize" class="flex justify-end">
       <el-pagination

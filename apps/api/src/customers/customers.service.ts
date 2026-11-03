@@ -811,7 +811,7 @@ export class CustomersService {
       excludeSelf: true,
       type: 'system',
       templateContext: { name: customer.name },
-      link: `/customers/${customer.id}`,
+      link: `/customers?id=${customer.id}`,
     })
   }
 
@@ -962,7 +962,7 @@ export class CustomersService {
         excludeSelf: true,
         type: 'assign',
         templateContext: { name: customer.name },
-        link: `/customers/${customer.id}`,
+        link: `/customers?id=${customer.id}`,
       })
     }
     await this.changeLog.record(user, {
@@ -1136,7 +1136,7 @@ export class CustomersService {
       excludeSelf: true,
       type: 'assign',
       templateContext: { name: customer.name },
-      link: `/customers/${customer.id}`,
+      link: `/customers?id=${customer.id}`,
     })
     return { id: customer.id, name: customer.name }
   }
@@ -1429,7 +1429,7 @@ export class CustomersService {
         uName: member.name,
         name: customer.name,
       },
-      link: '/customers/' + customerId,
+      link: `/customers?id=${customerId}`,
     })
     return { id: customerId, name: customer.name }
   }
@@ -1902,7 +1902,7 @@ export class CustomersService {
         excludeSelf: true,
         type: 'assign',
         templateContext: { name: target.name },
-        link: '/customers/' + target.id,
+        link: `/customers?id=${target.id}`,
       })
     }
     await this.changeLog.record(user, {

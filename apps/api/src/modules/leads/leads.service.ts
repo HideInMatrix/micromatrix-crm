@@ -1994,7 +1994,7 @@ export class LeadsService {
         excludeSelf: true,
         type: 'system',
         templateContext: { name: lead.name },
-        link: `/customers/${customerId}`,
+        link: `/customers?id=${customerId}`,
       })
     }
   }

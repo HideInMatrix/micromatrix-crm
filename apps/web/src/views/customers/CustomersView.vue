@@ -11,7 +11,7 @@ import {
   type QuickSearchQueryGroup,
 } from '@micromatrix/shared'
 import { Columns3, Download, FolderInput, GitMerge, Plus, Upload, UserRoundCog } from 'lucide-vue-next'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   batchTransferCustomers,
@@ -99,6 +99,8 @@ const exportMode = ref<'all' | 'selected'>('all')
 const exportLoading = ref(false)
 const overviewVisible = ref(false)
 const overviewCustomerId = ref<string | null>(null)
+const overviewFocusFollowUpId = ref<string | null>(null)
+const overviewFocusCommentId = ref<string | null>(null)
 const pageReady = ref(false)
 const savedViewReady = ref(false)
 const initialLoadDone = ref(false)
@@ -423,6 +425,8 @@ async function handleAssignConfirm(userId: string) {
 }
 
 function openDetail(row: CustomerVO) {
+  overviewFocusFollowUpId.value = null
+  overviewFocusCommentId.value = null
   overviewCustomerId.value = row.id
   overviewVisible.value = true
 }
@@ -485,14 +489,28 @@ async function openFollow(row: CustomerVO) {
   }
 }
 
+function consumeRouteCustomerDeepLink() {
+  if (typeof route.query.id !== 'string') return
+  overviewCustomerId.value = route.query.id
+  overviewFocusFollowUpId.value =
+    typeof route.query.followUpId === 'string' ? route.query.followUpId : null
+  overviewFocusCommentId.value =
+    typeof route.query.commentId === 'string' ? route.query.commentId : null
+  overviewVisible.value = true
+}
+
+watch(
+  () => [route.query.id, route.query.followUpId, route.query.commentId] as const,
+  () => {
+    if (pageReady.value) consumeRouteCustomerDeepLink()
+  },
+)
+
 onMounted(async () => {
   await Promise.all([loadFields(), fieldRefs.load(), loadSystemViews()])
   await consumeRouteHomeFilter()
   await homeQuickCreate.consume(openCreate)
-  if (typeof route.query.id === 'string') {
-    overviewCustomerId.value = route.query.id
-    overviewVisible.value = true
-  }
+  consumeRouteCustomerDeepLink()
   pageReady.value = true
   if (!showSavedViews.value) savedViewReady.value = true
   tryInitialLoad()
@@ -855,6 +873,8 @@ onMounted(async () => {
   <CustomerOverviewDrawer
     v-model="overviewVisible"
     :customer-id="overviewCustomerId"
+    :focus-follow-up-id="overviewFocusFollowUpId"
+    :focus-comment-id="overviewFocusCommentId"
     @changed="loadData"
     @deleted="loadData"
   />

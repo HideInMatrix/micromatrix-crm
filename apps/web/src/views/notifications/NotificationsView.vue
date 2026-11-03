@@ -76,11 +76,19 @@ onMounted(loadData)
           <span class="font-medium text-sm">{{ item.title }}</span>
           <el-tag size="small" class="ml-auto">{{ typeLabel(item.type) }}</el-tag>
         </div>
-        <div v-if="item.content" class="text-sm text-[var(--el-text-color-secondary)] mt-1">
-          {{ item.content }}
-        </div>
-        <div v-if="item.link" class="mt-1 text-sm text-[var(--el-color-primary)]">
-          {{ item.linkLabel || item.link }}
+        <div v-if="item.content" class="mt-1">
+          <el-link
+            v-if="item.link"
+            type="primary"
+            underline="never"
+            class="!h-auto text-sm"
+            @click.stop="openItem(item)"
+          >
+            {{ item.content }}
+          </el-link>
+          <span v-else class="text-sm text-[var(--el-text-color-secondary)]">
+            {{ item.content }}
+          </span>
         </div>
         <div class="text-xs text-[var(--el-text-color-placeholder)] mt-1">
           {{ new Date(item.createdAt).toLocaleString() }}

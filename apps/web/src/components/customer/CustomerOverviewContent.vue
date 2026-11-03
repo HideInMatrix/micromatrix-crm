@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { type CustomerVO, type FieldVO } from '@micromatrix/shared'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { getCustomer, poolDeleteCustomer } from '@/api/customers'
 import { extractErrorMessage } from '@/api/http'
@@ -21,6 +21,8 @@ const props = defineProps<{
   pool?: boolean
   poolId?: string
   hiddenFieldIds?: string[]
+  focusFollowUpId?: string | null
+  focusCommentId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +43,13 @@ const transferVisible = ref(false)
 const poolAssignVisible = ref(false)
 const createFollowVisible = ref(false)
 const followRefreshKey = ref(0)
+const followRecordRef = ref<InstanceType<typeof FollowRecordPanel>>()
+
+function setFollowRecordRef(instance: unknown) {
+  followRecordRef.value = instance
+    ? (instance as InstanceType<typeof FollowRecordPanel>)
+    : undefined
+}
 const canMainAction = computed(
   () =>
     !props.pool &&
@@ -81,6 +90,17 @@ function createFollowRecord() {
   if (!canWrite.value || !customer.value) return
   activeTab.value = 'followRecord'
   createFollowVisible.value = true
+}
+
+async function openLinkedFollowComment() {
+  if (!props.focusFollowUpId) return
+  activeTab.value = 'followRecord'
+  await nextTick()
+  try {
+    await followRecordRef.value?.openCommentsById(props.focusFollowUpId, props.focusCommentId)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
 }
 
 async function handleFollowChanged() {
@@ -182,12 +202,23 @@ watch(
     activeTab.value = 'overview'
     createFollowVisible.value = false
     await loadBase()
+    await openLinkedFollowComment()
+  },
+)
+
+watch(
+  () => [props.focusFollowUpId, props.focusCommentId] as const,
+  () => {
+    if (props.focusFollowUpId && customer.value?.id === props.customerId) {
+      void openLinkedFollowComment()
+    }
   },
 )
 
 onMounted(async () => {
   await fieldRefs.load()
   await loadBase()
+  await openLinkedFollowComment()
 })
 </script>
 
@@ -301,6 +332,7 @@ onMounted(async () => {
             >
               <FollowRecordPanel
                 v-if="tab.name === 'followRecord'"
+                :ref="setFollowRecordRef"
                 :refresh-key="followRefreshKey"
                 target-type="customer"
                 :target-id="customerId"

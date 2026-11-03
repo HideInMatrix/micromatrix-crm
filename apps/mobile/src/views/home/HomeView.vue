@@ -16,6 +16,7 @@ import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi } from '@/api/sales'
 import { notificationApi } from '@/api/system'
+import { resolveMobileNotificationPath } from '@/utils/notification-link'
 import MobileFollowUpSheet from '@/components/MobileFollowUpSheet.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -153,18 +154,31 @@ function followLead(lead: LeadVO) {
 }
 
 async function openMessage(item: NotificationVO) {
-  try {
-    if (!item.readAt) {
+  if (!item.readAt) {
+    try {
       await notificationApi.markRead(item.id)
       item.readAt = new Date().toISOString()
       unreadCount.value = Math.max(0, (unreadCount.value ?? 0) - 1)
+    } catch (error) {
+      // 阅读状态更新失败不应阻断通知的业务跳转。
+      showFailToast(extractErrorMessage(error))
     }
-    if (!item.link) return
-    if (/^https?:\/\//i.test(item.link)) {
-      window.location.href = item.link
-    } else if (item.link.startsWith('/mobile/')) {
-      await router.push(item.link.slice('/mobile'.length) || '/home')
-    }
+  }
+
+  if (!item.link) return
+  if (/^https?:\/\//i.test(item.link)) {
+    window.location.href = item.link
+    return
+  }
+
+  const target = resolveMobileNotificationPath(item.link)
+  if (!target) {
+    showFailToast('该消息没有可打开的移动端链接')
+    return
+  }
+
+  try {
+    await router.push(target)
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   }

@@ -145,7 +145,7 @@ async function save() {
 
 function openCustomer(id: string) {
   if (!id) return
-  router.push(`/customers/${id}`)
+  router.push({ name: 'customers', query: { id } })
 }
 
 watch(

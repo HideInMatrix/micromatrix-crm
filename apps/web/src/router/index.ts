@@ -147,15 +147,19 @@ const router = createRouter({
           },
         },
         {
+          // 兼容旧客户详情链接，统一回到客户列表并通过详情抽屉展示。
           path: 'customers/:id',
-          name: 'customer-detail',
-          component: () => import('@/views/customers/CustomerDetailView.vue'),
-          meta: {
-            title: '客户详情',
-            perm: 'menu:customer',
-            activeMenu: '/customers',
-            topMenuGroup: 'customer',
-            topMenuActivePath: '/customers',
+          redirect: (to) => {
+            const id =
+              typeof to.query.id === 'string'
+                ? to.query.id
+                : to.params.id === 'detail'
+                  ? ''
+                  : String(to.params.id ?? '')
+            return {
+              path: '/customers',
+              query: { ...to.query, ...(id ? { id } : {}) },
+            }
           },
         },
         {

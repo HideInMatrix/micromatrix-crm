@@ -92,6 +92,8 @@ const followVisible = ref(false)
 const followTarget = ref<LeadVO | null>(null)
 const overviewVisible = ref(false)
 const overviewTarget = ref<LeadVO | null>(null)
+const overviewFocusFollowUpId = ref<string | null>(null)
+const overviewFocusCommentId = ref<string | null>(null)
 const pageReady = ref(false)
 let routeGeneration = 0
 let activeListRequestKey = ''
@@ -555,6 +557,8 @@ function openFollow(row: LeadVO) {
 }
 
 function openOverview(row: LeadVO) {
+  overviewFocusFollowUpId.value = null
+  overviewFocusCommentId.value = null
   overviewTarget.value = row
   overviewVisible.value = true
 }
@@ -665,6 +669,10 @@ async function consumeRouteLeadDeepLink() {
       selectedPoolId.value = data.poolId
     }
     overviewTarget.value = data
+    overviewFocusFollowUpId.value =
+      typeof route.query.followUpId === 'string' ? route.query.followUpId : null
+    overviewFocusCommentId.value =
+      typeof route.query.commentId === 'string' ? route.query.commentId : null
     overviewVisible.value = true
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -678,7 +686,7 @@ async function consumeRouteLeadDeepLink() {
 }
 
 watch(
-  () => [route.query.id, route.query.poolId] as const,
+  () => [route.query.id, route.query.poolId, route.query.followUpId, route.query.commentId] as const,
   () => {
     if (pageReady.value) void consumeRouteLeadDeepLink()
   },
@@ -851,6 +859,8 @@ onMounted(async () => {
         :mode="isPoolMode ? 'pool' : 'lead'"
         :lead="overviewTarget"
         :fields="contextFields"
+        :focus-follow-up-id="overviewFocusFollowUpId"
+        :focus-comment-id="overviewFocusCommentId"
         :can-convert="canManualConvert"
         @edit="handleOverviewEdit"
         @convert="handleOverviewConvert"

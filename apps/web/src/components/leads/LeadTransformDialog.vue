@@ -67,7 +67,7 @@ function goDetail() {
   stopCountdown()
   successVisible.value = false
   if (result.value?.customerId) {
-    router.push(`/customers/${result.value.customerId}`)
+    router.push({ name: 'customers', query: { id: result.value.customerId } })
   }
 }
 

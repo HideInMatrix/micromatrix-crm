@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import type { FollowUpPlanStatus, FollowUpPlanTargetType, FollowUpPlanVO } from '@micromatrix/shared'
-import { ref, toRef } from 'vue'
+import { nextTick, ref, toRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { showFailToast } from 'vant'
+import { extractErrorMessage } from '@/api/http'
+import { followUpPlanApi } from '@/api/sales'
 import MobileFollowCommentSheet from '@/components/MobileFollowCommentSheet.vue'
 import MobileFollowRecordFormSheet from '@/components/MobileFollowRecordFormSheet.vue'
 import MobileFollowUpPlanFormSheet from '@/components/follow-up-plan/MobileFollowUpPlanFormSheet.vue'
 import MobileFollowUpPlanItem from '@/components/follow-up-plan/MobileFollowUpPlanItem.vue'
 import MobileFollowUpPlanToolbar from '@/components/follow-up-plan/MobileFollowUpPlanToolbar.vue'
 import { useMobileFollowUpPlans } from '@/composables/useMobileFollowUpPlans'
+
+const route = useRoute()
 
 const props = withDefaults(
   defineProps<{
@@ -74,6 +80,22 @@ function handleStatusChange(plan: FollowUpPlanVO, status: FollowUpPlanStatus) {
 function handleDelete(plan: FollowUpPlanVO) {
   void removePlan(plan)
 }
+
+// 与 PC 的 consumeRoutePlan 保持一致：通知携带计划 ID 时直接打开对应计划。
+watch(
+  () => route.query.id,
+  async (value) => {
+    if (typeof value !== 'string' || !value.trim()) return
+    try {
+      const { data } = await followUpPlanApi.get(value)
+      await nextTick()
+      await formSheet.value?.open(data)
+    } catch (error) {
+      showFailToast(extractErrorMessage(error))
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

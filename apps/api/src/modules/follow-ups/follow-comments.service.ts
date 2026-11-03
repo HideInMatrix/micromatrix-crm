@@ -29,6 +29,17 @@ export class FollowCommentsService extends FollowCommentServiceBase<FollowRecord
     return this.followUps.assertRecordAccess(user, resourceId, write)
   }
 
+  protected targetLink(resource: FollowRecord, commentId?: string): string {
+    if (!commentId) return super.targetLink(resource)
+    const path = super.targetLink(resource)
+    const query = new URLSearchParams({
+      id: resource.targetId,
+      followUpId: resource.id,
+      commentId,
+    })
+    return `${path}?${query.toString()}`
+  }
+
   protected async loadParents(
     tenantId: string,
     resourceId: string,
