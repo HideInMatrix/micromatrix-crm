@@ -36,33 +36,14 @@ watch(
   { immediate: true, deep: true },
 )
 
-watch(
-  mentionIds,
-  (ids, previous) => {
-    const old = new Set(previous ?? [])
-    for (const id of ids) {
-      if (old.has(id)) continue
-      const member = props.members.find((item) => item.id === id)
-      if (!member) continue
-      const token = `@${member.name}`
-      if (!content.value.includes(token)) {
-        content.value = `${content.value}${content.value && !content.value.endsWith(' ') ? ' ' : ''}${token} `
-      }
-    }
-  },
-  { deep: true },
-)
-
 function submit() {
   const text = content.value.trim()
   if (!text) {
     ElMessage.warning('请输入评论内容')
     return
   }
-  const mentionedUserIds = mentionIds.value.filter((id) => {
-    const member = props.members.find((item) => item.id === id)
-    return member ? text.includes(`@${member.name}`) : false
-  })
+  // @成员仅作为提醒接收人保存，不拼接到评论正文中。
+  const mentionedUserIds = [...mentionIds.value]
   emit('submit', { content: text, mentionedUserIds })
 }
 </script>

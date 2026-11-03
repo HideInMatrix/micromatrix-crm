@@ -7,17 +7,18 @@ export interface MessageTemplateResource {
 
 const COMMENT_PLAN_ADDED_ZH = '【评论提醒】${OPERATOR} 给【${name}】的跟进计划添加了评论'
 const COMMENT_PLAN_MENTIONED_ZH = '【评论提醒】${OPERATOR} 在【${name}】的跟进计划添加了评论并@了你'
-const COMMENT_RECORD_ADDED_ZH = '【评论提醒】${OPERATOR} 给【${name}】的跟进记录添加了评论'
+const COMMENT_RECORD_ADDED_ZH =
+  '【评论详情】\n评论人：${OPERATOR}\n跟进对象：${name}\n评论内容：\n${COMMENT_CONTENT}'
 const COMMENT_RECORD_MENTIONED_ZH =
-  '【评论提醒】${OPERATOR} 在【${name}】的跟进记录添加了评论并@了你'
+  '【评论详情】\n评论人：${OPERATOR}\n跟进对象：${name}\n评论内容：\n${COMMENT_CONTENT}'
 const COMMENT_PLAN_ADDED_EN =
   '[Comment Reminder] ${OPERATOR} added a comment to the follow-up plan for [${name}]'
 const COMMENT_PLAN_MENTIONED_EN =
   '[Comment Reminder] ${OPERATOR} added a comment to the follow-up plan for [${name}] and @ed you as well'
 const COMMENT_RECORD_ADDED_EN =
-  '[Comment Reminder] ${OPERATOR} added a comment to the follow-up record for [${name}]'
+  '[Comment details]\nCommenter: ${OPERATOR}\nRelated record: ${name}\nComment:\n${COMMENT_CONTENT}'
 const COMMENT_RECORD_MENTIONED_EN =
-  '[Comment Reminder] ${OPERATOR} added a comment to the follow-up record for [${name}] and @ed you as well'
+  '[Comment details]\nCommenter: ${OPERATOR}\nRelated record: ${name}\nComment:\n${COMMENT_CONTENT}'
 
 const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
   CUSTOMER_ADD: {
@@ -65,7 +66,7 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     template: COMMENT_RECORD_ADDED_ZH,
   },
   CUSTOMER_FOLLOW_UP_RECORD_COMMENT_MENTIONED: {
-    eventName: '跟进记录评论@提醒',
+    eventName: '跟进记录评论提及',
     template: COMMENT_RECORD_MENTIONED_ZH,
   },
   CLUE_ADD: { eventName: '新建线索', template: '请注意！${OPERATOR}新建${name}线索给您，请知悉！' },
@@ -114,7 +115,7 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     template: COMMENT_RECORD_ADDED_ZH,
   },
   CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED: {
-    eventName: '跟进记录评论@提醒',
+    eventName: '跟进记录评论提及',
     template: COMMENT_RECORD_MENTIONED_ZH,
   },
 }

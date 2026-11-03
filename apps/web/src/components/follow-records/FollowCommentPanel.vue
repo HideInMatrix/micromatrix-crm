@@ -20,6 +20,7 @@ const emit = defineEmits<{
 
 const pageSize = 10
 const editorMode = ref<'create' | 'reply' | 'edit'>('create')
+const editorRevision = ref(0)
 const editorTarget = ref<FollowCommentVO | null>(null)
 const {
   comments,
@@ -93,6 +94,7 @@ async function submit(payload: { content: string; mentionedUserIds: string[] }) 
       })
     }
     resetEditor()
+    editorRevision.value += 1
     emit('countChanged', commentCount.value)
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -142,7 +144,7 @@ watch(
 <template>
   <div v-loading="loading || submitting" class="space-y-3">
     <FollowCommentEditor
-      :key="`${editorMode}:${editorTarget?.id ?? 'new'}`"
+      :key="`${editorMode}:${editorTarget?.id ?? 'new'}:${editorRevision}`"
       :members="members"
       :initial-content="editorContent"
       :initial-mention-ids="editorMentions"

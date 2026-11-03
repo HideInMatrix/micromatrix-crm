@@ -378,7 +378,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         recipientIds: [resource.ownerId],
         excludeSelf: true,
         type: this.notificationType,
-        templateContext: { name: targetName },
+        templateContext: { name: targetName, COMMENT_CONTENT: commentContent },
         link,
       })
     }
@@ -390,8 +390,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         recipientIds: mentioned,
         excludeSelf: true,
         type: this.notificationType,
-        templateContext: { name: targetName },
-        appendContent: commentContent,
+        templateContext: { name: targetName, COMMENT_CONTENT: commentContent },
         link,
       })
     }

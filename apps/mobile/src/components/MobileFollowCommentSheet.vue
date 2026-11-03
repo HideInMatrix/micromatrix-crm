@@ -112,8 +112,10 @@ async function submit() {
       await currentApi.value.add(payload)
       showSuccessFeedback(editorMode.value === 'reply' ? '回复已发送' : '评论已发送')
     }
+    const shouldClose = editorMode.value !== 'edit'
     resetEditor()
     await load(true)
+    if (shouldClose) show.value = false
   } catch (error) {
     showFailToast(extractErrorMessage(error))
   } finally {
