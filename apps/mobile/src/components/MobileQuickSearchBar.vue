@@ -9,6 +9,7 @@ import type {
 import { buildQuickSearchPayload } from '@micromatrix/frontend-shared'
 import type { DropdownMenuInstance, TimePickerColumnType } from 'vant'
 import { computed, reactive, ref } from 'vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 
 const props = defineProps<{
   fields: FieldVO[]
@@ -276,31 +277,37 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
         </div>
       </van-dropdown-item>
     </van-dropdown-menu>
-    <van-popup
+    <MobileDrawer
       :show="dateTarget !== null"
-      position="bottom"
-      round
-      @update:show="
-        (show: boolean) => {
-          if (!show) dateTarget = null
-        }
-      "
+      :title="dateTarget?.label ?? '选择日期'"
+      height="auto"
+      max-height="calc(100dvh - 88px)"
+      @update:show="(opened) => { if (!opened) dateTarget = null }"
     >
+      <template #actions>
+        <div class="flex items-center gap-[8px]">
+          <van-button
+            type="primary"
+            size="small"
+            @click="
+              datePickerStep === 'date'
+                ? confirmDate({ selectedValues: datePickerValues })
+                : confirmTime({ selectedValues: timePickerValues })
+            "
+          >确定</van-button>
+        </div>
+      </template>
       <van-date-picker
         v-if="datePickerStep === 'date'"
         v-model="datePickerValues"
-        :title="dateTarget?.label"
-        @confirm="confirmDate"
-        @cancel="dateTarget = null"
+        :show-toolbar="false"
       />
       <van-time-picker
         v-else
         v-model="timePickerValues"
         :columns-type="timeColumns"
-        :title="dateTarget?.label"
-        @confirm="confirmTime"
-        @cancel="dateTarget = null"
+        :show-toolbar="false"
       />
-    </van-popup>
+    </MobileDrawer>
   </div>
 </template>

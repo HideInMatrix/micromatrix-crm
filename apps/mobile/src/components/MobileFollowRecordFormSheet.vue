@@ -7,6 +7,7 @@ import { showSuccessFeedback } from '@/utils/feedback'
 import { followUpApi, followUpPlanApi } from '@/api/sales'
 import { dictionaryApi } from '@/api/system'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 import MobileVantDateTimeField from '@/components/MobileVantDateTimeField.vue'
 import MobileVantPickerField from '@/components/MobileVantPickerField.vue'
 import { useFieldRefs } from '@/composables/useFieldRefs'
@@ -160,10 +161,9 @@ watch(show, (open) => {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round class="h-[82%]">
-    <div class="h-full flex flex-col">
-      <div class="p-4 text-center font-medium">计划转跟进记录</div>
-      <div v-if="plan" class="flex-1 overflow-auto px-4 pb-4 space-y-3">
+  <MobileDrawer v-model:show="show" title="计划转跟进记录" height="82%">
+    <div class="flex h-full min-h-0 flex-col">
+      <div v-if="plan" class="min-h-0 flex-1 space-y-3 overflow-auto px-4 pb-4">
         <div v-if="loading" class="py-10 text-center">
           <van-loading />
         </div>
@@ -196,5 +196,5 @@ watch(show, (open) => {
         </van-button>
       </div>
     </div>
-  </van-popup>
+  </MobileDrawer>
 </template>

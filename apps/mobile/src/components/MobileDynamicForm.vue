@@ -9,6 +9,7 @@ import {
 } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import MobileCalendarPopup from './MobileCalendarPopup.vue'
+import MobileDrawer from './MobileDrawer.vue'
 import MobileDataSourceFieldInput from './MobileDataSourceFieldInput.vue'
 import MobileFormAlert from './MobileFormAlert.vue'
 import MobileSubTableField from './MobileSubTableField.vue'
@@ -80,6 +81,7 @@ const showPicker = ref(false)
 const showDatePicker = ref(false)
 const pickerSearch = ref('')
 const multiSelection = ref<string[]>([])
+const pickerSelectedValues = ref<string[]>([])
 const isMultiPicker = computed(() =>
   ['multiselect', 'checkbox'].includes(pickerField.value?.type ?? ''),
 )
@@ -103,6 +105,12 @@ function openPicker(field: FieldVO) {
   multiSelection.value = Array.isArray(model.value[field.key])
     ? [...(model.value[field.key] as string[])]
     : []
+  const currentValue = model.value[field.key]
+  pickerSelectedValues.value = [
+    typeof currentValue === 'string' && currentValue
+      ? currentValue
+      : (pickerColumns.value[0]?.value ?? ''),
+  ]
   if (field.type === 'date') {
     dateValue.value = (model.value[field.key] as string | undefined) ?? ''
     showDatePicker.value = true
@@ -118,6 +126,10 @@ function usesSearchPage(field: FieldVO) {
 function onPickerConfirm({ selectedValues }: { selectedValues: string[] }) {
   if (pickerField.value) model.value[pickerField.value.key] = selectedValues[0]
   showPicker.value = false
+}
+
+function confirmPickerSelection() {
+  onPickerConfirm({ selectedValues: pickerSelectedValues.value })
 }
 
 function onDateConfirm(value: string) {
@@ -434,16 +446,20 @@ function textInputType(field: FieldVO) {
     </van-cell-group>
   </template>
 
-  <van-popup v-model:show="showPicker" position="bottom" round safe-area-inset-bottom>
-    <template v-if="createDesign">
-      <div class="relative flex h-[50px] items-center justify-center rounded-t-[12px] bg-[#F5F5F5]">
-        <span class="text-[16px] font-semibold text-[#000000]">{{ pickerField?.label }}</span>
-        <van-button
-          class="!absolute right-[12px] !border-0 !bg-transparent !text-[14px] !text-[#666666]"
-          @click="showPicker = false"
-          >取消</van-button
-        >
+  <MobileDrawer
+    v-model:show="showPicker"
+    :title="pickerField?.label ?? '请选择'"
+    :header-background="createDesign ? '#F5F5F5' : 'inherit'"
+    height="auto"
+    max-height="calc(100dvh - 88px)"
+    safe-area-inset-bottom
+  >
+    <template v-if="!createDesign" #actions>
+      <div class="flex items-center gap-[8px]">
+        <van-button type="primary" size="small" @click="confirmPickerSelection">确定</van-button>
       </div>
+    </template>
+    <template v-if="createDesign">
       <div class="max-h-[55vh] overflow-y-auto bg-white p-[12px]">
         <van-search
           v-if="searchablePicker"
@@ -522,10 +538,11 @@ function textInputType(field: FieldVO) {
     <van-picker
       v-else
       :columns="pickerColumns"
-      @confirm="onPickerConfirm"
-      @cancel="showPicker = false"
+      :model-value="pickerSelectedValues"
+      :show-toolbar="false"
+      @update:model-value="pickerSelectedValues = $event.map(String)"
     />
-  </van-popup>
+  </MobileDrawer>
   <MobileCalendarPopup
     v-model:show="showDatePicker"
     :label="pickerField?.label ?? '选择日期'"

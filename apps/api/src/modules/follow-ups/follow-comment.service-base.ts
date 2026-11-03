@@ -156,7 +156,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       return created
     })
 
-    await this.sendNotifications(user, resource, dto.replyToUserId, mentionedUserIds)
+    await this.sendNotifications(user, resource, dto.replyToUserId, mentionedUserIds, content)
     const vo = (await this.toVOs(user, [comment], []))[0]
     return withOperationLogResult(vo, {
       targetId: dto.resourceId,
@@ -186,6 +186,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
       resource,
       comment.replyToUserId ?? undefined,
       mentionedUserIds,
+      content,
     )
     const vo = (await this.toVOs(user, [updated], []))[0]
     return withOperationLogResult(vo, {
@@ -363,6 +364,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
     resource: TResource,
     replyToUserId: string | undefined,
     mentionedUserIds: string[],
+    commentContent: string,
   ): Promise<void> {
     const mentioned = [...new Set([...mentionedUserIds, ...(replyToUserId ? [replyToUserId] : [])])]
     const targetName = await this.targetName(operator.tenantId, resource)
@@ -389,6 +391,7 @@ export abstract class FollowCommentServiceBase<TResource extends FollowCommentRe
         excludeSelf: true,
         type: this.notificationType,
         templateContext: { name: targetName },
+        appendContent: commentContent,
         link,
       })
     }

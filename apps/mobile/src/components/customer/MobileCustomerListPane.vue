@@ -49,7 +49,7 @@ let loadingGeneration = -1
 
 function canFollow(customer: CustomerVO): boolean {
   return (
-    auth.hasPerm('customer:update') && !customer.inSea && customer.collaborationType !== 'READ_ONLY'
+    auth.hasPerm('customer:update') && !customer.inSea && !customer.followUpCompleted && customer.collaborationType !== 'READ_ONLY'
   )
 }
 async function loadMore() {

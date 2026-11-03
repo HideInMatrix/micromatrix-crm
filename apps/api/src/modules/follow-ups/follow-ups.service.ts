@@ -29,6 +29,7 @@ import {
 
 import { AttachmentsService } from '../attachments/attachments.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
+import { CustomerFollowUpCompletionService } from '../metadata/customer-follow-up-completion.service'
 import {
   resourceFieldAttachmentTarget,
   ResourceFieldValueService,
@@ -102,6 +103,7 @@ export class FollowUpsService {
     private readonly pools: ResourcePoolsService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
+    private readonly customerFollowUpCompletion: CustomerFollowUpCompletionService,
     private readonly userViews: UserViewsService,
     private readonly attachments: AttachmentsService,
   ) {}
@@ -330,6 +332,15 @@ export class FollowUpsService {
       throw new BadRequestException('转记录目标必须与来源跟进计划一致')
     }
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
+    if (dto.targetType === 'customer') {
+      const { rule, completedIds } = await this.customerFollowUpCompletion.evaluate(user.tenantId, [dto.targetId])
+      if (rule.enabled && !rule.valid) {
+        throw new BadRequestException('客户跟进完结规则引用的字段已失效，请先修复系统设置')
+      }
+      if (completedIds.has(dto.targetId)) {
+        throw new BadRequestException('该客户已完成跟进，不能新增跟进记录')
+      }
+    }
     const owner = await this.resolveOwner(user, dto.ownerId ?? sourcePlan?.ownerId)
     const dynamicValues = await this.moduleFieldsToDynamicValues(
       user.tenantId,

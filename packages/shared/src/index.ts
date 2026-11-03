@@ -81,6 +81,8 @@ export interface CustomerVO {
   email: string | null
   remark: string | null
   inSea: boolean
+  /** 根据租户客户跟进完结规则动态计算，不作为独立业务字段持久化。 */
+  followUpCompleted: boolean
   poolId: string | null
   ownerId: string | null
   ownerName?: string | null

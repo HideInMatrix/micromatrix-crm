@@ -18,6 +18,7 @@ declare module 'vue' {
     MobileCustomerOpenSeaPane: typeof import('./../components/customer/MobileCustomerOpenSeaPane.vue')['default']
     MobileDataSourceFieldInput: typeof import('./../components/MobileDataSourceFieldInput.vue')['default']
     MobileDataSourcePopupPicker: typeof import('./../components/MobileDataSourcePopupPicker.vue')['default']
+    MobileDrawer: typeof import('./../components/MobileDrawer.vue')['default']
     MobileDynamicForm: typeof import('./../components/MobileDynamicForm.vue')['default']
     MobileFollowCommentSheet: typeof import('./../components/MobileFollowCommentSheet.vue')['default']
     MobileFollowRecordFormSheet: typeof import('./../components/MobileFollowRecordFormSheet.vue')['default']

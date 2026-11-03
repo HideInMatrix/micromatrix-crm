@@ -43,6 +43,7 @@ export class MetadataService {
       | 'leadUniqueScope'
       | 'homeAnalytics'
       | 'quickSearch'
+      | 'customerFollowUpCompletion'
     >,
     actorId: string,
   ) {
@@ -160,6 +161,46 @@ export class MetadataService {
         }
       }
     }
+    if (patch.customerFollowUpCompletion !== undefined) {
+      if (module !== 'customer') {
+        throw new BadRequestException('客户跟进完结规则只能配置在客户模块')
+      }
+      const rule = patch.customerFollowUpCompletion
+      if (
+        !rule ||
+        typeof rule.enabled !== 'boolean' ||
+        typeof rule.fieldKey !== 'string' ||
+        !['EQUALS', 'CONTAINS', 'NOT_EMPTY'].includes(rule.operator) ||
+        !Array.isArray(rule.values) ||
+        rule.values.length > 30 ||
+        rule.values.some((value) => typeof value !== 'string' || value.length > 255)
+      ) {
+        throw new BadRequestException('客户跟进完结规则格式不正确')
+      }
+      if (rule.enabled) {
+        const field = current.fields.find((item) => item.key === rule.fieldKey && !item.hidden)
+        if (!field || field.system || !['select', 'radio', 'checkbox', 'multiselect', 'switch'].includes(field.type)) {
+          throw new BadRequestException('请选择未隐藏且支持完结判断的客户自定义字段')
+        }
+        const multi = field.type === 'checkbox' || field.type === 'multiselect'
+        if ((rule.operator === 'CONTAINS') !== multi && rule.operator !== 'NOT_EMPTY') {
+          throw new BadRequestException('完结判断条件与字段类型不匹配')
+        }
+        if (rule.operator === 'NOT_EMPTY') {
+          if (field.type === 'switch') throw new BadRequestException('开关字段请使用等于条件判断开启或关闭')
+          if (rule.values.length) throw new BadRequestException('非空判断不需要配置命中值')
+        } else {
+          if (!rule.values.length) throw new BadRequestException('请至少选择一个完结命中值')
+          const allowed = field.type === 'switch'
+            ? new Set(['true', 'false'])
+            : new Set((field.options ?? []).map((option) => option.value))
+          if (rule.values.some((value) => !allowed.has(value))) {
+            throw new BadRequestException('完结判断值不属于当前字段的选项')
+          }
+        }
+      }
+    }
+
     // ValidationPipe / class-transformer may materialize omitted DTO fields as own
     // properties with `undefined`. A normal object spread would then erase persisted
     // formProp entries (for example quickSearch) during an unrelated partial update.

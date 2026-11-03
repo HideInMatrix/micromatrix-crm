@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CalendarDayItem, CalendarInstance } from 'vant'
 import { computed, ref, watch } from 'vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 
 const props = defineProps<{
   label: string
@@ -68,46 +69,16 @@ function confirm(date: Date) {
 </script>
 
 <template>
-  <van-popup
+  <MobileDrawer
     v-model:show="show"
-    position="bottom"
-    round
-    style="
-      height: min(480px, 60dvh);
-      max-height: calc(100dvh - 88px);
-      overflow: hidden;
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #ffffff;
-    "
+    :title="label"
+    height="min(480px, 60dvh)"
+    max-height="calc(100dvh - 88px)"
+    background="#ffffff"
+    header-background="#F5F5F5"
     @opened="alignMonthHeading"
   >
     <div class="flex h-full min-h-0 flex-col bg-white">
-      <div
-        class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5] px-[12px]"
-      >
-        <span
-          class="max-w-[calc(100%-96px)] truncate text-[16px] leading-[22px] font-semibold text-[#000000]"
-        >
-          {{ label }}
-        </span>
-        <div class="absolute right-[12px]">
-          <van-button
-            type="default"
-            size="small"
-            style="
-              --van-button-border-width: 0px;
-              --van-button-small-height: 34px;
-              --van-button-small-padding: 0;
-              --van-button-small-font-size: 14px;
-              --van-button-default-background: transparent;
-              --van-button-default-color: #777777;
-            "
-            @click="show = false"
-            >取消</van-button
-          >
-        </div>
-      </div>
-
       <van-calendar
         v-if="show"
         ref="calendarRef"
@@ -143,5 +114,5 @@ function confirm(date: Date) {
       />
       <div class="shrink-0 bg-white pb-[env(safe-area-inset-bottom)]" />
     </div>
-  </van-popup>
+  </MobileDrawer>
 </template>

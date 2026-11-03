@@ -50,7 +50,7 @@ const canMainAction = computed(
 )
 const canWrite = computed(
   () =>
-    !props.pool && customer.value?.canCollaborateWrite === true && auth.hasPerm('customer:update'),
+    !props.pool && customer.value?.canCollaborateWrite === true && !customer.value.followUpCompleted && auth.hasPerm('customer:update'),
 )
 const allTabs = computed<{ name: TabName; label: string; visible: boolean }[]>(() => [
   { name: 'overview', label: '概览', visible: true },
@@ -141,10 +141,6 @@ async function claimPoolCustomer() {
     ElMessage.success('客户领取成功')
     emit('deleted')
     emit('close')
-    window.open(
-      `${window.location.origin}/customers?id=${encodeURIComponent(props.customerId)}`,
-      '_blank',
-    )
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
@@ -229,8 +225,9 @@ onMounted(async () => {
           >
             {{ customer.name }}
           </strong>
+          <el-tag v-if="customer.followUpCompleted" type="success" size="small" effect="light" class="shrink-0">跟进已完结</el-tag>
           <el-button
-            v-if="canMainAction && auth.hasPerm('customer:transfer')"
+            v-if="canMainAction && !customer.followUpCompleted && auth.hasPerm('customer:transfer')"
             class="!h-[36px] !shrink-0 !rounded-[4px] !border !border-[#DCDFE6] !bg-[#FFFFFF] !px-[9px] text-[13px] text-[#626B79] [--el-button-hover-bg-color:var(--el-color-primary-light-9)] [--el-button-hover-border-color:var(--el-color-primary)]"
             @click="transferVisible = true"
           >

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common'
@@ -34,6 +35,7 @@ import {
 
 import { ModuleFormsService } from '../metadata/module-forms.service'
 import { ResourceFieldValueService } from '../metadata/resource-field-value.service'
+import { CustomerFollowUpCompletionService } from '../metadata/customer-follow-up-completion.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import {
@@ -98,6 +100,7 @@ interface TargetContext {
 
 @Injectable()
 export class FollowUpPlansService {
+  private readonly logger = new Logger(FollowUpPlansService.name)
   constructor(
     private readonly prisma: PrismaService,
     private readonly dataScope: DataScopeService,
@@ -105,6 +108,7 @@ export class FollowUpPlansService {
     private readonly pools: ResourcePoolsService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
+    private readonly customerFollowUpCompletion: CustomerFollowUpCompletionService,
     private readonly notifications: NotificationsService,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
@@ -178,6 +182,15 @@ export class FollowUpPlansService {
 
   async create(user: AuthUser, dto: CreateFollowUpPlanDto): Promise<FollowUpPlanVO> {
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
+    if (dto.targetType === 'customer') {
+      const { rule, completedIds } = await this.customerFollowUpCompletion.evaluate(user.tenantId, [dto.targetId])
+      if (rule.enabled && !rule.valid) {
+        throw new BadRequestException('客户跟进完结规则引用的字段已失效，请先修复系统设置')
+      }
+      if (completedIds.has(dto.targetId)) {
+        throw new BadRequestException('该客户已完成跟进，不能新增跟进计划')
+      }
+    }
     const owner = await this.resolveOwner(user, dto.ownerId)
     const dynamicValues = await this.moduleFieldsToDynamicValues(
       user.tenantId,
@@ -216,6 +229,15 @@ export class FollowUpPlansService {
     const targetType = dto.targetType ?? (existing.targetType as TargetType)
     const targetId = dto.targetId ?? existing.targetId
     await this.assertTargetAccess(user, targetType, targetId, true)
+    if (targetType === 'customer' && (targetType !== existing.targetType || targetId !== existing.targetId)) {
+      const { rule, completedIds } = await this.customerFollowUpCompletion.evaluate(user.tenantId, [targetId])
+      if (rule.enabled && !rule.valid) {
+        throw new BadRequestException('客户跟进完结规则引用的字段已失效，请先修复系统设置')
+      }
+      if (completedIds.has(targetId)) {
+        throw new BadRequestException('该客户已完成跟进，不能关联新的跟进计划')
+      }
+    }
     const owner = dto.ownerId ? await this.resolveOwner(user, dto.ownerId) : null
     const estimatedAt =
       dto.estimatedAt === undefined
@@ -341,7 +363,28 @@ export class FollowUpPlansService {
     start.setHours(0, 0, 0, 0)
     const end = new Date(start)
     end.setDate(end.getDate() + 1)
-    const plans = await this.loadDueReminderPlans(start, end)
+    const duePlans = await this.loadDueReminderPlans(start, end)
+    const customerPlans = new Map<string, typeof duePlans>()
+    for (const plan of duePlans) {
+      if (plan.targetType !== 'customer') continue
+      const rows = customerPlans.get(plan.tenantId) ?? []
+      rows.push(plan)
+      customerPlans.set(plan.tenantId, rows)
+    }
+    const completedPlanIds = new Set<string>()
+    for (const [tenantId, rows] of customerPlans) {
+      const { rule, completedIds } = await this.customerFollowUpCompletion.evaluate(
+        tenantId,
+        [...new Set(rows.map((row) => row.targetId))],
+      )
+      if (rule.enabled && !rule.valid) {
+        this.logger.error(`组织 ${tenantId} 的客户跟进完结规则引用了失效字段，已跳过相关跟进提醒`)
+        for (const row of rows) completedPlanIds.add(row.id)
+        continue
+      }
+      for (const row of rows) if (completedIds.has(row.targetId)) completedPlanIds.add(row.id)
+    }
+    const plans = duePlans.filter((plan) => !completedPlanIds.has(plan.id))
     const names = await this.targetNamesPrisma(plans)
     let notified = 0
     for (const plan of plans) {

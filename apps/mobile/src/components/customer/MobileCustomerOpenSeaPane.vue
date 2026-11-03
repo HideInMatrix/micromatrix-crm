@@ -14,6 +14,7 @@ import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { customerExtraApi, resourcePoolApi, type ResourcePoolVO } from '@/api/sales'
 import leadEmptyImage from '@/assets/lead-empty.png'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileCustomerListCard from '@/components/customer/MobileCustomerListCard.vue'
 import MobileQuickSearchBar from '@/components/MobileQuickSearchBar.vue'
@@ -45,6 +46,7 @@ const viewPickerShow = ref(false)
 const poolDropdownItem = ref<DropdownItemInstance | null>(null)
 const poolKeyword = ref('')
 const assignShow = ref(false)
+const assignPickerValues = ref<string[]>([])
 const assignTarget = ref<CustomerVO | null>(null)
 let generation = 0
 let loadingGeneration = -1
@@ -175,6 +177,7 @@ async function openAssign(customer: CustomerVO) {
   assignTarget.value = customer
   try {
     if (!fieldRefs.members.value.length) await fieldRefs.load()
+    assignPickerValues.value = [memberColumns.value[0]?.value ?? '']
     assignShow.value = true
   } catch (error) {
     showFailToast(extractErrorMessage(error))
@@ -303,13 +306,20 @@ onActivated(() => {
         <van-empty v-else image-size="90" description="暂无可访问的客户公海" class="!py-[80px]" />
       </van-pull-refresh>
     </div>
-    <van-popup v-model:show="assignShow" position="bottom" round>
-      <van-picker
-        title="分配负责人"
-        :columns="memberColumns"
-        @confirm="assign"
-        @cancel="assignShow = false"
-      />
-    </van-popup>
+    <MobileDrawer
+      v-model:show="assignShow"
+      title="分配负责人"
+      height="auto"
+      max-height="calc(100dvh - 88px)"
+    >
+      <template #actions>
+        <div class="flex items-center gap-[8px]">
+          <van-button type="primary" size="small" @click="assign({ selectedValues: assignPickerValues })">
+            确定
+          </van-button>
+        </div>
+      </template>
+      <van-picker v-model="assignPickerValues" :columns="memberColumns" :show-toolbar="false" />
+    </MobileDrawer>
   </div>
 </template>

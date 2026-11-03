@@ -31,7 +31,7 @@ import {
 } from 'lucide-vue-next'
 import { ElButton } from 'element-plus'
 import type { Component } from 'vue'
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { changePassword } from '@/api/auth'
 import { listCustomerOptions } from '@/api/customers'
@@ -69,24 +69,6 @@ const pendingPoolCount = ref(0)
 const myLeads = ref<LeadVO[]>([])
 const myLeadsTotal = ref(0)
 const myLeadsLoading = ref(false)
-const myLeadsTableContainerRef = ref<HTMLElement | null>(null)
-const myLeadsTableWidth = ref(656)
-let myLeadsTableResizeObserver: ResizeObserver | null = null
-watch(
-  myLeadsTableContainerRef,
-  (element) => {
-    myLeadsTableResizeObserver?.disconnect()
-    if (!element) return
-    const updateWidth = () => {
-      const table = element.querySelector<HTMLElement>('.el-table')
-      myLeadsTableWidth.value = Math.max(1, Math.floor(table?.clientWidth ?? element.clientWidth))
-    }
-    updateWidth()
-    myLeadsTableResizeObserver = new ResizeObserver(updateWidth)
-    myLeadsTableResizeObserver.observe(element)
-  },
-  { flush: 'post' },
-)
 const leadFields = ref<FieldVO[]>([])
 const unreadNotifications = ref(0)
 const canAccessPool = computed(() => auth.hasPerm('leadPool:read'))
@@ -105,38 +87,7 @@ const homeLeadColumns = computed(() => {
     2,
   )
 })
-const isHomeLeadSourceField = (field: FieldVO) => /渠道|来源/.test(field.label)
-const homeLeadTableWidths = computed(() => {
-  const fields = homeLeadColumns.value
-  // 渠道来源优先作为弹性列；没有来源字段时，使用最后一个动态字段承接剩余宽度。
-  const flexibleField = fields.find(isHomeLeadSourceField) ?? fields.at(-1)
-  const flexibleFollowUp = !flexibleField
-  const fixedBaseWidth =
-    88 + 108 + (fields.length - (flexibleField ? 1 : 0)) * 72 + 88 + (flexibleFollowUp ? 0 : 92)
-  const preferredFlexMinWidth = flexibleField
-    ? isHomeLeadSourceField(flexibleField)
-      ? 120
-      : 80
-    : 92
-  const availableWidth = myLeadsTableWidth.value
-  const flexMinWidth =
-    availableWidth >= fixedBaseWidth + preferredFlexMinWidth
-      ? preferredFlexMinWidth
-      : Math.max(1, Math.floor(availableWidth * 0.18))
-  const fixedWidthBudget = Math.max(0, availableWidth - flexMinWidth)
-  const scale = fixedBaseWidth > 0 ? Math.min(1, fixedWidthBudget / fixedBaseWidth) : 1
-  const scaled = (width: number) => Math.max(1, Math.floor(width * scale))
-
-  return {
-    name: scaled(88),
-    phone: scaled(108),
-    field: scaled(72),
-    followUp: flexibleFollowUp ? undefined : scaled(92),
-    action: scaled(88),
-    flexibleFieldKey: flexibleField?.key ?? null,
-    flexMinWidth,
-  }
-})
+const isHomeLeadIntentField = (field: FieldVO) => /专业|意向/.test(field.label)
 const hasLeadRead = computed(() => auth.hasPerm('menu:lead'))
 
 function statisticRequest() {
@@ -668,7 +619,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('crm:home-refresh', handleHomeRefresh)
-  myLeadsTableResizeObserver?.disconnect()
   defaultPasswordMessage?.close()
 })
 </script>
@@ -858,7 +808,7 @@ onBeforeUnmount(() => {
           :description="hasLeadRead ? '新的跟进任务会显示在这里' : '请联系管理员开通线索查看权限'"
           data-testid="home-my-leads-empty"
         />
-        <div v-else ref="myLeadsTableContainerRef" class="w-full min-w-0">
+        <div v-else class="w-full min-w-0">
           <el-table
             v-loading="myLeadsLoading"
             :data="myLeads"
@@ -877,8 +827,8 @@ onBeforeUnmount(() => {
           >
             <el-table-column
               prop="name"
-              label="学员姓名"
-              :width="homeLeadTableWidths.name"
+              label="学生姓名"
+              width="100"
               show-overflow-tooltip
             >
               <template #default="{ row }">
@@ -894,7 +844,6 @@ onBeforeUnmount(() => {
             </el-table-column>
             <el-table-column
               label="手机号"
-              :width="homeLeadTableWidths.phone"
               show-overflow-tooltip
             >
               <template #default="{ row }">{{ row.phone || '-' }}</template>
@@ -903,26 +852,14 @@ onBeforeUnmount(() => {
               v-for="field in homeLeadColumns"
               :key="field.key"
               :label="field.label"
-              :width="
-                field.key === homeLeadTableWidths.flexibleFieldKey
-                  ? undefined
-                  : homeLeadTableWidths.field
-              "
-              :min-width="
-                field.key === homeLeadTableWidths.flexibleFieldKey
-                  ? homeLeadTableWidths.flexMinWidth
-                  : undefined
-              "
+              :width="isHomeLeadIntentField(field) ? 100 : undefined"
               show-overflow-tooltip
             >
               <template #default="{ row }">{{ leadFieldValue(row as LeadVO, field) }}</template>
             </el-table-column>
             <el-table-column
               label="最近跟进"
-              :width="homeLeadTableWidths.followUp"
-              :min-width="
-                homeLeadTableWidths.flexibleFieldKey ? undefined : homeLeadTableWidths.flexMinWidth
-              "
+              width="120"
               show-overflow-tooltip
             >
               <template #default="{ row }">
@@ -933,7 +870,7 @@ onBeforeUnmount(() => {
             </el-table-column>
             <el-table-column
               label="操作"
-              :width="homeLeadTableWidths.action"
+              width="100"
               align="center"
               show-overflow-tooltip
             >
@@ -1090,27 +1027,29 @@ onBeforeUnmount(() => {
           >
             <EChart :option="widgetChartOption(widget)" height="260px" />
             <div
-              class="h-full min-h-0 space-y-3 overflow-y-auto pr-2"
+              class="h-full min-h-0 overflow-y-auto pr-2"
               data-testid="home-rose-legend"
             >
-              <div
-                v-for="(item, index) in widget.items"
-                :key="item.value"
-                class="flex min-w-0 items-center gap-2 text-[13px]"
-              >
-                <span
-                  class="h-2.5 w-2.5 shrink-0 rounded-full"
-                  :style="{ backgroundColor: chartPalette[index % chartPalette.length] }"
-                  aria-hidden="true"
-                />
-                <span class="max-w-[45%] shrink-0 truncate text-[#555E6E]" :title="item.label">
-                  {{ item.label }}
-                </span>
-                <span
-                  class="min-w-2 flex-1 border-b border-dashed border-[#D9DFE9]"
-                  aria-hidden="true"
-                />
-                <span class="shrink-0 tabular-nums text-[#555E6E]">{{ item.count }}条</span>
+              <div class="flex min-h-full flex-col justify-center gap-3">
+                <div
+                  v-for="(item, index) in widget.items"
+                  :key="item.value"
+                  class="flex shrink-0 min-w-0 items-center gap-2 text-[13px]"
+                >
+                  <span
+                    class="h-2.5 w-2.5 shrink-0 rounded-full"
+                    :style="{ backgroundColor: chartPalette[index % chartPalette.length] }"
+                    aria-hidden="true"
+                  />
+                  <span class="max-w-[45%] shrink-0 truncate text-[#555E6E]" :title="item.label">
+                    {{ item.label }}
+                  </span>
+                  <span
+                    class="min-w-2 flex-1 border-b border-dashed border-[#D9DFE9]"
+                    aria-hidden="true"
+                  />
+                  <span class="shrink-0 tabular-nums text-[#555E6E]">{{ item.count }}条</span>
+                </div>
               </div>
             </div>
           </div>

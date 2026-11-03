@@ -13,6 +13,7 @@ import {
 } from '@/api/sales'
 import { useFieldRefs } from '@/composables/useFieldRefs'
 import MobileVantPickerField from '@/components/MobileVantPickerField.vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 
 const props = defineProps<{
   resourceType: 'record' | 'plan'
@@ -160,12 +161,13 @@ watch(
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round class="h-[82%]">
-    <div class="flex h-full flex-col" data-testid="mobile-follow-comment-sheet">
-      <div class="border-b border-gray-100 px-4 py-3 text-center font-medium">
-        评论 {{ commentCount }}
-      </div>
-      <div class="flex-1 overflow-auto p-4">
+  <MobileDrawer
+    v-model:show="show"
+    :title="'评论 ' + commentCount"
+    height="82%"
+  >
+    <div class="flex h-full min-h-0 flex-col" data-testid="mobile-follow-comment-sheet">
+      <div class="min-h-0 flex-1 overflow-auto p-4">
         <van-loading v-if="loading && !comments.length" class="py-10 text-center" />
         <van-empty v-else-if="!comments.length" description="暂无评论" />
         <div v-else class="space-y-3">
@@ -266,5 +268,5 @@ watch(
         </van-button>
       </div>
     </div>
-  </van-popup>
+  </MobileDrawer>
 </template>

@@ -6,6 +6,7 @@ import { MetadataService } from './metadata.service'
 import { ModuleFormsService } from './module-forms.service'
 import { ResourceFieldAttachmentCleanupService } from './resource-field-attachment-cleanup.service'
 import { ResourceFieldValueService } from './resource-field-value.service'
+import { CustomerFollowUpCompletionService } from './customer-follow-up-completion.service'
 
 @Global()
 @Module({
@@ -15,8 +16,9 @@ import { ResourceFieldValueService } from './resource-field-value.service'
     ModuleFormsService,
     MetadataService,
     ResourceFieldValueService,
+    CustomerFollowUpCompletionService,
     ResourceFieldAttachmentCleanupService,
   ],
-  exports: [ModuleFormsService, MetadataService, ResourceFieldValueService],
+  exports: [ModuleFormsService, MetadataService, ResourceFieldValueService, CustomerFollowUpCompletionService],
 })
 export class ModuleFormsModule {}

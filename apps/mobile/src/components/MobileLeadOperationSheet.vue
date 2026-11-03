@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DictionaryItemVO, MemberOption } from '@/api/system'
 import { computed, ref, watch } from 'vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -134,38 +135,15 @@ watch(show, (visible) => {
 </script>
 
 <template>
-  <van-popup
+  <MobileDrawer
     v-model:show="show"
-    position="bottom"
-    round
-    style="
-      height: min(600px, 74dvh);
-      max-height: calc(100dvh - 88px);
-      overflow: hidden;
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #f5f5f5;
-    "
+    :title="title"
+    height="min(600px, 74dvh)"
+    max-height="calc(100dvh - 88px)"
+    background="#f5f5f5"
+    header-background="#ffffff"
   >
     <div class="flex h-full min-h-0 flex-col bg-[#F5F5F5]">
-      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-white px-[12px]">
-        <span class="text-[16px] leading-[20px] font-semibold text-[#000000]">{{ title }}</span>
-        <div class="absolute right-[12px]">
-          <van-button
-            type="default"
-            size="small"
-            style="
-              --van-button-border-width: 0px;
-              --van-button-small-height: 34px;
-              --van-button-small-padding: 0;
-              --van-button-small-font-size: 14px;
-              --van-button-default-background: transparent;
-              --van-button-default-color: #777777;
-            "
-            @click="show = false"
-            >取消</van-button
-          >
-        </div>
-      </div>
       <div
         class="flex shrink-0 items-start gap-[5px] bg-[color-mix(in_srgb,var(--van-primary-color)_10%,white)] px-[12px]"
         :class="isTransfer ? 'min-h-[28px] py-[7px]' : 'min-h-[50px] py-[8px]'"
@@ -293,38 +271,17 @@ watch(show, (visible) => {
         }}</van-button>
       </div>
     </div>
-  </van-popup>
+  </MobileDrawer>
 
-  <van-popup
+  <MobileDrawer
     v-model:show="selectingVisible"
-    position="bottom"
-    round
-    style="
-      height: min(480px, 60dvh);
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #ffffff;
-    "
+    :title="selectionTitle"
+    header-background="#F5F5F5"
+    height="min(480px, 60dvh)"
+    max-height="calc(100dvh - 88px)"
     @close="selecting = null"
   >
     <div class="flex h-full min-h-0 flex-col bg-white">
-      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
-        <strong class="text-[16px] text-[#000000]">{{ selectionTitle }}</strong>
-        <div class="absolute right-[12px]">
-          <van-button
-            type="default"
-            size="small"
-            style="
-              --van-button-border-width: 0px;
-              --van-button-small-height: 34px;
-              --van-button-small-padding: 0;
-              --van-button-default-background: transparent;
-              --van-button-default-color: #777777;
-            "
-            @click="selecting = null"
-            >取消</van-button
-          >
-        </div>
-      </div>
       <van-search
         v-model="search"
         shape="round"
@@ -347,5 +304,5 @@ watch(show, (visible) => {
       </div>
       <div class="shrink-0 pb-[env(safe-area-inset-bottom)]" />
     </div>
-  </van-popup>
+  </MobileDrawer>
 </template>

@@ -2,6 +2,7 @@
 import type { FollowUpPlanTargetType } from '@micromatrix/shared'
 import { toRef } from 'vue'
 import MobileDynamicForm from '@/components/MobileDynamicForm.vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 import MobileFollowUpPlanSystemField from '@/components/MobileFollowUpPlanSystemField.vue'
 import { useMobileFollowUpPlanForm } from '@/composables/useMobileFollowUpPlanForm'
 
@@ -32,14 +33,13 @@ defineExpose({
 </script>
 
 <template>
-  <van-popup v-model:show="form.show.value" position="bottom" round class="h-[82%]">
-    <div class="flex h-full flex-col bg-[var(--text-n10)]">
-      <div
-        class="flex min-h-12 items-center justify-center border-b-[0.5px] border-[var(--text-n8)] px-4 text-base font-medium text-[var(--text-n1)]"
-      >
-        {{ form.editing.value ? '编辑跟进计划' : '新建跟进计划' }}
-      </div>
-
+  <MobileDrawer
+    v-model:show="form.show.value"
+    :title="form.editing.value ? '编辑跟进计划' : '新建跟进计划'"
+    height="82%"
+    background="var(--text-n10)"
+  >
+    <div class="flex h-full min-h-0 flex-col bg-[var(--text-n10)]">
       <div
         class="min-h-0 flex-1 overflow-auto py-4"
         data-testid="mobile-follow-plan-dynamic-fields"
@@ -78,5 +78,5 @@ defineExpose({
         </van-button>
       </div>
     </div>
-  </van-popup>
+  </MobileDrawer>
 </template>

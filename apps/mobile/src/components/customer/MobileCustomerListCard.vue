@@ -65,6 +65,9 @@ function displayValue(field: FieldVO): string {
 
 <template>
   <article class="rounded-[8px] bg-white p-[12px]" @click="emit('open', customer)">
+    <div v-if="customer.followUpCompleted" class="mb-[10px]">
+      <van-tag type="success" plain>跟进已完结</van-tag>
+    </div>
     <div
       v-if="visibleFields.length"
       class="grid grid-cols-2 gap-x-[8px] gap-y-[12px] text-[12px] leading-[16px]"

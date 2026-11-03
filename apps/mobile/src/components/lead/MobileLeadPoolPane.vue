@@ -14,6 +14,7 @@ import leadEmptyImage from '@/assets/lead-empty.png'
 import { extractErrorMessage } from '@/api/http'
 import { metadataApi } from '@/api/metadata'
 import { leadApi, type ResourcePoolVO } from '@/api/sales'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 import MobileViewBar from '@/components/MobileViewBar.vue'
 import MobileLeadListCard from '@/components/lead/MobileLeadListCard.vue'
 import MobileQuickSearchBar from '@/components/MobileQuickSearchBar.vue'
@@ -34,6 +35,7 @@ const viewPickerShow = ref(false)
 const poolDropdownItem = ref<DropdownItemInstance | null>(null)
 const poolKeyword = ref('')
 const assignShow = ref(false)
+const assignPickerValues = ref<string[]>([])
 const assignTarget = ref<LeadVO | null>(null)
 const pools = ref<ResourcePoolVO[]>([])
 const selectedPoolId = ref('')
@@ -188,6 +190,7 @@ function openPools() {
 }
 function openAssign(lead: LeadVO) {
   assignTarget.value = lead
+  assignPickerValues.value = [memberColumns.value[0]?.value ?? '']
   assignShow.value = true
 }
 async function assign({ selectedValues }: { selectedValues: string[] }) {
@@ -296,13 +299,20 @@ onActivated(() => {
         />
       </van-pull-refresh>
     </div>
-    <van-popup v-model:show="assignShow" position="bottom" round>
-      <van-picker
-        title="分配负责人"
-        :columns="memberColumns"
-        @confirm="assign"
-        @cancel="assignShow = false"
-      />
-    </van-popup>
+    <MobileDrawer
+      v-model:show="assignShow"
+      title="分配负责人"
+      height="auto"
+      max-height="calc(100dvh - 88px)"
+    >
+      <template #actions>
+        <div class="flex items-center gap-[8px]">
+          <van-button type="primary" size="small" @click="assign({ selectedValues: assignPickerValues })">
+            确定
+          </van-button>
+        </div>
+      </template>
+      <van-picker v-model="assignPickerValues" :columns="memberColumns" :show-toolbar="false" />
+    </MobileDrawer>
   </div>
 </template>

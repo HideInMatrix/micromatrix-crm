@@ -4,6 +4,7 @@ import { DistributedCoordinatorService } from '../../common/services/distributed
 import { PrismaService } from '../../prisma.service'
 
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
+import { CustomerFollowUpCompletionService } from '../metadata/customer-follow-up-completion.service'
 import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
 import { loadUserScopeTokensPrisma, scopeMatches } from './pool-repository.helpers'
@@ -26,6 +27,7 @@ export class PoolRecycleService {
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
     private readonly evaluator: ResourceRecycleConditionEvaluator,
+    private readonly customerFollowUpCompletion: CustomerFollowUpCompletionService,
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
   ) {}
 
@@ -136,6 +138,14 @@ export class PoolRecycleService {
         .where((customer) => customer.owner.isNotNull())
         .all(),
     ])
+    const completion = await this.customerFollowUpCompletion.evaluate(
+      organization,
+      customers.map((customer) => String(customer.id)),
+    )
+    if (completion.rule.enabled && !completion.rule.valid) {
+      this.logger.error(`组织 ${organization} 的客户跟进完结规则引用了失效字段，已暂停该组织客户自动回收`)
+      return 0
+    }
     const rules = poolRows.length
       ? await this.prisma.client.orm.public.CustomerPoolRecycleRule.where((rule) =>
           rule.poolId.in(poolRows.map((pool) => pool.id)),
@@ -148,6 +158,7 @@ export class PoolRecycleService {
     }))
     let count = 0
     for (const customer of customers) {
+      if (completion.completedIds.has(String(customer.id))) continue
       const pool = await this.resolvePool(organizationId, customer.owner, pools)
       if (!pool?.recycleRule) continue
       if (!this.matches(pool.recycleRule.operator, pool.recycleRule.condition, customer)) continue

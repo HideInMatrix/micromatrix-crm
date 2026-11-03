@@ -3,6 +3,7 @@ import type { DataSourceOptionVO, DataSourceType } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { showFailToast } from 'vant'
 import { dataSourceApi } from '@/api/data-source'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 import { extractErrorMessage } from '@/api/http'
 
 const props = defineProps<{
@@ -127,37 +128,16 @@ watch(show, (opened) => {
 </script>
 
 <template>
-  <van-popup
+  <MobileDrawer
     v-model:show="show"
-    position="bottom"
-    round
-    class="bg-white"
-    style="
-      height: min(480px, 60dvh);
-      max-height: calc(100dvh - 88px);
-      overflow: hidden;
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #ffffff;
-    "
+    :title="label"
+    height="min(480px, 60dvh)"
+    max-height="calc(100dvh - 88px)"
+    background="#ffffff"
+    header-background="#F5F5F5"
   >
     <div class="flex h-full min-h-0 flex-col bg-white">
-      <div
-        class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5] px-[12px]"
-      >
-        <span
-          class="max-w-[calc(100%-96px)] truncate text-[16px] leading-[22px] font-semibold text-[#000000]"
-        >
-          {{ label }}
-        </span>
-        <van-button
-          type="default"
-          class="!absolute right-[12px] !border-0 !bg-transparent !p-0 !text-[14px] !text-[#777777]"
-          @click="show = false"
-          >取消</van-button
-        >
-      </div>
-
-      <!-- 蓝湖节点：搜索框 x=12/309×34，搜索按钮 x=331/32×16，右侧留白 12px。 -->
+      <!-- 搜索框与搜索按钮保持原有布局。 -->
       <div class="flex shrink-0 items-center gap-[10px] bg-white px-[12px] pt-[12px] pb-[6px]">
         <van-search
           v-model="keyword"
@@ -257,5 +237,5 @@ watch(show, (opened) => {
       </div>
       <div class="shrink-0 bg-white pb-[env(safe-area-inset-bottom)]" />
     </div>
-  </van-popup>
+  </MobileDrawer>
 </template>

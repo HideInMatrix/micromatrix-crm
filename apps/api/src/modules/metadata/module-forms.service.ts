@@ -615,6 +615,18 @@ export class ModuleFormsService {
       if (this.fieldOrigin(field.form.formKey, key) === 'SYSTEM') {
         throw new BadRequestException('系统字段不可删除')
       }
+      if (field.form.formKey === 'customer') {
+        const formBlob = await tx.orm.public.SysModuleFormBlob.where({ id: field.form.id })
+          .select('prop')
+          .first()
+        const formProp = this.parseObject(formBlob?.prop)
+        const completion = formProp['customerFollowUpCompletion'] as
+          | { enabled?: boolean; fieldKey?: string }
+          | undefined
+        if (completion?.enabled && completion.fieldKey === key) {
+          throw new BadRequestException('该字段正在用于客户跟进完结判断，请先修改或关闭完结规则')
+        }
+      }
       await this.assertHomeAnalyticsFieldNotReferenced(tx, organizationId, field.form.formKey, key)
       if (field.type === 'sub_product') {
         const childIds = prop.subFields?.map((subField) => subField.id) ?? []

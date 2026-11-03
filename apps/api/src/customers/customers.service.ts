@@ -35,6 +35,7 @@ import { and, not, or } from '@prisma/orm-postgres/orm-client'
 import { MetadataService } from '../modules/metadata/metadata.service'
 import { ModuleFormsService } from '../modules/metadata/module-forms.service'
 import { ResourceFieldValueService } from '../modules/metadata/resource-field-value.service'
+import { CustomerFollowUpCompletionService } from '../modules/metadata/customer-follow-up-completion.service'
 import { DictionariesService } from '../modules/dictionaries/dictionaries.service'
 import {
   ExportTasksService,
@@ -107,6 +108,7 @@ export class CustomersService {
     private readonly metadata: MetadataService,
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
+    private readonly followUpCompletion: CustomerFollowUpCompletionService,
     private readonly notifications: BusinessNotificationsService,
     private readonly pools: ResourcePoolsService,
     private readonly customerPools: CustomerPoolRepository,
@@ -427,13 +429,14 @@ export class CustomersService {
       db.aggregate((row) => ({ count: row.count() })),
     ])
     const normalized = items as unknown as Customer[]
-    const [values, ownerMap] = await Promise.all([
+    const [values, ownerMap, completionRule] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
         'customer',
         normalized.map((item) => item.id),
       ),
       this.userNames(normalized.map((item) => item.owner)),
+      this.followUpCompletion.getRule(user.tenantId),
     ])
     return {
       items: normalized.map((customer) =>
@@ -442,6 +445,7 @@ export class CustomersService {
           fields,
           values.get(customer.id) ?? {},
           ownerMap.get(customer.owner ?? '') ?? null,
+          this.followUpCompletion.isCompleted(completionRule, values.get(customer.id) ?? {}),
         ),
       ),
       total: aggregate.count,
@@ -501,13 +505,14 @@ export class CustomersService {
       db.aggregate((row) => ({ count: row.count() })),
     ])
     const items = baseItems as unknown as Customer[]
-    const [values, ownerMap] = await Promise.all([
+    const [values, ownerMap, completionRule] = await Promise.all([
       this.fieldValues.load(
         user.tenantId,
         'customer',
         items.map((item) => item.id),
       ),
       this.userNames(items.map((item) => item.owner)),
+      this.followUpCompletion.getRule(user.tenantId),
     ])
     const collaborationMap = new Map(
       collaborations.map((item) => [String(item.customerId), String(item.collaborationType)]),
@@ -529,6 +534,7 @@ export class CustomersService {
             fields,
             values.get(customer.id) ?? {},
             ownerMap.get(customer.owner ?? '') ?? null,
+            this.followUpCompletion.isCompleted(completionRule, values.get(customer.id) ?? {}),
           ),
           collaborationType: direct ? null : (collaborationMap.get(customer.id) ?? null),
         }
@@ -546,13 +552,14 @@ export class CustomersService {
 
   async findOne(user: AuthUser, id: string): Promise<CustomerVO> {
     const access = await this.customerAccess.assertRead(user, id)
-    const [customer, fields, values] = await Promise.all([
+    const [customer, fields, values, completionRule] = await Promise.all([
       this.prisma.client.orm.public.Customer.where({
         id: id,
         organizationId: user.tenantId,
       }).first(),
       this.metadata.listFields(user.tenantId, MODULE),
       this.fieldValues.load(user.tenantId, 'customer', [id]),
+      this.followUpCompletion.getRule(user.tenantId),
     ])
     if (!customer) throw new NotFoundException('客户不存在或不在你的数据范围内')
     const normalized = customer as unknown as Customer
@@ -563,6 +570,7 @@ export class CustomersService {
         fields,
         values.get(id) ?? {},
         ownerMap.get(normalized.owner ?? '') ?? null,
+        this.followUpCompletion.isCompleted(completionRule, values.get(id) ?? {}),
       ),
       collaborationType: !access.dataScope && !access.pool ? access.collaborationType : null,
       canManageCustomer: access.canManageCustomer,
@@ -911,6 +919,10 @@ export class CustomersService {
         ? await this.resolveOwner(user, dto.ownerId)
         : null
 
+    if (owner && !existing.inSharedPool) {
+      await this.followUpCompletion.assertCanTransferOwner(user.tenantId, existing.id)
+    }
+
     const now = BigInt(Date.now())
     const customer = await this.prisma.client.transaction(async (tx) => {
       if (owner) {
@@ -973,6 +985,7 @@ export class CustomersService {
   /** 退回公海 */
   async moveToSea(user: AuthUser, id: string, poolId?: string, reasonId?: string) {
     const customer = await this.ensureInScope(user, id, 'customer:recycle')
+    await this.followUpCompletion.assertCanMoveToPool(user.tenantId, id)
     await this.dictionaries.validateReason(user.tenantId, 'CUSTOMER_POOL_RS', reasonId)
     const pool = await this.pools.resolveMoveTargetPool(
       user.tenantId,
@@ -1074,6 +1087,10 @@ export class CustomersService {
     ])
     const changed = customers.filter((customer) => customer.owner !== owner.id)
     if (changed.length) {
+      await this.followUpCompletion.assertCanTransferOwners(
+        user.tenantId,
+        changed.map((customer) => customer.id),
+      )
       await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id, changed.length)
     }
     for (const customer of changed) {
@@ -1087,9 +1104,12 @@ export class CustomersService {
     user: AuthUser,
     customer: Customer,
     ownerId: string,
-    _capacityChecked = false,
+    completionChecked = false,
   ) {
     const owner = await this.resolveOwner(user, ownerId)
+    if (!completionChecked && !customer.inSharedPool && customer.owner !== owner.id) {
+      await this.followUpCompletion.assertCanTransferOwner(user.tenantId, customer.id)
+    }
     if (customer.inSharedPool) {
       await this.customerPools.assign({
         organizationId: user.tenantId,
@@ -1198,8 +1218,13 @@ export class CustomersService {
       if (typeof dto.fieldValue !== 'string' || !dto.fieldValue) {
         throw new BadRequestException('负责人不能为空')
       }
-      const processCount = customers.filter((customer) => customer.owner !== dto.fieldValue).length
+      const changedCustomers = customers.filter((customer) => customer.owner !== dto.fieldValue)
+      const processCount = changedCustomers.length
       if (processCount > 0) {
+        await this.followUpCompletion.assertCanTransferOwners(
+          user.tenantId,
+          changedCustomers.map((customer) => customer.id),
+        )
         await this.pools.assertCapacityForOwner(
           user.tenantId,
           'customer',
@@ -1908,6 +1933,9 @@ export class CustomersService {
       sources.push(await this.ensureInScope(user, sourceId, 'customer:merge'))
     }
     const newOwner = await this.resolveOwner(user, dto.ownerId)
+    if (!target.inSharedPool && target.owner !== newOwner.id) {
+      await this.followUpCompletion.assertCanTransferOwner(user.tenantId, target.id)
+    }
 
     if (targetWasSelected) {
       const selectedOwnerIds = new Set(
@@ -2789,16 +2817,19 @@ export class CustomersService {
   }
 
   private async toSingleVO(user: AuthUser, customer: Customer): Promise<CustomerVO> {
-    const [fields, values, ownerMap] = await Promise.all([
+    const [fields, values, ownerMap, completionRule] = await Promise.all([
       this.metadata.listFields(user.tenantId, MODULE),
       this.fieldValues.load(user.tenantId, 'customer', [customer.id]),
       this.userNames([customer.owner]),
+      this.followUpCompletion.getRule(user.tenantId),
     ])
+    const customData = values.get(customer.id) ?? {}
     return this.toVO(
       customer,
       fields,
-      values.get(customer.id) ?? {},
+      customData,
       ownerMap.get(customer.owner ?? '') ?? null,
+      this.followUpCompletion.isCompleted(completionRule, customData),
     )
   }
 
@@ -3006,6 +3037,7 @@ export class CustomersService {
     fields: FieldVO[],
     customData: Record<string, unknown>,
     ownerName: string | null,
+    followUpCompleted = false,
   ): CustomerVO {
     const stringValue = (key: string) => {
       const value = customData[key]
@@ -3028,6 +3060,7 @@ export class CustomersService {
       email: stringValue('cf_email'),
       remark: stringValue('cf_remark'),
       inSea: customer.inSharedPool,
+      followUpCompleted,
       poolId: customer.poolId,
       ownerId: customer.owner,
       ownerName,

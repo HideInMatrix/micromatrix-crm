@@ -237,6 +237,13 @@ export interface FormLabelStyle {
   fontWeight?: 'normal' | 'medium' | 'semibold'
 }
 
+export interface CustomerFollowUpCompletionConfig {
+  enabled: boolean
+  fieldKey: string
+  operator: 'EQUALS' | 'CONTAINS' | 'NOT_EMPTY'
+  values: string[]
+}
+
 export interface ModuleFormProp {
   /** @deprecated 旧表单布局参数，仅用于兼容历史配置；页面排版改由字段 span 决定。 */
   layout?: 1 | 2 | 3 | 4
@@ -259,6 +266,8 @@ export interface ModuleFormProp {
   homeAnalytics?: HomeAnalyticsConfig
   /** 模块快捷搜索配置：PC 与移动端共用 items，视图与高级搜索开关按端呈现。 */
   quickSearch?: ModuleQuickSearchConfig
+  /** 客户跟进完结规则：由管理员指定客户字段及命中值，运行时动态计算。 */
+  customerFollowUpCompletion?: CustomerFollowUpCompletionConfig
   /** 跨表单联动配置；客户表单设计器支持配置 Lead → Customer 字段映射。 */
   linkProp?: FormLinkProp
   /** 保留未识别扩展键，避免局部 PATCH 覆盖其它 formProp 能力。 */

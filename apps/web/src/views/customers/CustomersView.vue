@@ -87,6 +87,7 @@ const followTarget = ref<CustomerVO | null>(null)
 const assignVisible = ref(false)
 const assignTarget = ref<CustomerVO | null>(null)
 const batchTransferVisible = ref(false)
+const batchTransferIds = ref<string[]>([])
 const mergeVisible = ref(false)
 const moveToPoolVisible = ref(false)
 const moveToPoolIds = ref<string[]>([])
@@ -280,18 +281,22 @@ function handleCustomerMerged() {
 
 function openBatchTransfer() {
   if (!selectedRows.value.length) return
+  const eligibleRows = selectedRows.value.filter((row) => !row.followUpCompleted)
+  if (eligibleRows.length !== selectedRows.value.length) {
+    ElMessage.warning('已完成跟进的客户不能转移负责人')
+  }
+  if (!eligibleRows.length) return
+  batchTransferIds.value = eligibleRows.map((row) => row.id)
   batchTransferVisible.value = true
 }
 
 async function handleBatchTransferConfirm(userId: string) {
-  if (!selectedRows.value.length) return
+  if (!batchTransferIds.value.length) return
   try {
-    const { data } = await batchTransferCustomers(
-      selectedRows.value.map((row) => row.id),
-      userId,
-    )
-    ElMessage.success(`已转移 ${data.count} 个客户`)
+    const { data } = await batchTransferCustomers(batchTransferIds.value, userId)
+    ElMessage.success('已转移 ' + data.count + ' 个客户')
     batchTransferVisible.value = false
+    batchTransferIds.value = []
     await loadData()
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
@@ -300,8 +305,13 @@ async function handleBatchTransferConfirm(userId: string) {
 
 function openMoveToPool(rows: CustomerVO[]) {
   if (!rows.length) return
-  moveToPoolIds.value = rows.map((row) => row.id)
-  moveToPoolName.value = rows.length === 1 ? (rows[0]?.name ?? '') : ''
+  const eligibleRows = rows.filter((row) => !row.followUpCompleted)
+  if (eligibleRows.length !== rows.length) {
+    ElMessage.warning('已完成跟进的客户不能移入客户公海')
+  }
+  if (!eligibleRows.length) return
+  moveToPoolIds.value = eligibleRows.map((row) => row.id)
+  moveToPoolName.value = eligibleRows.length === 1 ? (eligibleRows[0]?.name ?? '') : ''
   moveToPoolVisible.value = true
 }
 
@@ -461,6 +471,7 @@ async function handleExportConfirm(payload: { fileName: string; headList: string
 }
 
 async function openFollow(row: CustomerVO) {
+  if (row.followUpCompleted) return
   try {
     const { data } = await getCustomer(row.id)
     if (data.canCollaborateWrite !== true) {
@@ -668,19 +679,22 @@ onMounted(async () => {
             show-overflow-tooltip
           >
             <template #default="{ row }">
-              <el-button
-                v-if="column.key === 'name'"
-                link
-                type="primary"
-                @click="openDetail(row as CustomerVO)"
-              >
-                {{
-                  formatFieldValue(column, row, {
-                    memberMap: fieldRefs.memberMap.value,
-                    deptMap: fieldRefs.deptMap.value,
-                  })
-                }}
-              </el-button>
+              <div v-if="column.key === 'name'" class="flex min-w-0 items-center gap-2">
+                <el-button
+                  link
+                  type="primary"
+                  class="!min-w-0 !truncate"
+                  @click="openDetail(row as CustomerVO)"
+                >
+                  {{
+                    formatFieldValue(column, row, {
+                      memberMap: fieldRefs.memberMap.value,
+                      deptMap: fieldRefs.deptMap.value,
+                    })
+                  }}
+                </el-button>
+                <el-tag v-if="row.followUpCompleted" type="success" size="small" effect="light" class="shrink-0">跟进已完结</el-tag>
+              </div>
               <template v-else>
                 {{
                   formatFieldValue(column, row, {
@@ -700,13 +714,15 @@ onMounted(async () => {
               >
                 编辑
               </el-button>
-              <el-button link @click="openFollow(row as CustomerVO)">跟进</el-button>
+              <el-button v-if="!row.followUpCompleted" link @click="openFollow(row as CustomerVO)">跟进</el-button>
               <el-dropdown
                 v-if="
                   !isCollaborationView &&
-                  (auth.hasPerm('customer:transfer') ||
-                    auth.hasPerm('customer:recycle') ||
-                    auth.hasPerm('customer:delete'))
+                  (
+                    ((auth.hasPerm('customer:transfer') || auth.hasPerm('customer:recycle')) &&
+                      !row.followUpCompleted) ||
+                    auth.hasPerm('customer:delete')
+                  )
                 "
                 trigger="click"
               >
@@ -714,13 +730,13 @@ onMounted(async () => {
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item
-                      v-if="auth.hasPerm('customer:transfer')"
+                      v-if="auth.hasPerm('customer:transfer') && !row.followUpCompleted"
                       @click="((assignTarget = row as CustomerVO), (assignVisible = true))"
                     >
                       转移
                     </el-dropdown-item>
                     <el-dropdown-item
-                      v-if="auth.hasPerm('customer:recycle')"
+                      v-if="auth.hasPerm('customer:recycle') && !row.followUpCompleted"
                       @click="openMoveToPool([row as CustomerVO])"
                     >
                       移入公海
@@ -729,7 +745,8 @@ onMounted(async () => {
                       v-if="auth.hasPerm('customer:delete')"
                       :style="{ color: '#f04438', '--el-dropdown-menuItem-hover-fill': '#feedec' }"
                       :divided="
-                        auth.hasPerm('customer:transfer') || auth.hasPerm('customer:recycle')
+                        (auth.hasPerm('customer:transfer') || auth.hasPerm('customer:recycle')) &&
+                        !row.followUpCompleted
                       "
                       @click="handleDelete(row as CustomerVO)"
                     >
@@ -789,7 +806,7 @@ onMounted(async () => {
 
       <MemberSelectDialog
         v-model="batchTransferVisible"
-        :title="`批量转移客户（${selectedRows.length}）`"
+        :title="'批量转移客户（' + batchTransferIds.length + '）'"
         :members="fieldRefs.members.value"
         @confirm="handleBatchTransferConfirm"
       />

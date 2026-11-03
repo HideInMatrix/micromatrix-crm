@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FieldVO } from '@micromatrix/shared'
 import { computed, reactive, ref, watch } from 'vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 import { showFailToast } from 'vant'
 import { leadApi, followUpApi } from '@/api/sales'
 import { dictionaryApi, type DictionaryItemVO } from '@/api/system'
@@ -154,43 +155,16 @@ async function submit() {
 </script>
 
 <template>
-  <van-popup
+  <MobileDrawer
     v-model:show="show"
-    position="bottom"
-    round
+    :title="'写跟进·' + (targetName ?? '')"
+    height="min(600px, 74dvh)"
+    max-height="calc(100dvh - 88px)"
+    background="#f5f5f5"
+    header-background="#ffffff"
     :close-on-click-overlay="false"
-    style="
-      height: min(600px, 74dvh);
-      max-height: calc(100dvh - 88px);
-      overflow: hidden;
-      --van-popup-round-radius: 12px;
-      --van-popup-background: #f5f5f5;
-    "
   >
     <div class="flex h-full min-h-0 flex-col bg-[#F5F5F5]">
-      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-white px-[12px]">
-        <span
-          class="max-w-[calc(100%-96px)] truncate text-[16px] leading-[20px] font-semibold text-[#000000]"
-          >写跟进·{{ targetName ?? '' }}</span
-        >
-        <div class="absolute right-[12px]">
-          <van-button
-            type="default"
-            size="small"
-            style="
-              --van-button-border-width: 0px;
-              --van-button-small-height: 34px;
-              --van-button-small-padding: 0;
-              --van-button-small-font-size: 14px;
-              --van-button-default-background: transparent;
-              --van-button-default-color: #777777;
-            "
-            @click="show = false"
-            >取消</van-button
-          >
-        </div>
-      </div>
-
       <div class="min-h-0 flex-1 overflow-y-auto p-[12px]">
         <div
           class="overflow-hidden rounded-[8px] bg-white px-[12px]"
@@ -271,34 +245,17 @@ async function submit() {
         >
       </div>
     </div>
-  </van-popup>
+  </MobileDrawer>
 
-  <van-popup
+  <MobileDrawer
     v-model:show="methodShow"
+    title="跟进方式"
+    header-background="#F5F5F5"
+    height="auto"
+    max-height="calc(100dvh - 88px)"
     teleport="body"
-    position="bottom"
-    round
-    style="--van-popup-round-radius: 12px; --van-popup-background: #ffffff"
   >
     <div class="flex min-h-0 flex-col bg-white">
-      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
-        <span class="text-[16px] font-semibold text-[#000000]">跟进方式</span>
-        <div class="absolute right-[12px]">
-          <van-button
-            type="default"
-            size="small"
-            style="
-              --van-button-border-width: 0px;
-              --van-button-small-height: 34px;
-              --van-button-small-padding: 0;
-              --van-button-default-background: transparent;
-              --van-button-default-color: #777777;
-            "
-            @click="methodShow = false"
-            >取消</van-button
-          >
-        </div>
-      </div>
       <div class="grid grid-cols-3 gap-[10px] p-[12px]">
         <van-button
           v-for="option in methods"
@@ -326,34 +283,17 @@ async function submit() {
       </div>
       <div class="shrink-0 pb-[env(safe-area-inset-bottom)]" />
     </div>
-  </van-popup>
+  </MobileDrawer>
 
-  <van-popup
+  <MobileDrawer
     v-model:show="intentShow"
+    title="更新意向等级"
+    header-background="#F5F5F5"
+    height="auto"
+    max-height="calc(100dvh - 88px)"
     teleport="body"
-    position="bottom"
-    round
-    style="--van-popup-round-radius: 12px; --van-popup-background: #ffffff"
   >
     <div class="flex min-h-0 flex-col bg-white">
-      <div class="relative flex h-[50px] shrink-0 items-center justify-center bg-[#F5F5F5]">
-        <span class="text-[16px] font-semibold text-[#000000]">更新意向等级</span>
-        <div class="absolute right-[12px]">
-          <van-button
-            type="default"
-            size="small"
-            style="
-              --van-button-border-width: 0px;
-              --van-button-small-height: 34px;
-              --van-button-small-padding: 0;
-              --van-button-default-background: transparent;
-              --van-button-default-color: #777777;
-            "
-            @click="intentShow = false"
-            >取消</van-button
-          >
-        </div>
-      </div>
       <div class="grid grid-cols-3 gap-[10px] p-[12px]">
         <van-button
           v-for="option in intentOptions"
@@ -380,7 +320,7 @@ async function submit() {
       </div>
       <div class="shrink-0 pb-[env(safe-area-inset-bottom)]" />
     </div>
-  </van-popup>
+  </MobileDrawer>
 
   <MobileCalendarPopup
     v-model:show="dateShow"

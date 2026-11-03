@@ -3,6 +3,7 @@ import type {
   FieldConfig,
   FieldType,
   HomeAnalyticsConfig,
+  CustomerFollowUpCompletionConfig,
   ModuleFormProp,
 } from '@micromatrix/shared'
 import { Type } from 'class-transformer'
@@ -296,6 +297,11 @@ export class UpdateFormPropDto {
   @Type(() => HomeAnalyticsConfigDto)
   @IsOptional()
   homeAnalytics?: HomeAnalyticsConfig
+
+  @ApiPropertyOptional({ description: '客户跟进完结判断规则' })
+  @IsObject()
+  @IsOptional()
+  customerFollowUpCompletion?: CustomerFollowUpCompletionConfig
 
   @ApiPropertyOptional({ description: 'PC 端快捷搜索配置（字段预设、视图/高级搜索入口）' })
   @IsObject()

@@ -289,7 +289,6 @@ async function handleClaim(row: CustomerVO) {
     await customerExtraApi.claim(row.id, row.poolId ?? selectedPoolId.value)
     ElMessage.success(`已领取「${row.name}」`)
     await loadData()
-    window.open(`${window.location.origin}/customers?id=${encodeURIComponent(row.id)}`, '_blank')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }

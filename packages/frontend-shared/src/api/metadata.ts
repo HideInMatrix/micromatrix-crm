@@ -55,7 +55,13 @@ export const metadataApi = {
     module: string,
     data: Pick<
       ModuleFormProp,
-      'layout' | 'labelPos' | 'viewSize' | 'leadUniqueScope' | 'homeAnalytics' | 'quickSearch'
+      | 'layout'
+      | 'labelPos'
+      | 'viewSize'
+      | 'leadUniqueScope'
+      | 'homeAnalytics'
+      | 'quickSearch'
+      | 'customerFollowUpCompletion'
     >,
   ) => http.patch<ModuleFormConfigVO>(`/metadata/${module}/form-prop`, data),
   fields: (module: string) => http.get<FieldVO[]>(`/metadata/${module}/fields`),

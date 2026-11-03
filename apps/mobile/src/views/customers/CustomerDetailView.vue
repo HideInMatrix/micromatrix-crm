@@ -50,7 +50,7 @@ const moveReasons = ref<DictionaryItemVO[]>([])
 const customerId = computed(() => String(route.query.id ?? ''))
 const poolSource = computed(() => route.query.source === 'openSea')
 const canWrite = computed(
-  () => customer.value?.canCollaborateWrite === true && auth.hasPerm('customer:update'),
+  () => customer.value?.canCollaborateWrite === true && !customer.value.followUpCompleted && auth.hasPerm('customer:update'),
 )
 const canMainAction = computed(
   () =>
@@ -62,8 +62,10 @@ const canEdit = computed(
   () => auth.hasPerm('customer:update') && (canMainAction.value || canWrite.value),
 )
 const canDelete = computed(() => canMainAction.value && auth.hasPerm('customer:delete'))
-const canTransfer = computed(() => canMainAction.value && auth.hasPerm('customer:transfer'))
-const canMove = computed(() => canMainAction.value && auth.hasPerm('customer:recycle'))
+const canTransfer = computed(
+  () => canMainAction.value && !customer.value?.followUpCompleted && auth.hasPerm('customer:transfer'),
+)
+const canMove = computed(() => canMainAction.value && !customer.value?.followUpCompleted && auth.hasPerm('customer:recycle'))
 const showFooter = computed(
   () => Boolean(customer.value?.phone) || canMove.value || canTransfer.value || canWrite.value,
 )
@@ -290,6 +292,7 @@ onMounted(async () => {
               <h1 class="m-0 truncate text-[18px] leading-[24px] font-semibold text-[#000000]">
                 {{ customer.name || '未命名客户' }}
               </h1>
+              <van-tag v-if="customer.followUpCompleted" class="mt-[4px]" type="success" plain>跟进已完结</van-tag>
             </div>
             <div v-if="canEdit || canDelete" class="flex shrink-0 items-center gap-[18px]">
               <van-button

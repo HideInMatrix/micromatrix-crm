@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import MobileDrawer from '@/components/MobileDrawer.vue'
 
 export interface MobilePickerOption {
   text: string
@@ -31,6 +32,7 @@ const props = withDefaults(
 const model = defineModel<string | string[]>({ required: true })
 const showPicker = ref(false)
 const draftValues = ref<string[]>([])
+const draftSingleValues = ref<string[]>([])
 
 const selectedValues = computed(() => {
   if (Array.isArray(model.value)) return model.value
@@ -47,11 +49,12 @@ const displayValue = computed(() =>
 function openPicker() {
   if (props.disabled) return
   draftValues.value = [...selectedValues.value]
+  draftSingleValues.value = [selectedValues.value[0] ?? props.options[0]?.value ?? '']
   showPicker.value = true
 }
 
-function onSingleConfirm({ selectedValues: values }: { selectedValues: string[] }) {
-  model.value = values[0] ?? ''
+function confirmSingle() {
+  model.value = draftSingleValues.value[0] ?? ''
   showPicker.value = false
 }
 
@@ -101,21 +104,20 @@ watch(
     @clear="clearValue"
   />
 
-  <van-popup
+  <MobileDrawer
     v-model:show="showPicker"
-    position="bottom"
-    round
+    :title="label || '请选择'"
+    height="auto"
+    max-height="calc(100dvh - 88px)"
     destroy-on-close
     safe-area-inset-bottom
   >
+    <template #actions>
+      <div class="flex items-center gap-[8px]">
+        <van-button type="primary" size="small" @click="multiple ? confirmMultiple() : confirmSingle()">确定</van-button>
+      </div>
+    </template>
     <template v-if="multiple">
-      <van-nav-bar
-        title="请选择"
-        left-text="取消"
-        right-text="确定"
-        @click-left="showPicker = false"
-        @click-right="confirmMultiple"
-      />
       <div class="max-h-[55vh] overflow-auto py-2">
         <van-checkbox-group v-model="draftValues">
           <van-cell-group :border="false">
@@ -136,10 +138,9 @@ watch(
     </template>
     <van-picker
       v-else
-      :model-value="selectedValues"
+      v-model="draftSingleValues"
       :columns="options"
-      @confirm="onSingleConfirm"
-      @cancel="showPicker = false"
+      :show-toolbar="false"
     />
-  </van-popup>
+  </MobileDrawer>
 </template>
