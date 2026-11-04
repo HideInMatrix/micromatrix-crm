@@ -104,12 +104,13 @@ export class ExternalResourceResolverService {
   }
 
   /**
-   * Customer-first identity lookup for payment and enrollment workflows.
+   * Cross-module identity lookup for payment and enrollment workflows.
    * The two modules may use different CRM field keys for the same external identity
-   * (for example Customer.cf_phone and Lead.phone).
+   * (for example Customer.cf_phone and Lead.phone). Both modules are checked so an
+   * independent customer + lead collision fails closed instead of choosing arbitrarily.
    * Returns null only when both lookups are valid and no record exists.
    */
-  async resolveCustomerOrLeadOptional(
+  async resolvePaymentTargetOptional(
     user: AuthUser,
     customerWhere: Record<string, unknown>,
     leadWhere: Record<string, unknown>,
@@ -137,38 +138,52 @@ export class ExternalResourceResolverService {
     ])
     if (customerScope.owner !== undefined || leadScope.owner !== undefined) {
       throw new ForbiddenException(
-        '智能客户归档需要具有客户和线索全局数据范围的 API Key 账号，避免数据范围外存在同一学生而重复创建',
+        '缴费成功同步需要具有客户和线索全局数据范围的 API Key 账号，避免遗漏匹配记录',
       )
     }
     if (
       customerPools.length > 0 &&
       !hasPermission(user.permissions, 'customerPool:assign')
     ) {
-      throw new ForbiddenException('智能客户归档需要客户公海查询权限，避免重复创建客户')
+      throw new ForbiddenException('缴费成功同步需要客户公海查询权限，避免遗漏公海客户')
     }
     if (
       leadPools.length > 0 &&
       !hasPermission(user.permissions, 'leadPool:assign')
     ) {
-      throw new ForbiddenException('智能客户归档需要线索池查询权限，避免遗漏公海线索并重复创建客户')
+      throw new ForbiddenException('缴费成功同步需要线索池查询权限，避免遗漏公海线索')
     }
 
-    const customerIds = await this.findCustomerIds(user, customerPrepared, true)
+    const [customerIds, leads] = await Promise.all([
+      this.findCustomerIds(user, customerPrepared, true),
+      this.findLeads(user, leadPrepared, true),
+    ])
     if (customerIds.length > 1) this.nonUnique('CUSTOMER')
-    if (customerIds.length === 1) {
-      return { kind: 'CUSTOMER', customerId: customerIds[0]! }
-    }
-
-    const leads = await this.findLeads(user, leadPrepared, true)
     if (leads.length > 1) this.nonUnique('LEAD')
     const lead = leads[0]
+
+    if (customerIds.length === 1) {
+      const customerId = customerIds[0]!
+      if (lead) {
+        // A converted lead and its linked customer are one logical record, not a duplicate.
+        if (lead.transitionType === 'CUSTOMER' && String(lead.transitionId ?? '') === customerId) {
+          return { kind: 'CUSTOMER', customerId, sourceLeadId: String(lead.id) }
+        }
+        throw new ConflictException({
+          code: 'CROSS_MODULE_IDENTITY_CONFLICT',
+          message: '同一姓名和手机号同时匹配到独立客户与线索，存在重复数据；缴费事件未执行，请先处理重复记录',
+        })
+      }
+      return { kind: 'CUSTOMER', customerId }
+    }
+
     if (!lead) return null
 
     if (lead.transitionId) {
       if (lead.transitionType !== 'CUSTOMER') {
         throw new ConflictException({
           code: 'UNSUPPORTED_TRANSITION',
-          message: '线索已转换为非 Customer 资源，不能由外部事件自动归档',
+          message: '线索已转换为非 Customer 资源，不能由缴费事件自动转化',
         })
       }
       const customerIds = await this.findCustomerIdsById(user, String(lead.transitionId), true)

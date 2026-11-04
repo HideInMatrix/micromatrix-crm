@@ -3,8 +3,6 @@ import type {
   ExternalEventTemplateInput,
   ExternalEventTemplateVO,
   ExternalEventFlow,
-  ExternalEventOwnerStrategy,
-  ExternalEventUserProvider,
   FieldVO,
 } from '@micromatrix/shared'
 import type { MemberOption } from '@/api/system'
@@ -52,7 +50,6 @@ function newForm(): ExternalEventTemplateInput {
           customerPhoneFieldKey: 'cf_phone',
           leadPhoneFieldKey: 'phone',
         },
-        ownerStrategy: { mode: 'none' },
       },
     },
   }
@@ -98,45 +95,6 @@ const writable = computed(() =>
     (f) => !f.hidden && !f.system && !['formula', 'sub_product'].includes(f.type),
   ),
 )
-const upsertOwnerMode = computed<ExternalEventOwnerStrategy['mode']>({
-  get: () => flow.value.ownerStrategy?.mode ?? 'none',
-  set: (mode) => {
-    if (mode === 'none') flow.value.ownerStrategy = { mode: 'none' }
-    else if (mode === 'fixed') flow.value.ownerStrategy = { mode: 'fixed', userId: '' }
-    else flow.value.ownerStrategy = { mode: 'event', externalKey: 'ownerId', provider: 'CRM' }
-  },
-})
-const upsertFixedOwnerId = computed({
-  get: () =>
-    flow.value.ownerStrategy?.mode === 'fixed' ? flow.value.ownerStrategy.userId : '',
-  set: (userId: string) => {
-    flow.value.ownerStrategy = { mode: 'fixed', userId }
-  },
-})
-const upsertEventOwnerKey = computed({
-  get: () =>
-    flow.value.ownerStrategy?.mode === 'event' ? flow.value.ownerStrategy.externalKey : 'ownerId',
-  set: (externalKey: string) => {
-    flow.value.ownerStrategy = {
-      mode: 'event',
-      externalKey,
-      provider:
-        flow.value.ownerStrategy?.mode === 'event' ? flow.value.ownerStrategy.provider : 'CRM',
-    }
-  },
-})
-const upsertEventOwnerProvider = computed({
-  get: () =>
-    flow.value.ownerStrategy?.mode === 'event' ? flow.value.ownerStrategy.provider : 'CRM',
-  set: (provider: ExternalEventUserProvider) => {
-    flow.value.ownerStrategy = {
-      mode: 'event',
-      externalKey:
-        flow.value.ownerStrategy?.mode === 'event' ? flow.value.ownerStrategy.externalKey : 'ownerId',
-      provider,
-    }
-  },
-})
 const ownerEnabled = computed({
   get: () => Boolean(flow.value.owner),
   set: (on: boolean) => {
@@ -165,10 +123,7 @@ function changeAction(action: ExternalEventFlow['action']) {
         '',
       leadPhoneFieldKey: flow.value.identity?.leadPhoneFieldKey || 'phone',
     }
-    flow.value.ownerStrategy = { mode: 'none' }
     form.config.matches = []
-  } else if (flow.value.ownerStrategy) {
-    flow.value.ownerStrategy = { mode: 'none' }
   }
   if (['update', 'convert'].includes(action) && form.config.matches.length === 0) {
     form.config.matches = [{
@@ -195,9 +150,6 @@ function sample() {
   if (needsName.value && flow.value.nameExternalKey) data[flow.value.nameExternalKey] = '张三'
   if (upserting.value && flow.value.identity?.phoneExternalKey)
     data[flow.value.identity.phoneExternalKey] = '13800000000'
-  if (upserting.value && flow.value.ownerStrategy?.mode === 'event')
-    data[flow.value.ownerStrategy.externalKey] =
-      flow.value.ownerStrategy.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
   if (flow.value.owner?.externalKey)
     data[flow.value.owner.externalKey] =
       flow.value.owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
@@ -253,7 +205,6 @@ watch(visible, async (open) => {
       customerPhoneFieldKey: customerPhoneFields.value.find((field) => field.type === 'phone')?.key ?? '',
       leadPhoneFieldKey: leadPhoneFields.value.find((field) => field.type === 'phone')?.key ?? '',
     }
-    flow.value.ownerStrategy ??= { mode: 'none' }
   }
   sample()
 })
@@ -295,7 +246,7 @@ async function save() {
     }
     if (!flow.value.fields.length) {
       step.value = 4
-      ElMessage.warning('智能客户归档至少需要一个自定义字段映射')
+      ElMessage.warning('缴费成功同步至少需要一个客户字段映射')
       return
     }
     const phoneMapping = flow.value.fields.find(
@@ -308,24 +259,15 @@ async function save() {
       ElMessage.warning('请将外部手机号参数映射到客户手机号字段')
       return
     }
-    if (flow.value.ownerStrategy?.mode === 'fixed' && !flow.value.ownerStrategy.userId) {
-      step.value = 4
-      ElMessage.warning('请选择固定负责人')
-      return
-    }
-    if (
-      flow.value.ownerStrategy?.mode === 'event' &&
-      !flow.value.ownerStrategy.externalKey.trim()
-    ) {
-      step.value = 4
-      ElMessage.warning('请配置外部负责人参数')
-      return
-    }
   }
   busy.value = true
   try {
     const payload = JSON.parse(JSON.stringify(form)) as ExternalEventTemplateInput
     if (creating.value || upserting.value) payload.config.matches = []
+    if (upserting.value && payload.config.flow) {
+      const legacyFlow = payload.config.flow as ExternalEventFlow & { ownerStrategy?: unknown }
+      delete legacyFlow.ownerStrategy
+    }
     const result = savedId.value
       ? await externalEventTemplateApi.update(savedId.value, payload)
       : await externalEventTemplateApi.create({
@@ -419,7 +361,7 @@ async function preview() {
           <h3 class="m-0 text-base font-semibold">选择本次事件操作的 CRM 模块</h3>
           <el-alert
             v-if="upserting"
-            title="智能客户归档固定以客户为最终目标：先匹配客户，未命中再匹配线索，最后按配置创建客户。"
+            title="缴费成功事件同时匹配客户和线索：命中客户则更新缴费状态，命中线索则直接转化为客户；均未命中时不创建客户。"
             type="success"
             :closable="false"
           />
@@ -435,7 +377,7 @@ async function preview() {
         <div v-else-if="step === 2" class="flex flex-col gap-3">
           <template v-if="upserting">
             <el-alert
-              title="必须同时满足学生姓名和手机号才算匹配。客户和线索可分别选择手机号字段；查询均为精确匹配。"
+              title="必须同时满足学生姓名和手机号才算匹配。客户和线索可分别选择手机号字段；查询均为精确匹配。均未命中时不创建客户，正式调用返回未匹配错误。"
               type="info"
               :closable="false"
             />
@@ -465,7 +407,7 @@ async function preview() {
               </el-form-item>
             </el-form>
             <el-alert
-              title="学生姓名使用字段映射中配置的「学生姓名参数」；手机号和姓名必须同时一致。若同一模块匹配到多条记录，将拒绝自动处理并记录异常，不会重复创建。"
+              title="学生姓名使用字段映射中配置的「学生姓名参数」；手机号和姓名必须同时一致。若同一身份同时命中独立客户和未转化线索，或任一模块匹配到多条记录，将拒绝处理并记录异常。"
               type="warning"
               :closable="false"
             />
@@ -533,19 +475,19 @@ async function preview() {
             >
             <el-radio value="create">创建{{ flow.target === 'lead' ? '线索' : '客户' }}</el-radio>
             <el-radio v-if="flow.target === 'lead'" value="convert">转换线索为客户</el-radio>
-            <el-radio value="upsertCustomer">智能匹配并处理客户（客户 → 线索 → 新建）</el-radio>
+            <el-radio value="upsertCustomer">缴费成功同步（客户更新 / 线索转客户）</el-radio>
           </el-radio-group>
           <el-alert
             v-if="upserting"
             type="success"
             :closable="false"
-            title="流程已包含条件分支：找到客户则更新；没有客户则查找线索，找到后转化；两者都没有则新建客户。所有分支共用下方动态字段映射。"
+            title="流程包含两个业务分支：找到客户则更新缴费状态；没有客户但找到线索则直接转化为客户并写入缴费状态。两者都未命中时不创建客户。"
           />
           <el-alert
             v-else
             type="info"
             :closable="false"
-            title="单动作模式保留兼容；需要根据查询结果执行不同动作时，选择「智能匹配并处理客户」。"
+            title="单动作模式保留兼容；需要根据查询结果执行不同动作时，选择「缴费成功同步」。"
           />
           <div v-if="upserting" class="max-w-[900px] rounded-lg bg-[var(--el-fill-color-lighter)] p-4">
             <div class="flex justify-center">
@@ -556,7 +498,7 @@ async function preview() {
             <div class="py-2 text-center text-[var(--el-text-color-secondary)]">↓</div>
             <div class="flex justify-center">
               <div class="rounded-md border border-[var(--el-color-primary-light-5)] bg-[var(--el-color-primary-light-9)] px-5 py-2 text-sm font-medium">
-                查询客户：学生姓名 + 手机号
+                同时匹配客户与线索：学生姓名 + 手机号
               </div>
             </div>
             <div class="py-2 text-center text-[var(--el-text-color-secondary)]">↙ 命中 / 未命中 ↘</div>
@@ -573,18 +515,18 @@ async function preview() {
               </div>
               <div class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-3">
                 <div class="mb-1 text-xs text-[var(--el-text-color-secondary)]">客户、线索均未命中</div>
-                <div class="font-semibold">新建客户</div>
-                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">按负责人策略分配，映射失败允许为空</div>
+                <div class="font-semibold">不执行写入</div>
+                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">返回 PAYMENT_TARGET_NOT_FOUND，不创建客户</div>
               </div>
             </div>
             <div class="mt-3 rounded-md border border-dashed border-[var(--el-color-primary-light-5)] px-3 py-2 text-center text-xs text-[var(--el-text-color-secondary)]">
-              三个分支共用下方动态字段映射；选项字段支持外部值转换为 CRM 选项值
+              两个命中分支共用下方客户动态字段映射；选项字段支持外部值转换为 CRM 选项值
             </div>
             <el-alert
               class="mt-3"
               type="warning"
               :closable="false"
-              title="正式执行所使用的 API Key 账号必须具有客户和线索全局数据范围；租户配置了客户公海或线索池时，还需相应的池查询权限。权限不足会拒绝执行，避免因查不到数据而重复创建。"
+              title="正式执行所使用的 API Key 账号必须具有客户和线索全局数据范围；租户配置了客户公海或线索池时，还需相应的池查询权限。权限不足会拒绝执行，避免遗漏现有客户或线索。"
             />
           </div>
         </div>
@@ -592,7 +534,7 @@ async function preview() {
           <el-alert
             type="info"
             :closable="false"
-            :title="upserting ? '所有分支统一写入客户自定义字段；单选、多选等选项可配置外部值到 CRM 选项值的转换。' : '仅展示目标动作允许写入的字段；系统负责人使用单独的身份映射。'"
+            :title="upserting ? '客户更新和线索转客户共用同一套客户自定义字段映射；单选、多选等选项可配置外部值到 CRM 选项值的转换。' : '仅展示目标动作允许写入的字段；系统负责人使用单独的身份映射。'"
           />
           <el-form v-if="needsName" label-position="top" class="max-w-[440px]">
             <el-form-item :label="upserting ? '学生姓名来自哪个外部参数（同时用于身份匹配）' : '创建记录的名称来自哪个外部参数'">
@@ -688,44 +630,8 @@ async function preview() {
           >
             <Plus :size="14" class="mr-1" />新增字段映射
           </el-button>
-          <div v-if="upserting" class="rounded-md border border-[var(--el-border-color-lighter)] p-3">
-            <div class="mb-2 font-medium">新建客户的负责人</div>
-            <el-radio-group v-model="upsertOwnerMode" class="!flex flex-col !items-start gap-2">
-              <el-radio value="none">不指定负责人</el-radio>
-              <el-radio value="fixed">指定固定 CRM 成员</el-radio>
-              <el-radio value="event">从外部事件映射负责人</el-radio>
-            </el-radio-group>
-            <el-select
-              v-if="upsertOwnerMode === 'fixed'"
-              v-model="upsertFixedOwnerId"
-              filterable
-              class="mt-3 w-full max-w-[360px]"
-              placeholder="选择固定负责人"
-            >
-              <el-option v-for="member in members" :key="member.id" :label="member.name" :value="member.id" />
-            </el-select>
-            <div v-if="upsertOwnerMode === 'event'" class="mt-3 flex flex-wrap gap-3">
-              <el-input v-model="upsertEventOwnerKey" class="!w-[220px]" placeholder="外部负责人参数名" />
-              <el-select v-model="upsertEventOwnerProvider" class="!w-[180px]">
-                <el-option label="CRM 成员 ID" value="CRM" />
-                <el-option label="企业微信 UserID" value="WECOM" />
-                <el-option label="钉钉成员标识" value="DINGTALK" />
-                <el-option label="飞书成员标识" value="LARK" />
-              </el-select>
-            </div>
-            <el-alert
-              v-if="upsertOwnerMode === 'event'"
-              class="mt-3"
-              type="info"
-              :closable="false"
-              title="外部负责人缺失、无法匹配或匹配不唯一时，自动降级为空负责人，不阻断客户创建。"
-            />
-            <p class="mt-3 mb-0 text-xs text-[var(--el-text-color-secondary)]">
-              已有客户保留原负责人；线索转化继承线索负责人。此配置只作用于未匹配到客户和线索、需要新建客户的分支。
-            </p>
-          </div>
           <div
-            v-else-if="flow.action === 'convert' || creating"
+            v-if="flow.action === 'convert' || creating"
             class="rounded-md border border-[var(--el-border-color-lighter)] p-3"
           >
             <el-switch
@@ -769,20 +675,14 @@ async function preview() {
           >
           <el-descriptions v-if="previewResult" title="模拟执行结果" border :column="1">
             <el-descriptions-item label="匹配类型">{{
-              previewResult.resolvedType
+              previewResult.resolvedType || '未匹配'
             }}</el-descriptions-item>
             <el-descriptions-item label="资源 ID">{{
-              previewResult.resolvedId || '新建时生成'
+              previewResult.resolvedId || '无匹配记录'
             }}</el-descriptions-item>
             <el-descriptions-item label="动作">{{ previewResult.action }}</el-descriptions-item>
-            <el-descriptions-item label="负责人">{{
-              previewResult.customerOwnerId || '不指定 / 保留原负责人'
-            }}</el-descriptions-item>
             <el-descriptions-item v-if="previewResult.releasedFromPool" label="公海处理">
               完结规则命中后移出客户公海
-            </el-descriptions-item>
-            <el-descriptions-item v-if="previewResult.ownerFallbackReason" label="负责人降级原因">
-              {{ previewResult.ownerFallbackReason }}
             </el-descriptions-item>
             <el-descriptions-item label="字段映射">
               <pre class="m-0 whitespace-pre-wrap text-xs">{{

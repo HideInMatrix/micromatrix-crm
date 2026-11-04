@@ -5,12 +5,9 @@ export type ExternalEventUserProvider = 'CRM' | 'WECOM' | 'DINGTALK' | 'LARK'
  * Omitted flow means the original customer-sync/conversion behavior (v1).
  */
 export type ExternalEventTarget = 'lead' | 'customer'
+/** `upsertCustomer` is a persisted compatibility key for payment sync; it never creates records. */
 export type ExternalEventAction = 'update' | 'convert' | 'create' | 'upsertCustomer'
 
-export type ExternalEventOwnerStrategy =
-  | { mode: 'none' }
-  | { mode: 'fixed'; userId: string }
-  | { mode: 'event'; externalKey: string; provider: ExternalEventUserProvider }
 export interface ExternalEventFlow {
   target: ExternalEventTarget
   action: ExternalEventAction
@@ -26,14 +23,12 @@ export interface ExternalEventFlow {
   nameExternalKey?: string
   /** Optional source identity for new owner (legacy create/convert actions). */
   owner?: { externalKey: string; provider: ExternalEventUserProvider } | null
-  /** Customer identity and owner strategy for the smart customer upsert workflow. */
+  /** Cross-module identity for payment sync: update customer or convert a matching lead. */
   identity?: {
     phoneExternalKey: string
     customerPhoneFieldKey: string
     leadPhoneFieldKey: string
   }
-  /** Owner is only applied when the workflow has to create a brand-new customer. */
-  ownerStrategy?: ExternalEventOwnerStrategy
 }
 
 export interface ExternalEventTemplateConfig {

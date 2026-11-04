@@ -124,7 +124,7 @@ onMounted(async () => {
                 >{{ row.config.flow.target === 'lead' ? '线索' : '客户' }} ·
                 {{
                   (
-                    { update: '更新字段', create: '创建记录', convert: '转客户', upsertCustomer: '智能客户归档' } as Record<
+                    { update: '更新字段', create: '创建记录', convert: '转客户', upsertCustomer: '缴费成功同步' } as Record<
                       string,
                       string
                     >
@@ -133,7 +133,7 @@ onMounted(async () => {
               >
               <div class="text-[12px] text-[var(--el-text-color-secondary)]">
                 <template v-if="row.config.flow.action === 'upsertCustomer'">
-                  姓名 + 手机号匹配 · 客户 / 线索 / 新建分支 · 映射 {{ row.config.flow.fields.length }} 个字段
+                  姓名 + 手机号匹配 · 客户更新 / 线索转客户 · 映射 {{ row.config.flow.fields.length }} 个字段
                 </template>
                 <template v-else>映射 {{ row.config.flow.fields.length }} 个字段 · 单动作</template>
               </div>

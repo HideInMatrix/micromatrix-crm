@@ -43,9 +43,6 @@ const sampleData = computed(() => {
   const owner = flow ? flow.owner : props.template?.config.owner
   if (owner)
     data[owner.externalKey] = owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
-  if (flow?.action === 'upsertCustomer' && flow.ownerStrategy?.mode === 'event')
-    data[flow.ownerStrategy.externalKey] =
-      flow.ownerStrategy.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
   return data
 })
 function flowActionLabel(action: string) {
@@ -54,7 +51,7 @@ function flowActionLabel(action: string) {
       update: '更新自定义字段',
       create: '创建记录',
       convert: '线索转客户',
-      upsertCustomer: '智能匹配并处理客户',
+      upsertCustomer: '缴费成功同步（客户更新 / 线索转客户）',
     }[action as 'update' | 'create' | 'convert' | 'upsertCustomer'] ?? '已移除动作，请重新配置'
   )
 }
@@ -97,13 +94,11 @@ const sortedFields = computed(() => [
       : []),
     ...(props.template?.config.flow?.owner
       ? [props.template.config.flow.owner.externalKey]
-      : props.template?.config.flow?.ownerStrategy?.mode === 'event'
-        ? [props.template.config.flow.ownerStrategy.externalKey]
-        : props.template?.config.flow
-          ? []
-          : props.template?.config.owner
-            ? [props.template.config.owner.externalKey]
-            : []),
+      : props.template?.config.flow
+        ? []
+        : props.template?.config.owner
+          ? [props.template.config.owner.externalKey]
+          : []),
     ...(props.template?.config.flow?.identity?.phoneExternalKey
       ? [props.template.config.flow.identity.phoneExternalKey]
       : []),
@@ -197,7 +192,7 @@ async function simulate() {
                 </p>
                 <template v-if="template.config.flow.action === 'upsertCustomer'">
                   <p class="text-sm">
-                    使用学生姓名 + 手机号同时精确匹配：先查客户，命中则更新；未命中再查线索，命中则转化；两者都未命中则新建客户。已有客户保留负责人，线索转化继承原负责人，新建客户按负责人策略处理，外部负责人映射失败时降级为空。
+                    使用学生姓名 + 手机号同时精确匹配客户和线索：命中客户则更新缴费状态；仅命中线索则直接转化为客户并写入缴费状态。两者均未命中时不创建客户，返回 PAYMENT_TARGET_NOT_FOUND。客户保留原负责人，线索转化继承原负责人。
                   </p>
                   <p class="text-xs text-[var(--el-text-color-secondary)]">
                     执行账号必须有客户和线索全局数据范围；租户存在客户公海或线索池时，还需对应的池查询权限。
@@ -310,15 +305,14 @@ async function simulate() {
           >
           <el-alert
             v-if="preview"
-            type="success"
+            :type="preview.action === 'NO_MATCH' ? 'warning' : 'success'"
             :closable="false"
             class="mt-4"
-            :title="['CREATE_CUSTOMER', 'CREATE', 'create'].includes(preview.action) ? '未匹配到已有客户或线索，将新建客户' : `预览结果：${preview.resolvedType} / ${preview.resolvedId}`"
+            :title="preview.action === 'NO_MATCH' ? '未匹配到现有客户或线索，不会创建客户' : `预览结果：${preview.resolvedType} / ${preview.resolvedId}`"
             :description="[
               preview.action,
-              `负责人：${preview.customerOwnerId ?? (preview.action === 'CREATE_CUSTOMER' ? '不指定' : '保留原负责人 / 继承线索负责人')}`,
               preview.releasedFromPool ? '客户完结后将移出客户公海' : '',
-              preview.ownerFallbackReason ?? '',
+              preview.note,
             ].filter(Boolean).join('；')"
           />
         </el-tab-pane>

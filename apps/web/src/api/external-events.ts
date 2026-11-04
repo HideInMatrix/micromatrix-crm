@@ -7,12 +7,11 @@ import { http } from '@/api/http'
 
 export interface ExternalEventPreviewVO {
   dryRun: true
-  resolvedType: 'CUSTOMER' | 'LEAD'
+  resolvedType: 'CUSTOMER' | 'LEAD' | null
   releasedFromPool?: boolean
-  ownerFallbackReason?: string | null
   resolvedId: string
   action: string
-  customerOwnerId: string | null
+  customerOwnerId?: string | null
   fieldUpdates: Record<string, unknown>
   note: string
 }
