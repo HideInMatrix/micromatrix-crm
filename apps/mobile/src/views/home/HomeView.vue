@@ -6,7 +6,7 @@ import {
   type LeadVO,
   type NotificationVO,
 } from '@micromatrix/shared'
-import { ChevronRight, GitPullRequest } from 'lucide-vue-next'
+import { ChevronRight } from 'lucide-vue-next'
 import { computed, onActivated, ref } from 'vue'
 import { showFailToast } from 'vant'
 import { useRouter } from 'vue-router'
@@ -319,22 +319,17 @@ onActivated(() => void refresh())
             <div
               v-for="item in notifications"
               :key="item.id"
-              class="flex cursor-pointer items-start gap-[5px]"
+              class="flex cursor-pointer items-start"
               role="button"
               tabindex="0"
               @click="openMessage(item)"
               @keydown.enter="openMessage(item)"
             >
-              <div
-                class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] bg-[color-mix(in_srgb,var(--van-primary-color)_8%,white)] text-[var(--van-primary-color)]"
-              >
-                <GitPullRequest :size="16" :stroke-width="2.3" aria-hidden="true" />
-              </div>
               <div class="min-w-0 flex-1">
                 <div class="flex min-w-0 items-start justify-between gap-2">
                   <div class="flex min-w-0 items-center gap-1">
                     <span
-                      class="truncate text-[12px] leading-[16px] font-semibold text-[#333333]"
+                      class="truncate text-[14px] leading-[20px] font-semibold text-[#333333]"
                       >{{ item.title }}</span
                     >
                     <span
@@ -343,11 +338,11 @@ onActivated(() => void refresh())
                     />
                   </div>
                   <span
-                    class="shrink-0 whitespace-nowrap text-[12px] leading-[16px] text-[#8A97AC]"
+                    class="shrink-0 whitespace-nowrap text-[14px] leading-[20px] text-[#8A97AC]"
                     >{{ messageTime(item.createdAt) }}</span
                   >
                 </div>
-                <p class="mt-[3px] mb-0 truncate text-[10px] leading-[14px] text-[#666666]">
+                <p class="mt-[3px] mb-0 truncate text-[12px] leading-[16px] text-[#666666]">
                   {{ item.content || '暂无详细内容' }}
                 </p>
               </div>

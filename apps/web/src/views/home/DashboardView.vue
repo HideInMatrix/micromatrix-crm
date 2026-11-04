@@ -920,14 +920,9 @@ onBeforeUnmount(() => {
             v-for="item in notifications.slice(0, 4)"
             :key="item.id"
             type="button"
-            class="flex w-full cursor-pointer items-center gap-3 rounded-lg border-0 bg-[#F6F8FB] px-3 py-2 text-left transition-colors hover:bg-[#EEF3FD]"
+            class="flex w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-[#F6F8FB] px-3 py-2 text-left transition-colors hover:bg-[#EEF3FD]"
             @click="openNotification(item)"
           >
-            <span
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E8F3FF] text-[#2788FF]"
-            >
-              <Bell :size="21" aria-hidden="true" />
-            </span>
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[13px] font-semibold text-[#434B5B]">
                 <span v-if="!item.readAt" class="mr-1 text-[#F05150]">[未读]</span>{{ item.title }}

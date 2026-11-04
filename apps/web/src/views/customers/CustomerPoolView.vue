@@ -279,12 +279,6 @@ async function handleBatchAssignConfirm(userId: string) {
 }
 
 async function handleClaim(row: CustomerVO) {
-  const confirmed = await ElMessageBox.confirm(
-    `领取客户「${row.name}」后，该客户将进入你的客户列表。`,
-    '领取客户',
-    { confirmButtonText: '领取', cancelButtonText: '取消' },
-  ).catch(() => false)
-  if (!confirmed) return
   try {
     await customerExtraApi.claim(row.id, row.poolId ?? selectedPoolId.value)
     ElMessage.success(`已领取「${row.name}」`)

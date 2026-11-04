@@ -150,12 +150,6 @@ async function transferOwner(userId: string) {
 
 async function claimPoolCustomer() {
   if (!customer.value || !props.poolId) return
-  const confirmed = await ElMessageBox.confirm(
-    `领取客户「${customer.value.name}」后，该客户将进入你的客户列表。`,
-    '领取客户',
-    { confirmButtonText: '领取', cancelButtonText: '取消' },
-  ).catch(() => false)
-  if (!confirmed) return
   try {
     await customerExtraApi.claim(props.customerId, props.poolId)
     ElMessage.success('客户领取成功')

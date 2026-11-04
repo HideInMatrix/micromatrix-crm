@@ -64,7 +64,14 @@ function displayValue(field: FieldVO) {
     >
       <div v-for="field in visibleFields" :key="field.id" class="min-w-0 truncate">
         <span v-if="field.key !== 'name'" class="text-[#666666]">{{ field.label }}：</span
-        ><span class="text-[#333333]">{{ displayValue(field) }}</span>
+        ><span
+          :class="
+            field.key === 'name'
+              ? 'text-[15px] leading-[20px] font-medium text-[#000000]'
+              : 'text-[#333333]'
+          "
+          >{{ displayValue(field) }}</span
+        >
       </div>
     </div>
     <div v-else class="text-[14px] leading-[16px] text-[#333333]">查看线索</div>
