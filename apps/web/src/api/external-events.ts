@@ -8,6 +8,8 @@ import { http } from '@/api/http'
 export interface ExternalEventPreviewVO {
   dryRun: true
   resolvedType: 'CUSTOMER' | 'LEAD'
+  releasedFromPool?: boolean
+  ownerFallbackReason?: string | null
   resolvedId: string
   action: string
   customerOwnerId: string | null

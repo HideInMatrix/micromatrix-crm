@@ -1367,7 +1367,8 @@ export class LeadsService {
     user: AuthUser,
     leadId: string,
     customerCustomData: Record<string, unknown> = {},
-    customerOwnerId?: string,
+    customerOwnerId?: string | null,
+    allowUnassignedOwner = false,
   ) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
     const candidate = await this.prisma.client.orm.public.Clue.where({
@@ -1386,8 +1387,8 @@ export class LeadsService {
       if (!candidate.poolId) throw new BadRequestException('线索不属于有效线索池')
       const pool = await this.pools.assertPoolMember(user, 'lead', candidate.poolId)
       if (!pool.enable) throw new BadRequestException('线索所在池已停用')
-      if (!customerOwnerId)
-        throw new BadRequestException('线索池转化必须在外部事件中指定新记录负责人')
+      if (!customerOwnerId && !allowUnassignedOwner)
+        throw new BadRequestException('线索池转化必须指定负责人或明确允许无负责人')
       lead = candidate as Lead
     } else {
       lead = await this.ensureInScope(user, leadId, 'lead:update')
@@ -1398,23 +1399,26 @@ export class LeadsService {
         message: '线索已转客户，请重新定位后继续处理',
       })
     }
-    const conversionOwnerId = customerOwnerId ?? lead.owner
-    if (!conversionOwnerId) throw new BadRequestException('线索暂无负责人，无法转换')
+    const conversionOwnerId = customerOwnerId !== undefined ? customerOwnerId : lead.owner
+    if (!conversionOwnerId && !allowUnassignedOwner) {
+      throw new BadRequestException('线索暂无负责人，无法转换')
+    }
 
     const mapped = await this.mapLeadCustomData(user.tenantId, 'customer', lead, true)
     const customerCreateDto = {
       name: lead.name,
-      ownerId: conversionOwnerId,
+      ownerId: conversionOwnerId ?? null,
       customData: { ...mapped, ...customerCustomData },
     }
     const customerPrepared = await this.customers.prepareCreateForTransaction(
       user,
       customerCreateDto,
+      { allowUnassignedOwner },
     )
     const associationPrepared = await this.prepareLeadAssociation(user, [
       lead.inSharedPool ? { ...lead, owner: conversionOwnerId } : lead,
     ])
-    return { lead, customerCreateDto, customerPrepared, associationPrepared }
+    return { lead, customerCreateDto, customerPrepared, associationPrepared, allowUnassignedOwner }
   }
 
   /**
@@ -1427,13 +1431,14 @@ export class LeadsService {
     tx: PrismaTransaction,
   ) {
     const ownerId = prepared.lead.inSharedPool
-      ? prepared.customerPrepared.owner.id
-      : prepared.lead.owner
-    if (!ownerId) throw new BadRequestException('线索暂无负责人，无法转换')
+      ? prepared.customerPrepared.owner?.id ?? null
+      : prepared.lead.owner ?? null
+    if (!ownerId && !prepared.allowUnassignedOwner)
+      throw new BadRequestException('线索暂无负责人，无法转换')
     await acquirePoolTransactionLocksPrisma(
       this.prisma.client,
       tx,
-      poolTransactionLockKeys('clue', user.tenantId, prepared.lead.id, ownerId),
+      poolTransactionLockKeys('clue', user.tenantId, prepared.lead.id, ownerId ?? ''),
     )
     const current = await tx.orm.public.Clue.where({
       id: prepared.lead.id,
@@ -1467,7 +1472,7 @@ export class LeadsService {
 
     let associationLead = current as Lead
     if (current.inSharedPool) {
-      // Assign the event-mapped owner and leave the pool atomically with customer conversion.
+      // Leave the pool atomically; an ownerless conversion remains unassigned.
       if (!current.poolId) throw new ConflictException('线索已不属于有效线索池')
       const enabledPool = await tx.orm.public.CluePool.where({
         id: current.poolId,
@@ -1483,7 +1488,7 @@ export class LeadsService {
         updateTime: current.updateTime,
       }).update({
         owner: ownerId,
-        collectionTime: now,
+        collectionTime: ownerId ? now : null,
         inSharedPool: false,
         poolId: null,
         reasonId: null,
@@ -1521,7 +1526,7 @@ export class LeadsService {
     await this.customers.notifyCreatedCustomer(
       user,
       result.createdCustomer,
-      prepared.customerPrepared.owner.id,
+      prepared.customerPrepared.owner?.id ?? null,
     )
     await this.notifyLeadAssociation(user, [prepared.lead], result.customerId)
   }
@@ -1597,7 +1602,7 @@ export class LeadsService {
       await this.customers.notifyCreatedCustomer(
         user,
         transactionResult.createdCustomer,
-        customerPrepared.owner.id,
+        customerPrepared.owner?.id ?? null,
       )
     }
     await this.notifyLeadAssociation(user, [lead], transactionResult.customerId)
@@ -1631,7 +1636,7 @@ export class LeadsService {
       if (!updatedLead) throw new NotFoundException('线索不存在')
       return { customer }
     })
-    await this.customers.notifyCreatedCustomer(user, result.customer, prepared.owner.id)
+    await this.customers.notifyCreatedCustomer(user, result.customer, prepared.owner?.id ?? null)
     await this.notifyLeadAssociation(user, [lead], result.customer.id)
     return {
       clueId: lead.id,
@@ -1800,30 +1805,31 @@ export class LeadsService {
     let newestFollower: string | null = customer.follower ? String(customer.follower) : null
 
     for (const lead of leads) {
-      if (!lead.owner) continue
-      if (!prepared.ownerMap.has(lead.owner)) {
-        throw new BadRequestException('线索负责人不存在或已禁用')
-      }
+      if (lead.owner) {
+        if (!prepared.ownerMap.has(lead.owner)) {
+          throw new BadRequestException('线索负责人不存在或已禁用')
+        }
 
-      if (customer.owner !== lead.owner) {
-        const existingTeam = await tx.orm.public.CustomerCollaboration.where({
-          customerId: customerId,
-          userId: lead.owner,
-        })
-          .select('id')
-          .first()
-        if (!existingTeam) {
-          const now = BigInt(Date.now())
-          await tx.orm.public.CustomerCollaboration.create({
-            id: createLegacyId32(),
+        if (customer.owner !== lead.owner) {
+          const existingTeam = await tx.orm.public.CustomerCollaboration.where({
             customerId: customerId,
             userId: lead.owner,
-            collaborationType: 'COLLABORATION',
-            createTime: now,
-            updateTime: now,
-            createUser: user.id,
-            updateUser: user.id,
           })
+            .select('id')
+            .first()
+          if (!existingTeam) {
+            const now = BigInt(Date.now())
+            await tx.orm.public.CustomerCollaboration.create({
+              id: createLegacyId32(),
+              customerId: customerId,
+              userId: lead.owner,
+              collaborationType: 'COLLABORATION',
+              createTime: now,
+              updateTime: now,
+              createUser: user.id,
+              updateUser: user.id,
+            })
+          }
         }
       }
 

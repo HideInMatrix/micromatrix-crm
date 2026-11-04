@@ -103,6 +103,86 @@ export class ExternalResourceResolverService {
     this.notFound()
   }
 
+  /**
+   * Customer-first identity lookup for payment and enrollment workflows.
+   * The two modules may use different CRM field keys for the same external identity
+   * (for example Customer.cf_phone and Lead.phone).
+   * Returns null only when both lookups are valid and no record exists.
+   */
+  async resolveCustomerOrLeadOptional(
+    user: AuthUser,
+    customerWhere: Record<string, unknown>,
+    leadWhere: Record<string, unknown>,
+  ): Promise<ExternalResolvedResource | null> {
+    const [customerPrepared, leadPrepared] = await Promise.all([
+      this.prepareWhere(user.tenantId, 'customer', this.validateWhere(customerWhere)),
+      this.prepareWhere(user.tenantId, 'lead', this.validateWhere(leadWhere)),
+    ])
+    if (!customerPrepared.supported || !leadPrepared.supported) {
+      throw new BadRequestException({
+        code: 'INVALID_QUERY_FIELD',
+        message: '姓名和手机号必须映射到有效的客户、线索精确匹配字段',
+        details: {
+          customer: customerPrepared.issues,
+          lead: leadPrepared.issues,
+        },
+      })
+    }
+
+    const [customerPools, leadPools, customerScope, leadScope] = await Promise.all([
+      this.pools.list(user, 'customer'),
+      this.pools.list(user, 'lead'),
+      this.dataScope.directOwnerFilter(user, 'customer:update'),
+      this.dataScope.directOwnerFilter(user, 'lead:update'),
+    ])
+    if (customerScope.owner !== undefined || leadScope.owner !== undefined) {
+      throw new ForbiddenException(
+        '智能客户归档需要具有客户和线索全局数据范围的 API Key 账号，避免数据范围外存在同一学生而重复创建',
+      )
+    }
+    if (
+      customerPools.length > 0 &&
+      !hasPermission(user.permissions, 'customerPool:assign')
+    ) {
+      throw new ForbiddenException('智能客户归档需要客户公海查询权限，避免重复创建客户')
+    }
+    if (
+      leadPools.length > 0 &&
+      !hasPermission(user.permissions, 'leadPool:assign')
+    ) {
+      throw new ForbiddenException('智能客户归档需要线索池查询权限，避免遗漏公海线索并重复创建客户')
+    }
+
+    const customerIds = await this.findCustomerIds(user, customerPrepared, true)
+    if (customerIds.length > 1) this.nonUnique('CUSTOMER')
+    if (customerIds.length === 1) {
+      return { kind: 'CUSTOMER', customerId: customerIds[0]! }
+    }
+
+    const leads = await this.findLeads(user, leadPrepared, true)
+    if (leads.length > 1) this.nonUnique('LEAD')
+    const lead = leads[0]
+    if (!lead) return null
+
+    if (lead.transitionId) {
+      if (lead.transitionType !== 'CUSTOMER') {
+        throw new ConflictException({
+          code: 'UNSUPPORTED_TRANSITION',
+          message: '线索已转换为非 Customer 资源，不能由外部事件自动归档',
+        })
+      }
+      const customerIds = await this.findCustomerIdsById(user, String(lead.transitionId), true)
+      if (customerIds.length !== 1) this.notFound()
+      return {
+        kind: 'CUSTOMER',
+        customerId: customerIds[0]!,
+        sourceLeadId: String(lead.id),
+      }
+    }
+
+    return { kind: 'LEAD', leadId: String(lead.id), ownerId: String(lead.owner ?? '') }
+  }
+
   /** Strict single-module lookup for v2 flows; never falls back to the other module. */
   async resolveTarget(
     user: AuthUser,
@@ -225,39 +305,67 @@ export class ExternalResourceResolverService {
     return { supported: issues.length === 0, conditions, system, issues }
   }
 
-  private async findCustomerIds(user: AuthUser, prepared: PreparedWhere): Promise<string[]> {
+  private async findCustomerIds(
+    user: AuthUser,
+    prepared: PreparedWhere,
+    includeVisiblePools = false,
+  ): Promise<string[]> {
     await this.assertPermission(user, 'customer:update')
     const customIds = prepared.conditions.length
       ? await this.fieldValues.filterResourceIds(user.tenantId, 'customer', prepared.conditions)
       : null
     if (customIds && customIds.length === 0) return []
-    return this.queryCustomerIds(user, prepared.system, customIds)
+    return this.queryCustomerIds(user, prepared.system, customIds, includeVisiblePools)
   }
 
-  private async findCustomerIdsById(user: AuthUser, id: string): Promise<string[]> {
+  private async findCustomerIdsById(
+    user: AuthUser,
+    id: string,
+    includeVisiblePools = false,
+  ): Promise<string[]> {
     await this.assertPermission(user, 'customer:update')
-    return this.queryCustomerIds(user, [{ key: 'id', value: id }], null)
+    return this.queryCustomerIds(user, [{ key: 'id', value: id }], null, includeVisiblePools)
   }
 
   private async queryCustomerIds(
     user: AuthUser,
     system: Array<{ key: string; value: unknown }>,
     customIds: string[] | null,
+    includeVisiblePools = false,
   ): Promise<string[]> {
     const ownerScope = await this.dataScope.directOwnerFilter(user, 'customer:update')
-    let query = this.prisma.client.orm.public.Customer.where({
+    const applyConditions = (query: ReturnType<typeof this.prisma.client.orm.public.Customer.where>) => {
+      if (customIds) query = query.where((row) => row.id.in(customIds))
+      for (const condition of system) query = this.applyCustomerSystemCondition(query, condition)
+      return query
+    }
+    let ordinary = this.prisma.client.orm.public.Customer.where({
       organizationId: user.tenantId,
       inSharedPool: false,
     })
-    if (typeof ownerScope.owner === 'string') query = query.where({ owner: ownerScope.owner })
+    if (typeof ownerScope.owner === 'string') ordinary = ordinary.where({ owner: ownerScope.owner })
     else if (ownerScope.owner?.in) {
       const ownerIds = ownerScope.owner.in
-      query = query.where((row) => row.owner.in(ownerIds))
+      ordinary = ordinary.where((row) => row.owner.in(ownerIds))
     }
-    if (customIds) query = query.where((row) => row.id.in(customIds))
-    for (const condition of system) query = this.applyCustomerSystemCondition(query, condition)
-    const rows = await query.select('id').all()
-    return rows.map((row) => String(row.id))
+    const rows = await applyConditions(ordinary).select('id').all()
+    const ids = rows.map((row) => String(row.id))
+
+    if (includeVisiblePools && hasPermission(user.permissions, 'customerPool:assign')) {
+      const poolIds = (await this.pools.list(user, 'customer')).map((pool) => pool.id)
+      if (poolIds.length) {
+        const pooled = await applyConditions(
+          this.prisma.client.orm.public.Customer.where({
+            organizationId: user.tenantId,
+            inSharedPool: true,
+          }).where((row) => row.poolId.in(poolIds)),
+        )
+          .select('id')
+          .all()
+        ids.push(...pooled.map((row) => String(row.id)))
+      }
+    }
+    return [...new Set(ids)]
   }
 
   private async findLeads(user: AuthUser, prepared: PreparedWhere, allowPooledConversion = false) {
@@ -290,7 +398,7 @@ export class ExternalResourceResolverService {
     // Pool lookup is only enabled by a conversion event and requires explicit pool permissions.
     if (!allowPooledConversion || !hasPermission(user.permissions, 'leadPool:assign'))
       return ordinary
-    const poolIds = (await this.pools.options(user, 'lead')).map((pool) => pool.id)
+    const poolIds = (await this.pools.list(user, 'lead')).map((pool) => pool.id)
     if (!poolIds.length) return ordinary
     const pooled = await base(true)
       .where((row) => row.poolId.in(poolIds))

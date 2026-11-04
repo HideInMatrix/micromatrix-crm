@@ -94,7 +94,7 @@ onMounted(async () => {
       <div>
         <h2 class="m-0 text-[18px] font-semibold">外部事件</h2>
         <p class="mt-1 mb-0 text-[13px] text-[var(--el-text-color-secondary)]">
-          通过现有 API Key 接收外部数据，选择线索或客户，定位资源并执行预先配置的业务动作。
+          通过现有 API Key 接收外部数据，可配置单动作或条件分支流程，按查询结果自动执行 CRM 业务操作。
         </p>
       </div>
       <el-button v-if="canUpdate" type="primary" @click="create"
@@ -124,7 +124,7 @@ onMounted(async () => {
                 >{{ row.config.flow.target === 'lead' ? '线索' : '客户' }} ·
                 {{
                   (
-                    { update: '更新字段', create: '创建记录', convert: '转客户' } as Record<
+                    { update: '更新字段', create: '创建记录', convert: '转客户', upsertCustomer: '智能客户归档' } as Record<
                       string,
                       string
                     >
@@ -132,7 +132,10 @@ onMounted(async () => {
                 }}</span
               >
               <div class="text-[12px] text-[var(--el-text-color-secondary)]">
-                映射 {{ row.config.flow.fields.length }} 个字段 · 通用动作
+                <template v-if="row.config.flow.action === 'upsertCustomer'">
+                  姓名 + 手机号匹配 · 客户 / 线索 / 新建分支 · 映射 {{ row.config.flow.fields.length }} 个字段
+                </template>
+                <template v-else>映射 {{ row.config.flow.fields.length }} 个字段 · 单动作</template>
               </div>
             </template>
             <template v-else>

@@ -24,6 +24,7 @@ import { LeadsService } from '../leads/leads.service'
 import type { ApplyExternalCustomerEventDto } from './dto/external-event.dto'
 import { ExternalResourceResolverService } from './external-resource-resolver.service'
 import { auditExternalEventRequest } from './external-event-audit-payload'
+import { acquirePoolTransactionLocksPrisma } from '../pool-rules/pool-transaction-lock'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
@@ -288,6 +289,9 @@ export class ExternalEventsService {
     audit: ExternalEventAudit,
   ) {
     if (!this.templates) throw new BadRequestException('配置服务不可用')
+    if (template.config.flow?.action === 'upsertCustomer') {
+      return this.executeCustomerUpsert(user, template, data, inboxId, requestHash, audit)
+    }
     const plan = await this.templates.prepareFlow(user, template, data)
     const { flow, resolved, set, ownerId } = plan
     const commit = (
@@ -369,7 +373,7 @@ export class ExternalEventsService {
           return { inbox, customer }
         })
         await this.customers
-          .notifyCreatedCustomer(user, result.customer, prepared.owner.id)
+          .notifyCreatedCustomer(user, result.customer, prepared.owner?.id ?? null)
           .catch((error: unknown) =>
             this.logger.warn(`外部事件客户通知失败 inbox=${inboxId}: ${String(error)}`),
           )
@@ -388,6 +392,141 @@ export class ExternalEventsService {
     }
 
     throw new BadRequestException('不支持的外部事件业务动作')
+  }
+
+  private async executeCustomerUpsert(
+    user: AuthUser,
+    template: ExternalEventTemplateVO,
+    data: Record<string, unknown>,
+    inboxId: string,
+    requestHash: string,
+    audit: ExternalEventAudit,
+  ) {
+    if (!this.templates) throw new BadRequestException('配置服务不可用')
+    const configuredFlow = template.config.flow
+    if (configuredFlow?.action !== 'upsertCustomer' || !configuredFlow.identity) {
+      throw new BadRequestException('当前事件不是有效的智能客户归档流程')
+    }
+    const rawName = data[configuredFlow.nameExternalKey ?? '']
+    const rawPhone = data[configuredFlow.identity.phoneExternalKey]
+    if (typeof rawName !== 'string' || !rawName.trim())
+      throw new BadRequestException(`缺少外部事件参数：${configuredFlow.nameExternalKey}`)
+    if (typeof rawPhone !== 'string' || !rawPhone.trim())
+      throw new BadRequestException(`缺少外部事件参数：${configuredFlow.identity.phoneExternalKey}`)
+
+    // Different payment orders for the same student can arrive concurrently. Serialize by
+    // tenant + normalized name + phone, then resolve again while holding the transaction lock.
+    const identityLock = `external-event:customer-upsert:${user.tenantId}:${JSON.stringify([
+      rawName.trim(),
+      rawPhone.trim(),
+    ])}`
+    const outcome = await this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [identityLock])
+      const plan = await this.templates!.prepareFlow(user, template, data)
+      if (plan.flow.action !== 'upsertCustomer')
+        throw new BadRequestException('当前事件不是智能客户归档流程')
+
+      if (plan.resolved?.kind === 'CUSTOMER') {
+        const customerId = plan.resolved.customerId
+        const sourceLeadId = plan.resolved.sourceLeadId
+        const prepared = await this.customers.prepareExternalEventDynamicFieldUpdate(
+          user,
+          customerId,
+          plan.set,
+        )
+        const updated = await this.customers.applyPreparedExternalEventDynamicFieldUpdateInTransaction(
+          user,
+          prepared,
+          tx,
+        )
+        const inbox = await this.markSuccessInTransaction(tx, {
+          inboxId,
+          requestHash,
+          resolvedType: sourceLeadId ? 'LEAD' : 'CUSTOMER',
+          resolvedId: sourceLeadId ?? customerId,
+          customerId,
+          audit: { ...audit, businessAction: 'upsertCustomer:update' },
+          resultDetails: {
+            branch: 'customer-found',
+            action: 'update-customer',
+            releasedFromCustomerPool: updated.releasedFromPool,
+          },
+        })
+        return { kind: 'update' as const, inbox }
+      }
+
+      if (plan.resolved?.kind === 'LEAD') {
+        if (!hasPermission(user.permissions, 'lead:convert'))
+          throw new ForbiddenException('外部事件调用账号缺少线索转化权限')
+        const leadId = plan.resolved.leadId
+        const prepared = await this.leads.prepareResolvedLeadConversion(
+          user,
+          leadId,
+          plan.set,
+          undefined,
+          true,
+        )
+        const converted = await this.leads.convertResolvedLeadInTransaction(user, prepared, tx)
+        const inbox = await this.markSuccessInTransaction(tx, {
+          inboxId,
+          requestHash,
+          resolvedType: 'LEAD',
+          resolvedId: leadId,
+          customerId: converted.customerId,
+          audit: { ...audit, businessAction: 'upsertCustomer:convertLead' },
+          resultDetails: {
+            branch: 'lead-found',
+            action: 'convert-lead-to-customer',
+            ownerId: prepared.customerPrepared.owner?.id ?? null,
+          },
+        })
+        return { kind: 'convert' as const, inbox, prepared, converted }
+      }
+
+      if (!hasPermission(user.permissions, 'customer:create'))
+        throw new ForbiddenException('外部事件调用账号缺少新建客户权限')
+      const name = plan.name
+      if (!name) throw new BadRequestException('智能客户归档缺少学生姓名')
+      const dto = {
+        name,
+        ownerId: plan.ownerId ?? null,
+        customData: plan.set,
+      }
+      const prepared = await this.customers.prepareCreateForTransaction(user, dto, {
+        allowUnassignedOwner: true,
+      })
+      const customer = await this.customers.createPreparedInTransaction(user, dto, prepared, tx)
+      const inbox = await this.markSuccessInTransaction(tx, {
+        inboxId,
+        requestHash,
+        resolvedType: 'CUSTOMER',
+        resolvedId: String(customer.id),
+        customerId: String(customer.id),
+        audit: { ...audit, businessAction: 'upsertCustomer:createCustomer' },
+        resultDetails: {
+          branch: 'no-match',
+          action: 'create-customer',
+          ownerId: prepared.owner?.id ?? null,
+          ownerFallbackReason: plan.ownerFallbackReason ?? null,
+        },
+      })
+      return { kind: 'create' as const, inbox, customer, ownerId: prepared.owner?.id ?? null }
+    })
+
+    if (outcome.kind === 'convert') {
+      await this.leads
+        .notifyResolvedLeadConversion(user, outcome.prepared, outcome.converted)
+        .catch((error: unknown) =>
+          this.logger.warn(`外部事件线索转客户通知失败 inbox=${inboxId}: ${String(error)}`),
+        )
+    } else if (outcome.kind === 'create') {
+      await this.customers
+        .notifyCreatedCustomer(user, outcome.customer, outcome.ownerId)
+        .catch((error: unknown) =>
+          this.logger.warn(`外部事件新建客户通知失败 inbox=${inboxId}: ${String(error)}`),
+        )
+    }
+    return this.successResponse(outcome.inbox, false)
   }
 
   private async claimInbox(
@@ -477,6 +616,7 @@ export class ExternalEventsService {
       resolvedId: string
       customerId: string | null
       audit: ExternalEventAudit
+      resultDetails?: Record<string, unknown>
     },
   ) {
     const now = nowInstant()
@@ -507,6 +647,7 @@ export class ExternalEventsService {
       resolvedType: input.resolvedType,
       resolvedId: input.resolvedId,
       customerId: input.customerId,
+      resultDetails: input.resultDetails,
     })
     return inbox
   }
@@ -562,6 +703,7 @@ export class ExternalEventsService {
       resolvedId?: string | null
       customerId?: string | null
       errorCode?: string
+      resultDetails?: Record<string, unknown>
     },
   ) {
     const { user, source, externalEventId, eventType, businessAction, request, requestMeta } = audit
@@ -597,6 +739,7 @@ export class ExternalEventsService {
         resolvedId: result.resolvedId ?? null,
         customerId: result.customerId ?? null,
         errorCode: result.errorCode ?? null,
+        resultDetails: result.resultDetails ?? null,
       }),
     })
   }

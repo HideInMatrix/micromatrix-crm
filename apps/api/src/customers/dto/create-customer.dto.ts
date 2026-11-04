@@ -34,7 +34,7 @@ export class CreateCustomerDto {
   @ApiPropertyOptional({ description: '负责人（默认当前用户）' })
   @IsString()
   @IsOptional()
-  ownerId?: string
+  ownerId?: string | null
 
   @ApiPropertyOptional({ description: '自定义字段值（cf_* 键）' })
   @IsObject()

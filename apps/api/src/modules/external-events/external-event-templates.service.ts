@@ -10,6 +10,7 @@ import {
 import type {
   ExternalEventTemplateConfig,
   ExternalEventTemplateCreateInput,
+  ExternalEventFlow,
   ExternalEventTemplateInput,
   ExternalEventTemplateVO,
   ExternalEventUserProvider,
@@ -197,27 +198,92 @@ export class ExternalEventTemplatesService {
     const flow = config.flow!
     if (!['lead', 'customer'].includes(flow.target))
       throw new BadRequestException('目标模块必须是线索或客户')
-    if (!['update', 'create', 'convert'].includes(flow.action))
+    if (!['update', 'create', 'convert', 'upsertCustomer'].includes(flow.action))
       throw new BadRequestException('不支持的业务动作')
     if (flow.action === 'convert' && flow.target !== 'lead')
       throw new BadRequestException('只有线索支持转换为客户')
-    if (flow.action === 'create') requireKey(flow.nameExternalKey, '名称参数')
+    if (flow.action === 'upsertCustomer' && flow.target !== 'customer')
+      throw new BadRequestException('智能客户归档的目标模块必须是客户')
+    if (flow.action === 'create' || flow.action === 'upsertCustomer') {
+      requireKey(flow.nameExternalKey, '学生姓名参数')
+    }
+
     if (
       !Array.isArray(config.matches) ||
       config.matches.length > 10 ||
-      (flow.action !== 'create' && config.matches.length === 0)
-    )
-      throw new BadRequestException('资源定位需要 1～10 个字段，创建动作不需要定位')
-    const target = flow.action === 'convert' ? 'customer' : flow.target
-    const [lookupFields, targetFields] = await Promise.all([
+      (!['create', 'upsertCustomer'].includes(flow.action) && config.matches.length === 0)
+    ) {
+      throw new BadRequestException('资源定位需要 1～10 个字段；创建和智能客户归档使用各自的定位配置')
+    }
+
+    const target = flow.action === 'convert' || flow.action === 'upsertCustomer'
+      ? 'customer'
+      : flow.target
+    const [lookupFields, targetFields, customerFields, leadFields] = await Promise.all([
       this.metadata.listFields(user.tenantId, flow.target),
       this.metadata.listFields(user.tenantId, target),
+      flow.action === 'upsertCustomer'
+        ? this.metadata.listFields(user.tenantId, 'customer')
+        : Promise.resolve([]),
+      flow.action === 'upsertCustomer'
+        ? this.metadata.listFields(user.tenantId, 'lead')
+        : Promise.resolve([]),
     ])
+
+    if (flow.action === 'upsertCustomer') {
+      const identity = flow.identity
+      if (!identity) throw new BadRequestException('智能客户归档必须配置姓名和手机号匹配字段')
+      requireKey(identity.phoneExternalKey, '手机号参数')
+      if (identity.phoneExternalKey === flow.nameExternalKey)
+        throw new BadRequestException('姓名和手机号不能使用同一个外部参数')
+      const customerPhone = customerFields.find(
+        (field) => field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
+      )
+      const leadPhone = leadFields.find(
+        (field) => field.key === identity.leadPhoneFieldKey || field.id === identity.leadPhoneFieldKey,
+      )
+      if (
+        !customerPhone ||
+        customerPhone.hidden ||
+        customerPhone.system ||
+        !['phone', 'text'].includes(customerPhone.type) ||
+        !filterOpsForType(customerPhone.type).includes('eq')
+      ) {
+        throw new BadRequestException('客户手机号必须映射到可写的手机号或文本型自定义字段')
+      }
+      if (
+        !leadPhone ||
+        leadPhone.hidden ||
+        !['phone', 'text'].includes(leadPhone.type) ||
+        !filterOpsForType(leadPhone.type).includes('eq')
+      ) {
+        throw new BadRequestException('线索手机号必须映射到可精确匹配的手机号或文本字段')
+      }
+      if (flow.owner) throw new BadRequestException('智能客户归档请使用独立的负责人策略配置')
+      const ownerStrategy = flow.ownerStrategy ?? { mode: 'none' as const }
+      if (ownerStrategy.mode === 'fixed') {
+        if (typeof ownerStrategy.userId !== 'string' || !ownerStrategy.userId)
+          throw new BadRequestException('固定负责人不能为空')
+        const owner = await this.prisma.client.orm.public.Users.where({
+          id: ownerStrategy.userId,
+          tenantId: user.tenantId,
+          status: 'ACTIVE',
+        }).select('id').first()
+        if (!owner) throw new BadRequestException('固定负责人不存在或已停用')
+      } else if (ownerStrategy.mode === 'event') {
+        requireKey(ownerStrategy.externalKey, '外部负责人参数')
+        if (!PROVIDERS.includes(ownerStrategy.provider))
+          throw new BadRequestException('负责人身份类型无效')
+      } else if (ownerStrategy.mode !== 'none') {
+        throw new BadRequestException('不支持的负责人配置方式')
+      }
+    }
+
     const knownMatch = new Set([
       'id',
       ...lookupFields
-        .filter((f) => !f.hidden && filterOpsForType(f.type).includes('eq'))
-        .flatMap((f) => [f.id, f.key]),
+        .filter((field) => !field.hidden && filterOpsForType(field.type).includes('eq'))
+        .flatMap((field) => [field.id, field.key]),
     ])
     const matchKeys = new Set<string>()
     const matchTargets = new Set<string>()
@@ -229,14 +295,15 @@ export class ExternalEventTemplatesService {
       matchKeys.add(item.externalKey)
       matchTargets.add(item.crmFieldKey)
     }
+
     if (!Array.isArray(flow.fields) || flow.fields.length > 30)
       throw new BadRequestException('字段映射不能超过 30 个')
-    if (flow.action === 'update' && !flow.fields.length)
+    if (['update', 'upsertCustomer'].includes(flow.action) && !flow.fields.length)
       throw new BadRequestException('字段更新至少需要一个映射')
     const writable = new Map(
       targetFields
-        .filter((f) => !f.hidden && !f.system && !['formula', 'sub_product'].includes(f.type))
-        .flatMap((f) => [[f.id, f] as const, [f.key, f] as const]),
+        .filter((field) => !field.hidden && !field.system && !['formula', 'sub_product'].includes(field.type))
+        .flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
     )
     const targets = new Set<string>()
     for (const item of flow.fields) {
@@ -244,25 +311,184 @@ export class ExternalEventTemplatesService {
         throw new BadRequestException('映射来源无效')
       if (item.source === 'event') requireKey(item.externalKey, '映射来源字段')
       if (item.source === 'leadOwner' && flow.action !== 'convert')
-        throw new BadRequestException('原线索负责人只能用于转换动作')
+        throw new BadRequestException('原线索负责人只能用于线索转化动作')
       const field = writable.get(item.fieldKey)
       if (!field) throw new BadRequestException('字段映射目标必须为可写的自定义字段')
       if (targets.has(field.key)) throw new BadRequestException('目标字段重复映射')
       if (item.source === 'leadOwner' && field.type !== 'member')
-        throw new BadRequestException('原线索负责人只能写入成员字段')
-      if (
-        item.provider &&
-        (!PROVIDERS.includes(item.provider) || field.type !== 'member' || item.source !== 'event')
-      )
+        throw new BadRequestException('原线索负责人只能写入成员类型字段')
+      if (item.provider && (!PROVIDERS.includes(item.provider) || field.type !== 'member' || item.source !== 'event'))
         throw new BadRequestException('只有外部成员字段支持身份来源选择')
+      if (item.valueMap !== undefined) {
+        if (!Array.isArray(item.valueMap) || item.valueMap.length > 100)
+          throw new BadRequestException('字段选项映射最多支持 100 项')
+        const externalValues = new Set<string>()
+        for (const value of item.valueMap) {
+          if (typeof value.externalValue !== 'string' || !value.externalValue.trim())
+            throw new BadRequestException('外部选项值不能为空')
+          if (externalValues.has(value.externalValue))
+            throw new BadRequestException('外部选项值不能重复')
+          if (!field.options?.some((option) => option.value === value.crmValue))
+            throw new BadRequestException(`CRM 字段「${field.label}」不存在映射选项`)
+          externalValues.add(value.externalValue)
+        }
+      }
+      if (flow.action === 'upsertCustomer' && item.source !== 'event')
+        throw new BadRequestException('智能客户归档的自定义字段必须来自外部事件参数')
       targets.add(field.key)
     }
+
+    if (flow.action === 'upsertCustomer') {
+      const identity = flow.identity!
+      const customerPhone = customerFields.find(
+        (field) => field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
+      )!
+      const phoneMapping = flow.fields.find(
+        (item) =>
+          item.source === 'event' &&
+          (item.fieldKey === customerPhone.key || item.fieldKey === customerPhone.id),
+      )
+      if (!phoneMapping || phoneMapping.externalKey !== identity.phoneExternalKey) {
+        throw new BadRequestException('客户手机号字段必须映射到与身份匹配相同的外部手机号参数')
+      }
+    }
+
     if (flow.owner) {
       if (!['convert', 'create'].includes(flow.action))
         throw new BadRequestException('当前动作不允许指定新负责人')
       requireKey(flow.owner.externalKey, '负责人来源字段')
       if (!PROVIDERS.includes(flow.owner.provider))
         throw new BadRequestException('负责人身份类型无效')
+    }
+  }
+
+  private mapExternalFieldValue(
+    value: unknown,
+    mapping: ExternalEventFlow['fields'][number],
+  ) {
+    const valueMap = mapping.valueMap ?? []
+    if (!valueMap.length) return value
+    const lookup = new Map(valueMap.map((item) => [item.externalValue, item.crmValue]))
+    const mapOne = (item: unknown) => {
+      const mapped = lookup.get(String(item))
+      if (mapped === undefined) {
+        throw new BadRequestException(
+          `外部字段 ${mapping.externalKey} 的值「${String(item)}」未配置 CRM 选项映射`,
+        )
+      }
+      return mapped
+    }
+    return Array.isArray(value) ? value.map(mapOne) : mapOne(value)
+  }
+
+  private async prepareCustomerUpsert(
+    user: AuthUser,
+    template: ExternalEventTemplateVO,
+    data: Record<string, unknown>,
+  ) {
+    const flow = template.config.flow!
+    const identity = flow.identity
+    if (!identity) throw new BadRequestException('智能客户归档缺少身份匹配配置')
+    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length > 80)
+      throw new BadRequestException('外部事件 data 必须是至多 80 个属性的对象')
+    const requireData = (key: string) => {
+      if (
+        !Object.prototype.hasOwnProperty.call(data, key) ||
+        data[key] === undefined ||
+        data[key] === null ||
+        data[key] === ''
+      ) {
+        throw new BadRequestException(`缺少外部事件参数：${key}`)
+      }
+      return data[key]
+    }
+
+    const rawName = requireData(flow.nameExternalKey!)
+    const rawPhone = requireData(identity.phoneExternalKey)
+    if (typeof rawName !== 'string' || !rawName.trim() || rawName.trim().length > 100)
+      throw new BadRequestException('学生姓名必须是长度 1～100 的字符串')
+    if (typeof rawPhone !== 'string' || !rawPhone.trim() || rawPhone.trim().length > 50)
+      throw new BadRequestException('手机号必须是长度 1～50 的字符串')
+
+    const name = rawName.trim()
+    const phone = rawPhone.trim()
+    const resolved = await this.resolver.resolveCustomerOrLeadOptional(
+      user,
+      { name, [identity.customerPhoneFieldKey]: phone },
+      { name, [identity.leadPhoneFieldKey]: phone },
+    )
+
+    const customerFields = await this.metadata.listFields(user.tenantId, 'customer')
+    const customerPhoneField = customerFields.find(
+      (field) => field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
+    )
+    if (
+      !customerPhoneField ||
+      customerPhoneField.hidden ||
+      customerPhoneField.system ||
+      !['phone', 'text'].includes(customerPhoneField.type)
+    ) {
+      throw new BadRequestException('客户手机号匹配字段已失效，请重新配置外部事件')
+    }
+    const memberTargets = new Set(
+      customerFields.filter((field) => field.type === 'member').flatMap((field) => [field.id, field.key]),
+    )
+    const fieldMap = new Map(
+      customerFields.flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
+    )
+    const set: Record<string, unknown> = {}
+    for (const mapping of flow.fields) {
+      if (mapping.source !== 'event')
+        throw new BadRequestException('智能客户归档的自定义字段必须来自外部事件参数')
+      const value = requireData(mapping.externalKey)
+      const field = fieldMap.get(mapping.fieldKey)
+      if (!field) throw new BadRequestException(`客户字段不存在：${mapping.fieldKey}`)
+      const normalizedValue =
+        mapping.externalKey === identity.phoneExternalKey && field.key === customerPhoneField.key
+          ? phone
+          : value
+      set[field.key] = memberTargets.has(mapping.fieldKey)
+        ? await this.resolveMember(user, normalizedValue, mapping.provider ?? 'CRM')
+        : this.mapExternalFieldValue(normalizedValue, mapping)
+    }
+    const normalizedSet = await this.customers.normalizeWritableDynamicFields(user, set)
+
+    let ownerId: string | null = null
+    let ownerFallbackReason: string | null = null
+    if (!resolved) {
+      const strategy = flow.ownerStrategy ?? { mode: 'none' as const }
+      if (strategy.mode === 'fixed') {
+        const owner = await this.prisma.client.orm.public.Users.where({
+          id: strategy.userId,
+          tenantId: user.tenantId,
+          status: 'ACTIVE',
+        }).select('id').first()
+        if (!owner) throw new BadRequestException('固定负责人不存在或已停用')
+        ownerId = owner.id
+      } else if (strategy.mode === 'event') {
+        const externalOwner = data[strategy.externalKey]
+        if (typeof externalOwner !== 'string' || !externalOwner.trim()) {
+          ownerFallbackReason = `外部负责人参数 ${strategy.externalKey} 缺失，已降级为空负责人`
+        } else {
+          try {
+            ownerId = await this.resolveMember(user, externalOwner, strategy.provider)
+          } catch (error) {
+            if (!(error instanceof BadRequestException)) throw error
+            ownerFallbackReason = `${error.message}；已降级为空负责人`
+          }
+        }
+      } else if (strategy.mode !== 'none') {
+        throw new BadRequestException('不支持的客户负责人策略')
+      }
+    }
+
+    return {
+      flow,
+      resolved,
+      set: normalizedSet,
+      ownerId,
+      ownerFallbackReason,
+      name,
     }
   }
 
@@ -273,6 +499,7 @@ export class ExternalEventTemplatesService {
   ) {
     const flow = template.config.flow
     if (!flow) throw new BadRequestException('不是通用事件配置')
+    if (flow.action === 'upsertCustomer') return this.prepareCustomerUpsert(user, template, data)
     if (!['update', 'create', 'convert'].includes(flow.action)) {
       throw new BadRequestException(
         '该外部事件使用已移除的线索状态动作，请编辑配置并重新选择业务动作',
@@ -321,7 +548,7 @@ export class ExternalEventTemplatesService {
           (mapping.externalKey === flow.owner?.externalKey ? flow.owner.provider : 'CRM')
         set[mapping.fieldKey] = memberTargets.has(mapping.fieldKey)
           ? await this.resolveMember(user, value, provider)
-          : value
+          : this.mapExternalFieldValue(value, mapping)
       }
     }
     const ownerId = flow.owner
@@ -339,6 +566,7 @@ export class ExternalEventTemplatesService {
       set,
       ownerId,
       name: rawName as string | null,
+      ownerFallbackReason: null as string | null,
     }
   }
 
@@ -496,6 +724,76 @@ export class ExternalEventTemplatesService {
     if (template.config.flow) {
       const plan = await this.prepareFlow(user, template, data)
       const { flow, resolved, set, ownerId } = plan
+      if (flow.action === 'upsertCustomer') {
+        let action: string
+        let customerOwnerId: string | null = ownerId ?? null
+        if (resolved?.kind === 'CUSTOMER') {
+          const prepared = await this.customers.prepareExternalEventDynamicFieldUpdate(
+            user,
+            resolved.customerId,
+            set,
+          )
+          action = 'UPDATE_CUSTOMER'
+          customerOwnerId = null
+          return {
+            dryRun: true,
+            resolvedType: 'CUSTOMER' as const,
+            resolvedId: resolved.customerId,
+            action,
+            customerOwnerId,
+            fieldUpdates: set,
+            releasedFromPool: prepared.releaseFromPool,
+            note: prepared.releaseFromPool
+              ? '匹配到客户公海记录；字段更新后将按完结规则自动移出公海。未写入数据。'
+              : '匹配到已有客户；将保留原负责人并更新动态字段。未写入数据。',
+          }
+        }
+        if (resolved?.kind === 'LEAD') {
+          if (!hasPermission(user.permissions, 'lead:convert'))
+            throw new ForbiddenException('缺少线索转化权限')
+          const prepared = await this.leads.prepareResolvedLeadConversion(
+            user,
+            resolved.leadId,
+            set,
+            undefined,
+            true,
+          )
+          action = 'CONVERT_LEAD'
+          customerOwnerId = prepared.customerPrepared.owner?.id ?? null
+          return {
+            dryRun: true,
+            resolvedType: 'LEAD' as const,
+            resolvedId: resolved.leadId,
+            action,
+            customerOwnerId,
+            fieldUpdates: set,
+            note: '匹配到线索；将转化为客户并继承原负责人（无负责人时保持为空）。未写入数据。',
+          }
+        }
+        if (!hasPermission(user.permissions, 'customer:create'))
+          throw new ForbiddenException('缺少新建客户权限')
+        await this.customers.prepareCreateForTransaction(
+          user,
+          {
+            name: plan.name!,
+            ownerId: ownerId ?? null,
+            customData: set,
+          },
+          { allowUnassignedOwner: true },
+        )
+        return {
+          dryRun: true,
+          resolvedType: 'CUSTOMER' as const,
+          resolvedId: '',
+          action: 'CREATE_CUSTOMER',
+          customerOwnerId,
+          fieldUpdates: set,
+          ownerFallbackReason: plan.ownerFallbackReason ?? null,
+          note: plan.ownerFallbackReason
+            ? `没有匹配到客户或线索；将新建客户，负责人降级为空。${plan.ownerFallbackReason}。未写入数据。`
+            : '没有匹配到客户或线索；将新建客户并按负责人策略处理。未写入数据。',
+        }
+      }
       if (flow.action === 'update') {
         if (!resolved) throw new BadRequestException('没有定位结果')
         if (resolved.kind === 'CUSTOMER')

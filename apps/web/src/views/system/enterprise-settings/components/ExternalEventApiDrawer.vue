@@ -31,13 +31,21 @@ const sampleData = computed(() => {
           : 'EXAMPLE_VALUE'
   }
   for (const mapping of flow?.fields ?? props.template?.config.fields ?? []) {
-    if (mapping.source === 'event' && mapping.externalKey && !(mapping.externalKey in data))
-      data[mapping.externalKey] = 'EXAMPLE_VALUE'
+    if (mapping.source === 'event' && mapping.externalKey && !(mapping.externalKey in data)) {
+      const sampleValue = 'valueMap' in mapping ? mapping.valueMap?.[0]?.externalValue : undefined
+      data[mapping.externalKey] = sampleValue || 'EXAMPLE_VALUE'
+    }
   }
-  if (flow?.action === 'create' && flow.nameExternalKey) data[flow.nameExternalKey] = '张三'
+  if ((flow?.action === 'create' || flow?.action === 'upsertCustomer') && flow.nameExternalKey)
+    data[flow.nameExternalKey] = '王同学'
+  if (flow?.action === 'upsertCustomer' && flow.identity?.phoneExternalKey)
+    data[flow.identity.phoneExternalKey] = '13800000000'
   const owner = flow ? flow.owner : props.template?.config.owner
   if (owner)
     data[owner.externalKey] = owner.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
+  if (flow?.action === 'upsertCustomer' && flow.ownerStrategy?.mode === 'event')
+    data[flow.ownerStrategy.externalKey] =
+      flow.ownerStrategy.provider === 'CRM' ? 'CRM_MEMBER_ID' : 'EXTERNAL_USER_ID'
   return data
 })
 function flowActionLabel(action: string) {
@@ -46,7 +54,8 @@ function flowActionLabel(action: string) {
       update: '更新自定义字段',
       create: '创建记录',
       convert: '线索转客户',
-    }[action as 'update' | 'create' | 'convert'] ?? '已移除动作，请重新配置'
+      upsertCustomer: '智能匹配并处理客户',
+    }[action as 'update' | 'create' | 'convert' | 'upsertCustomer'] ?? '已移除动作，请重新配置'
   )
 }
 
@@ -88,11 +97,16 @@ const sortedFields = computed(() => [
       : []),
     ...(props.template?.config.flow?.owner
       ? [props.template.config.flow.owner.externalKey]
-      : props.template?.config.flow
-        ? []
-        : props.template?.config.owner
-          ? [props.template.config.owner.externalKey]
-          : []),
+      : props.template?.config.flow?.ownerStrategy?.mode === 'event'
+        ? [props.template.config.flow.ownerStrategy.externalKey]
+        : props.template?.config.flow
+          ? []
+          : props.template?.config.owner
+            ? [props.template.config.owner.externalKey]
+            : []),
+    ...(props.template?.config.flow?.identity?.phoneExternalKey
+      ? [props.template.config.flow.identity.phoneExternalKey]
+      : []),
   ]),
 ])
 watch(visible, (open) => {
@@ -181,12 +195,20 @@ async function simulate() {
                   目标模块：{{ template.config.flow.target === 'lead' ? '线索' : '客户' }}；
                   业务动作：{{ flowActionLabel(template.config.flow.action) }}。
                 </p>
-                <p class="text-sm">
+                <template v-if="template.config.flow.action === 'upsertCustomer'">
+                  <p class="text-sm">
+                    使用学生姓名 + 手机号同时精确匹配：先查客户，命中则更新；未命中再查线索，命中则转化；两者都未命中则新建客户。已有客户保留负责人，线索转化继承原负责人，新建客户按负责人策略处理，外部负责人映射失败时降级为空。
+                  </p>
+                  <p class="text-xs text-[var(--el-text-color-secondary)]">
+                    执行账号必须有客户和线索全局数据范围；租户存在客户公海或线索池时，还需对应的池查询权限。
+                  </p>
+                </template>
+                <p v-else class="text-sm">
                   {{
                     template.config.flow.action === 'create'
                       ? '本动作无需匹配现有资源'
                       : '定位条件在目标模块内执行 AND 精确匹配，必须唯一命中'
-                  }}； 参数与动作均由管理员预先配置，调用方不能任意指定操作。
+                  }}；参数与动作均由管理员预先配置，调用方不能任意指定操作。
                 </p>
               </template>
               <template v-else>
@@ -291,8 +313,13 @@ async function simulate() {
             type="success"
             :closable="false"
             class="mt-4"
-            :title="`匹配成功：${preview.resolvedType} / ${preview.resolvedId}`"
-            :description="`${preview.action}；新客户负责人：${preview.customerOwnerId ?? '默认继承'}`"
+            :title="['CREATE_CUSTOMER', 'CREATE', 'create'].includes(preview.action) ? '未匹配到已有客户或线索，将新建客户' : `预览结果：${preview.resolvedType} / ${preview.resolvedId}`"
+            :description="[
+              preview.action,
+              `负责人：${preview.customerOwnerId ?? (preview.action === 'CREATE_CUSTOMER' ? '不指定' : '保留原负责人 / 继承线索负责人')}`,
+              preview.releasedFromPool ? '客户完结后将移出客户公海' : '',
+              preview.ownerFallbackReason ?? '',
+            ].filter(Boolean).join('；')"
           />
         </el-tab-pane>
       </el-tabs>

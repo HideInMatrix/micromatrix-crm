@@ -754,16 +754,22 @@ export class CustomersService {
     const customer = await this.prisma.client.transaction((tx) =>
       this.createPreparedInTransaction(user, dto, prepared, tx),
     )
-    await this.notifyCreatedCustomer(user, customer, prepared.owner.id)
+    await this.notifyCreatedCustomer(user, customer, prepared.owner?.id ?? null)
     return this.toSingleVO(user, customer)
   }
 
-  async prepareCreateForTransaction(user: AuthUser, dto: CreateCustomerDto) {
+  async prepareCreateForTransaction(
+    user: AuthUser,
+    dto: CreateCustomerDto,
+    options: { allowUnassignedOwner?: boolean } = {},
+  ) {
     const values = this.customerFieldInput(dto)
     await this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' })
     await this.assertCustomerUniqueRules(user.tenantId, dto)
-    const owner = await this.resolveOwner(user, dto.ownerId)
-    await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
+    const owner = options.allowUnassignedOwner && dto.ownerId === null
+      ? null
+      : await this.resolveOwner(user, dto.ownerId ?? undefined)
+    if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
     return { values, owner }
   }
 
@@ -777,8 +783,8 @@ export class CustomersService {
     const created = await tx.orm.public.Customer.create({
       id: createLegacyId32(),
       name: dto.name.trim(),
-      owner: prepared.owner.id,
-      collectionTime: now,
+      owner: prepared.owner?.id ?? null,
+      collectionTime: prepared.owner ? now : null,
       poolId: null,
       createTime: now,
       updateTime: now,
@@ -802,7 +808,8 @@ export class CustomersService {
     return created
   }
 
-  async notifyCreatedCustomer(user: AuthUser, customer: Customer, ownerId: string) {
+  async notifyCreatedCustomer(user: AuthUser, customer: Customer, ownerId: string | null) {
+    if (!ownerId) return
     await this.notifications.send({
       tenantId: user.tenantId,
       event: 'CUSTOMER_ADD',
@@ -859,6 +866,116 @@ export class CustomersService {
       resourceId: existing.id,
     })
     return { existing, values }
+  }
+
+  /**
+   * 外部事件专用更新：允许更新当前可见客户公海中的记录。
+   * 如果写入后命中客户完结规则，则在同一事务中将客户从公海释放为无负责人客户。
+   */
+  async prepareExternalEventDynamicFieldUpdate(
+    user: AuthUser,
+    id: string,
+    input: Record<string, unknown>,
+  ) {
+    if (!hasPermission(user.permissions, 'customer:update')) {
+      throw new ForbiddenException('缺少客户更新权限')
+    }
+    let existing: Customer
+    const ordinary = await this.prisma.client.orm.public.Customer.where({
+      id,
+      organizationId: user.tenantId,
+      inSharedPool: false,
+    }).first()
+    if (ordinary) {
+      existing = await this.ensureInScope(user, id, 'customer:update')
+    } else {
+      const pooled = await this.prisma.client.orm.public.Customer.where({
+        id,
+        organizationId: user.tenantId,
+        inSharedPool: true,
+      }).first()
+      if (!pooled?.poolId || !hasPermission(user.permissions, 'customerPool:assign')) {
+        throw new NotFoundException('客户不存在或不在你的数据范围内')
+      }
+      await this.pools.assertPoolMember(user, 'customer', pooled.poolId)
+      existing = pooled as unknown as Customer
+    }
+
+    const values = await this.normalizeWritableDynamicFields(user, input)
+    await this.fieldValues.validate(user.tenantId, 'customer', values, {
+      mode: 'update',
+      resourceId: existing.id,
+    })
+    const [currentValues, completionRule] = await Promise.all([
+      this.fieldValues.load(user.tenantId, 'customer', [existing.id]),
+      this.followUpCompletion.getRule(user.tenantId),
+    ])
+    if (completionRule.enabled && !completionRule.valid) {
+      throw new BadRequestException('客户跟进完结规则引用的字段已失效，请先修复系统设置')
+    }
+    const nextValues = { ...(currentValues.get(existing.id) ?? {}), ...values }
+    const releaseFromPool =
+      existing.inSharedPool && this.followUpCompletion.isCompleted(completionRule, nextValues)
+    return { existing, values, releaseFromPool }
+  }
+
+  async applyPreparedExternalEventDynamicFieldUpdateInTransaction(
+    user: AuthUser,
+    prepared: Awaited<ReturnType<CustomersService['prepareExternalEventDynamicFieldUpdate']>>,
+    tx: PrismaTransaction,
+  ) {
+    const current = await tx.orm.public.Customer.where({
+      id: prepared.existing.id,
+      organizationId: user.tenantId,
+      inSharedPool: prepared.existing.inSharedPool,
+    }).first()
+    if (!current) throw new NotFoundException('客户不存在或已不在原业务范围')
+    if (
+      current.owner !== prepared.existing.owner ||
+      current.updateTime !== prepared.existing.updateTime ||
+      current.poolId !== prepared.existing.poolId
+    ) {
+      throw new ConflictException({
+        code: 'CUSTOMER_CHANGED_RETRY',
+        message: '客户在更新前已发生变化，请重新定位后重试',
+      })
+    }
+    if (current.inSharedPool) {
+      if (!current.poolId) throw new ConflictException('客户公海归属已变化，请重新定位')
+      const pool = await tx.orm.public.CustomerPool.where({
+        id: current.poolId,
+        organizationId: user.tenantId,
+        enable: true,
+      }).first()
+      if (!pool) throw new ConflictException('客户所在公海已停用，请重新定位')
+    }
+    const updated = await tx.orm.public.Customer.where({
+      id: current.id,
+      updateTime: current.updateTime,
+    }).update({
+      updateTime: BigInt(Date.now()),
+      updateUser: user.id,
+      ...(prepared.releaseFromPool
+        ? {
+            inSharedPool: false,
+            poolId: null,
+            owner: null,
+            collectionTime: null,
+            reasonId: null,
+          }
+        : {}),
+    })
+    if (!updated) throw new ConflictException('客户已发生变化，请重新定位后重试')
+    await this.fieldValues.save(
+      user.tenantId,
+      'customer',
+      current.id,
+      prepared.values,
+      'update',
+      tx,
+      user.id,
+    )
+    return { customer: updated, releasedFromPool: prepared.releaseFromPool }
   }
 
   /**
