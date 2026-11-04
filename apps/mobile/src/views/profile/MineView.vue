@@ -75,7 +75,7 @@ onActivated(loadInfo)
             {{ info?.userName || auth.user?.name || '-' }}
           </div>
           <div
-            class="mt-[4px] inline-flex max-w-full rounded-[4px] bg-[var(--primary-7)] px-[5px] py-[2px] text-[12px] leading-[16px] text-[var(--primary-8)]"
+            class="mt-[4px] inline-flex max-w-full rounded-[4px] bg-[var(--primary-7)] px-[5px] py-[2px] text-[14px] leading-[16px] text-[var(--primary-8)]"
           >
             <span class="truncate">{{
               info?.roles.map((role) => role.name).join('、') || '普通成员'

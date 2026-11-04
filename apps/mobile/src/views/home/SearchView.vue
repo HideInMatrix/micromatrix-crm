@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
               </div>
               <div
                 v-if="item.description"
-                class="mt-1 line-clamp-2 text-xs leading-5 text-[var(--text-n4)]"
+                class="mt-1 line-clamp-2 text-sm leading-5 text-[var(--text-n4)]"
               >
                 {{ item.description }}
               </div>

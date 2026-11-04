@@ -144,7 +144,7 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
             --van-field-icon-size: 12px;
             --van-field-placeholder-text-color: #c0c4cc;
             --van-search-left-icon-color: #8e8e93;
-            --van-cell-font-size: 12px;
+            --van-cell-font-size: 14px;
             --van-cell-line-height: 16px;
             --van-padding-sm: 9px;
           "
@@ -164,7 +164,7 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
             --van-field-icon-size: 12px;
             --van-field-placeholder-text-color: #c0c4cc;
             --van-search-left-icon-color: #8e8e93;
-            --van-cell-font-size: 12px;
+            --van-cell-font-size: 14px;
             --van-cell-line-height: 16px;
             --van-padding-sm: 9px;
           "
@@ -190,7 +190,7 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
           --van-field-icon-size: 12px;
           --van-field-placeholder-text-color: #c0c4cc;
           --van-search-left-icon-color: #8e8e93;
-          --van-cell-font-size: 12px;
+          --van-cell-font-size: 14px;
           --van-cell-line-height: 16px;
           --van-padding-sm: 9px;
         "
@@ -226,7 +226,7 @@ const timeColumns: TimePickerColumnType[] = ['hour', 'minute']
         --van-dropdown-menu-height: 32px;
         --van-dropdown-menu-background: #ffffff;
         --van-dropdown-menu-shadow: none;
-        --van-dropdown-menu-title-font-size: 12px;
+        --van-dropdown-menu-title-font-size: 14px;
         --van-dropdown-menu-title-text-color: #333333;
         --van-dropdown-menu-title-active-text-color: var(--van-primary-color);
         --van-dropdown-menu-title-padding: 0 4px;

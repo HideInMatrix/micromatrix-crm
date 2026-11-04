@@ -312,7 +312,7 @@ onMounted(async () => {
                 class="!h-auto !shrink-0 !border-0 !bg-transparent !p-0 !text-[var(--van-primary-color)]"
                 @click="goEdit"
               >
-                <span class="flex flex-col items-center gap-[3px] text-[12px]">
+                <span class="flex flex-col items-center gap-[3px] text-[14px]">
                   <Pencil :size="18" aria-hidden="true" />编辑
                 </span>
               </van-button>
@@ -321,7 +321,7 @@ onMounted(async () => {
                 class="!h-auto !shrink-0 !border-0 !bg-transparent !p-0 !text-[#888888]"
                 @click="removeLead"
               >
-                <span class="flex flex-col items-center gap-[3px] text-[12px]">
+                <span class="flex flex-col items-center gap-[3px] text-[14px]">
                   <Trash2 :size="18" aria-hidden="true" />删除
                 </span>
               </van-button>
@@ -404,7 +404,7 @@ onMounted(async () => {
                   aria-hidden="true"
                 />
                 <time
-                  class="block text-[12px] leading-[17px] text-[#999999]"
+                  class="block text-[14px] leading-[17px] text-[#999999]"
                   :datetime="record.followedAt ?? record.createdAt"
                   >{{ formatDate(record.followedAt ?? record.createdAt) }}</time
                 >
@@ -415,7 +415,7 @@ onMounted(async () => {
                 </p>
                 <div class="mt-[7px] flex items-center justify-between gap-2">
                   <span
-                    class="block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                    class="block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[12px] leading-[14px] text-[#999999]"
                     >{{ record.ownerName ? `操作人：${record.ownerName}` : '操作人：-' }}</span
                   >
                   <van-button size="mini" plain type="primary" @click="openRecordComments(record)">
@@ -454,7 +454,7 @@ onMounted(async () => {
                   aria-hidden="true"
                 />
                 <time
-                  class="block text-[12px] leading-[17px] text-[#999999]"
+                  class="block text-[14px] leading-[17px] text-[#999999]"
                   :datetime="item.endedAt"
                   >{{ formatDate(item.endedAt) }}</time
                 >
@@ -462,7 +462,7 @@ onMounted(async () => {
                   负责人由 {{ historyOwner(item) }} 变更为 {{ nextOwner(item) }}
                 </p>
                 <span
-                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[10px] leading-[14px] text-[#999999]"
+                  class="mt-[5px] block w-fit rounded-[4px] bg-[#F5F7FA] px-[5px] py-[2px] text-[12px] leading-[14px] text-[#999999]"
                   >操作人：{{ item.operatorName ?? '系统' }}</span
                 >
               </li>
@@ -477,25 +477,25 @@ onMounted(async () => {
       >
         <van-button
           v-if="lead.phone"
-          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[14px] !leading-[14px] !text-[var(--van-primary-color)]"
           @click="callLead"
           >电话联系</van-button
         >
         <van-button
           v-if="canMove"
-          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[14px] !leading-[14px] !text-[var(--van-primary-color)]"
           @click="openMove"
           >移入线索池</van-button
         >
         <van-button
           v-if="canTransfer"
-          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-[var(--van-primary-color)]"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-white !px-[12px] !py-[6px] !text-[14px] !leading-[14px] !text-[var(--van-primary-color)]"
           @click="transferShow = true"
           >转移</van-button
         >
         <van-button
           v-if="canWrite"
-          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-[var(--van-primary-color)] !px-[12px] !py-[6px] !text-[12px] !leading-[14px] !text-white"
+          class="!h-auto !w-auto !flex-none !shrink-0 !whitespace-nowrap !rounded-[14px] !border-[var(--van-primary-color)] !bg-[var(--van-primary-color)] !px-[12px] !py-[6px] !text-[14px] !leading-[14px] !text-white"
           @click="followShow = true"
           >写跟进</van-button
         >

@@ -239,7 +239,7 @@ function textInputType(field: FieldVO) {
       v-for="alert in visualAlerts"
       :key="alert.id"
       role="note"
-      class="mb-[12px] flex items-center gap-[5px] bg-[color-mix(in_srgb,var(--van-primary-color)_9%,white)] px-[12px] py-[8px] text-[12px] leading-[12px] text-[var(--van-primary-color)]"
+      class="mb-[12px] flex items-center gap-[5px] bg-[color-mix(in_srgb,var(--van-primary-color)_9%,white)] px-[12px] py-[8px] text-[14px] leading-[17px] text-[var(--van-primary-color)]"
     >
       <van-icon name="info-o" :size="10" class="shrink-0" aria-hidden="true" />
       <span class="whitespace-pre-wrap">{{ alert.config?.alertText }}</span>

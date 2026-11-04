@@ -62,7 +62,7 @@ function switchTab(tab: LeadModuleTab) {
     >
       <span class="flex flex-col items-center justify-center gap-[2px]">
         <Plus :size="16" :stroke-width="2" aria-hidden="true" />
-        <span class="text-[12px] leading-[17px]">新建</span>
+        <span class="text-[14px] leading-[17px]">新建</span>
       </span>
     </van-button>
   </div>

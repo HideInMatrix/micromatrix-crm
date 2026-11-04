@@ -80,7 +80,7 @@ onBeforeRouteLeave(() => {
             </div>
           </template>
           <template v-if="item.description" #label>
-            <div class="mt-1 truncate text-xs text-[var(--text-n4)]">
+            <div class="mt-1 truncate text-sm text-[var(--text-n4)]">
               {{ item.description }}
             </div>
           </template>

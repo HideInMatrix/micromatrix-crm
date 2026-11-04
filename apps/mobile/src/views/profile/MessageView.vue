@@ -155,14 +155,14 @@ onMounted(() => {
                   <div class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-n1)]">
                     {{ item.title }}
                   </div>
-                  <div class="shrink-0 text-xs text-[var(--text-n5)]">
+                  <div class="shrink-0 text-sm text-[var(--text-n5)]">
                     {{ new Date(item.createdAt).toLocaleDateString('zh-CN') }}
                   </div>
                 </div>
-                <div v-if="item.content" class="mt-2 line-clamp-2 text-xs leading-5 text-[var(--text-n4)]">
+                <div v-if="item.content" class="mt-2 line-clamp-2 text-sm leading-5 text-[var(--text-n4)]">
                   {{ item.content }}
                 </div>
-                <div v-if="item.linkLabel" class="mt-2 text-xs text-[var(--primary-8)]">
+                <div v-if="item.linkLabel" class="mt-2 text-sm text-[var(--primary-8)]">
                   {{ item.linkLabel }}
                 </div>
               </div>

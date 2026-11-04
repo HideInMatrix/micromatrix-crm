@@ -89,7 +89,7 @@ onMounted(load)
         >
           <span
             v-if="card.active"
-            class="absolute left-0 top-0 flex h-5 w-5 items-start justify-start bg-[var(--van-primary-color)] pl-[2px] text-xs text-white"
+            class="absolute left-0 top-0 flex h-5 w-5 items-start justify-start bg-[var(--van-primary-color)] pl-[2px] text-sm text-white"
           >
             ✓
           </span>
@@ -99,7 +99,7 @@ onMounted(load)
 
       <div class="mt-6 rounded-[var(--border-radius-medium)] bg-white px-5 py-4">
         <div class="mb-1 font-medium">备注</div>
-        <div class="text-xs leading-6 text-gray-500">
+        <div class="text-sm leading-6 text-gray-500">
           <div>转换后会创建客户，并保留原线索。</div>
           <div>跟进记录会复制到客户，原线索跟进记录不会删除。</div>
         </div>

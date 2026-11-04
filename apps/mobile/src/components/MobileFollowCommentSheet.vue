@@ -216,12 +216,12 @@ watch(
           >
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-medium">{{ comment.createdByName || '成员' }}</span>
-              <span class="text-xs text-gray-400">{{
+              <span class="text-sm text-gray-400">{{
                 new Date(comment.createdAt).toLocaleString()
               }}</span>
             </div>
             <div class="mt-2 whitespace-pre-wrap break-words text-sm">{{ comment.content }}</div>
-            <div v-if="comment.mentionUsers.length" class="mt-2 text-xs text-blue-500">
+            <div v-if="comment.mentionUsers.length" class="mt-2 text-sm text-blue-500">
               @{{ comment.mentionUsers.map((item) => item.name).join(' @') }}
             </div>
             <div class="mt-2 flex justify-end gap-2">
@@ -249,7 +249,7 @@ watch(
                 :class="focusedCommentId === replyItem.id ? 'bg-[#F0F6FF] ring-1 ring-[var(--van-primary-color)]' : ''"
                 :data-comment-id="replyItem.id"
               >
-                <div class="flex items-center gap-1 text-xs text-gray-500">
+                <div class="flex items-center gap-1 text-sm text-gray-500">
                   <span>{{ replyItem.createdByName || '成员' }}</span>
                   <span v-if="replyItem.replyToUserName">回复 {{ replyItem.replyToUserName }}</span>
                 </div>

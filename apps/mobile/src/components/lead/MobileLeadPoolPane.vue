@@ -232,7 +232,7 @@ onActivated(() => {
             --van-dropdown-menu-height: 32px;
             --van-dropdown-menu-background: transparent;
             --van-dropdown-menu-shadow: none;
-            --van-dropdown-menu-title-font-size: 12px;
+            --van-dropdown-menu-title-font-size: 14px;
             --van-dropdown-menu-title-text-color: #333333;
             --van-dropdown-menu-title-active-text-color: var(--van-primary-color);
             --van-dropdown-menu-title-padding: 0;

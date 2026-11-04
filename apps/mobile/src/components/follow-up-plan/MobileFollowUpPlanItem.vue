@@ -113,14 +113,14 @@ function convert() {
               <div class="truncate text-base font-semibold text-[var(--text-n1)]">
                 {{ plan.ownerName || '-' }}
               </div>
-              <div class="mt-0.5 truncate text-xs text-[var(--text-n4)]">
+              <div class="mt-0.5 truncate text-sm text-[var(--text-n4)]">
                 {{ plan.targetName }}
               </div>
             </div>
           </div>
         </div>
 
-        <div class="rounded-[3px] bg-[var(--text-n9)] p-3 text-xs leading-5 text-[var(--text-n1)]">
+        <div class="rounded-[3px] bg-[var(--text-n9)] p-3 text-sm leading-5 text-[var(--text-n1)]">
           {{ plan.content }}
         </div>
 
@@ -157,7 +157,7 @@ function convert() {
           </div>
 
           <div
-            class="flex items-center gap-1 px-1 text-xs text-[var(--text-n4)]"
+            class="flex items-center gap-1 px-1 text-sm text-[var(--text-n4)]"
             @click.stop="comment"
           >
             <van-icon name="chat-o" size="14" />

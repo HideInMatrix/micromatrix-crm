@@ -70,21 +70,21 @@ function displayValue(field: FieldVO): string {
     </div>
     <div
       v-if="visibleFields.length"
-      class="grid grid-cols-2 gap-x-[8px] gap-y-[12px] text-[12px] leading-[16px]"
+      class="grid grid-cols-2 gap-x-[8px] gap-y-[12px] text-[14px] leading-[16px]"
     >
       <div v-for="field in visibleFields" :key="field.id" class="min-w-0 truncate">
         <span v-if="field.key !== 'name'" class="text-[#666666]">{{ field.label }}：</span
         ><span class="text-[#333333]">{{ displayValue(field) }}</span>
       </div>
     </div>
-    <div v-else class="text-[12px] leading-[16px] text-[#333333]">查看客户</div>
+    <div v-else class="text-[14px] leading-[16px] text-[#333333]">查看客户</div>
     <div
       v-if="showActions"
       class="mt-[16px] flex items-center justify-end gap-[12px]"
       style="
         --van-button-small-height: 28px;
         --van-button-small-padding: 0 18px;
-        --van-button-small-font-size: 12px;
+        --van-button-small-font-size: 14px;
         --van-button-round-radius: 14px;
         --van-button-border-width: 0px;
         --van-button-plain-background: color-mix(in srgb, var(--van-primary-color) 8%, white);

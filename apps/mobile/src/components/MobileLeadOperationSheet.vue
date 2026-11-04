@@ -154,10 +154,7 @@ watch(show, (visible) => {
         >
           <van-icon name="info-o" :size="10" color="var(--van-primary-color)" />
         </span>
-        <span
-          class="min-w-0 flex-1 text-[12px] text-[var(--van-primary-color)]"
-          :class="isTransfer ? 'leading-[14px]' : 'leading-[17px]'"
-        >
+        <span class="min-w-0 flex-1 text-[14px] leading-[17px] text-[var(--van-primary-color)]">
           <template v-if="isTransfer">转移后系统将通过企业微信通知对应顾问。</template>
           <template v-else-if="isCustomer"
             >将「{{
@@ -253,7 +250,7 @@ watch(show, (visible) => {
         </div>
         <div
           v-if="!isTransfer && reasonEnabled && !reasons.length && !loading"
-          class="mt-[8px] text-[12px] text-[#F04438]"
+          class="mt-[8px] text-[14px] text-[#F04438]"
         >
           暂无可选原因，请先在模块设置中维护。
         </div>
