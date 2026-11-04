@@ -544,64 +544,73 @@ async function preview() {
           <div
             v-for="(m, index) in flow.fields"
             :key="index"
-            class="flex flex-wrap items-center gap-2 rounded-md border border-[var(--el-border-color-lighter)] p-3"
+            class="flex flex-col gap-3 rounded-md border border-[var(--el-border-color-lighter)] p-3"
           >
-            <el-select v-model="m.source" class="!w-[148px]" @change="m.externalKey = ''">
-              <el-option label="外部事件参数" value="event" />
-              <el-option v-if="flow.action === 'convert' && !upserting" label="原线索负责人" value="leadOwner" />
-            </el-select>
-            <el-input
-              v-if="m.source === 'event'"
-              v-model="m.externalKey"
-              class="!w-[185px]"
-              placeholder="外部参数名"
-            />
-            <span v-else class="w-[185px] text-xs">Clue.owner</span>
-            <span>→</span>
-            <el-select
-              v-model="m.fieldKey"
-              filterable
-              class="!min-w-[190px] flex-1"
-              placeholder="目标自定义字段"
-            >
-              <el-option
-                v-for="f in writable.filter((x) => m.source !== 'leadOwner' || x.type === 'member')"
-                :key="f.id"
-                :value="f.key"
-                :label="f.label + '（' + f.key + '）'"
+            <div class="flex flex-wrap items-center gap-2">
+              <el-select v-model="m.source" class="!w-[148px]" @change="m.externalKey = ''">
+                <el-option label="外部事件参数" value="event" />
+                <el-option v-if="flow.action === 'convert' && !upserting" label="原线索负责人" value="leadOwner" />
+              </el-select>
+              <el-input
+                v-if="m.source === 'event'"
+                v-model="m.externalKey"
+                class="!w-[185px]"
+                placeholder="外部参数名"
               />
-            </el-select>
-            <el-select
-              v-if="
-                m.source === 'event' &&
-                writable.find((f) => f.key === m.fieldKey)?.type === 'member'
-              "
-              v-model="m.provider"
-              clearable
-              class="!w-[160px]"
-              placeholder="成员来源"
-            >
-              <el-option label="CRM" value="CRM" /><el-option label="企业微信" value="WECOM" />
-              <el-option label="钉钉" value="DINGTALK" /><el-option label="飞书" value="LARK" />
-            </el-select>
-            <el-button link type="danger" @click="flow.fields.splice(index, 1)"
-              ><Trash2 :size="16"
-            /></el-button>
-          </div>
-          <template v-for="(m, index) in flow.fields" :key="`value-map-${index}`">
+              <span v-else class="w-[185px] text-xs">Clue.owner</span>
+              <span>→</span>
+              <el-select
+                v-model="m.fieldKey"
+                filterable
+                class="!min-w-[190px] flex-1"
+                placeholder="目标自定义字段"
+                @change="m.valueMap = []"
+              >
+                <el-option
+                  v-for="f in writable.filter((x) => m.source !== 'leadOwner' || x.type === 'member')"
+                  :key="f.id"
+                  :value="f.key"
+                  :label="f.label + '（' + f.key + '）'"
+                />
+              </el-select>
+              <el-select
+                v-if="
+                  m.source === 'event' &&
+                  writable.find((f) => f.key === m.fieldKey)?.type === 'member'
+                "
+                v-model="m.provider"
+                clearable
+                class="!w-[160px]"
+                placeholder="成员来源"
+              >
+                <el-option label="CRM" value="CRM" /><el-option label="企业微信" value="WECOM" />
+                <el-option label="钉钉" value="DINGTALK" /><el-option label="飞书" value="LARK" />
+              </el-select>
+              <el-button link type="danger" @click="flow.fields.splice(index, 1)"
+                ><Trash2 :size="16"
+              /></el-button>
+            </div>
             <div
               v-if="writable.find((field) => field.key === m.fieldKey)?.options?.length"
-              class="ml-2 rounded-md bg-[var(--el-fill-color-lighter)] p-3"
+              class="rounded-md bg-[var(--el-fill-color-lighter)] p-3"
             >
               <div class="mb-2 text-xs font-medium">选项值映射（可选）</div>
               <div
                 v-for="(valueMapping, mapIndex) in m.valueMap ?? []"
                 :key="mapIndex"
-                class="mb-2 flex items-center gap-2"
+                class="mb-2 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)_24px] items-center gap-2"
               >
-                <el-input v-model="valueMapping.externalValue" placeholder="外部值，例如 PAID" />
-                <span>→</span>
-                <el-select v-model="valueMapping.crmValue" class="flex-1" placeholder="CRM 选项值">
+                <el-input
+                  v-model="valueMapping.externalValue"
+                  class="w-full min-w-0"
+                  placeholder="外部值，例如 PAID"
+                />
+                <span class="text-center">→</span>
+                <el-select
+                  v-model="valueMapping.crmValue"
+                  class="w-full min-w-0"
+                  placeholder="CRM 选项值"
+                >
                   <el-option
                     v-for="option in writable.find((field) => field.key === m.fieldKey)?.options ?? []"
                     :key="option.value"
@@ -609,7 +618,12 @@ async function preview() {
                     :label="option.label + '（' + option.value + '）'"
                   />
                 </el-select>
-                <el-button link type="danger" @click="m.valueMap?.splice(mapIndex, 1)">
+                <el-button
+                  link
+                  type="danger"
+                  class="!m-0 justify-self-center"
+                  @click="m.valueMap?.splice(mapIndex, 1)"
+                >
                   <Trash2 :size="14" />
                 </el-button>
               </div>
@@ -621,7 +635,7 @@ async function preview() {
                 <Plus :size="13" class="mr-1" />新增选项值映射
               </el-button>
             </div>
-          </template>
+          </div>
           <el-button
             plain
             class="self-start"
