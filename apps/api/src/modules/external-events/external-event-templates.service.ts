@@ -392,19 +392,50 @@ export class ExternalEventTemplatesService {
   private mapExternalFieldValue(
     value: unknown,
     mapping: ExternalEventFlow['fields'][number],
+    field?: {
+      label: string
+      type: string
+      options?: Array<{ label: string; value: string }> | null
+    },
   ) {
     const valueMap = mapping.valueMap ?? []
-    if (!valueMap.length) return value
-    const lookup = new Map(valueMap.map((item) => [item.externalValue, item.crmValue]))
+    if (valueMap.length) {
+      const lookup = new Map(valueMap.map((item) => [item.externalValue, item.crmValue]))
+      const mapOne = (item: unknown) => {
+        const mapped = lookup.get(String(item))
+        if (mapped === undefined) {
+          throw new BadRequestException(
+            `外部字段 ${mapping.externalKey} 的值「${String(item)}」未配置 CRM 选项映射`,
+          )
+        }
+        return mapped
+      }
+      return Array.isArray(value) ? value.map(mapOne) : mapOne(value)
+    }
+
+    // Without an explicit valueMap, accept the CRM option's exact label or
+    // stored value. Keep matching strict and reject ambiguous option labels.
+    const optionTypes = ['select', 'radio', 'multiselect', 'checkbox']
+    const options = field && optionTypes.includes(field.type) ? (field.options ?? []) : []
+    if (!options.length) return value
+
     const mapOne = (item: unknown) => {
-      const mapped = lookup.get(String(item))
-      if (mapped === undefined) {
+      const externalValue = String(item)
+      const valueMatch = options.find((option) => option.value === externalValue)
+      if (valueMatch) return valueMatch.value
+
+      const labelMatches = options.filter((option) => option.label === externalValue)
+      if (labelMatches.length === 1) return labelMatches[0]!.value
+      if (labelMatches.length > 1) {
         throw new BadRequestException(
-          `外部字段 ${mapping.externalKey} 的值「${String(item)}」未配置 CRM 选项映射`,
+          `CRM 字段「${field!.label}」存在重复选项文字「${externalValue}」，请配置明确的选项值映射`,
         )
       }
-      return mapped
+      throw new BadRequestException(
+        `CRM 字段「${field!.label}」不存在与外部值「${externalValue}」完全匹配的选项`,
+      )
     }
+
     return Array.isArray(value) ? value.map(mapOne) : mapOne(value)
   }
 
@@ -476,7 +507,7 @@ export class ExternalEventTemplatesService {
           : value
       set[field.key] = memberTargets.has(mapping.fieldKey)
         ? await this.resolveMember(user, normalizedValue, mapping.provider ?? 'CRM')
-        : this.mapExternalFieldValue(normalizedValue, mapping)
+        : this.mapExternalFieldValue(normalizedValue, mapping, field)
     }
     const normalizedSet = await this.customers.normalizeWritableDynamicFields(user, set)
 
@@ -527,10 +558,14 @@ export class ExternalEventTemplatesService {
             flow.action === 'convert',
           )
     const target = flow.action === 'convert' ? 'customer' : flow.target
+    const targetFields = await this.metadata.listFields(user.tenantId, target)
     const memberTargets = new Set(
-      (await this.metadata.listFields(user.tenantId, target))
-        .filter((f) => f.type === 'member')
-        .flatMap((f) => [f.id, f.key]),
+      targetFields
+        .filter((field) => field.type === 'member')
+        .flatMap((field) => [field.id, field.key]),
+    )
+    const fieldMap = new Map(
+      targetFields.flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
     )
     const set: Record<string, unknown> = {}
     for (const mapping of flow.fields) {
@@ -546,9 +581,10 @@ export class ExternalEventTemplatesService {
         const provider =
           mapping.provider ??
           (mapping.externalKey === flow.owner?.externalKey ? flow.owner.provider : 'CRM')
+        const field = fieldMap.get(mapping.fieldKey)
         set[mapping.fieldKey] = memberTargets.has(mapping.fieldKey)
           ? await this.resolveMember(user, value, provider)
-          : this.mapExternalFieldValue(value, mapping)
+          : this.mapExternalFieldValue(value, mapping, field)
       }
     }
     const ownerId = flow.owner
@@ -750,10 +786,14 @@ export class ExternalEventTemplatesService {
     if (Object.keys(data).length > 80) throw new BadRequestException('事件参数数量过多')
     const where = this.mappedWhere(template.config, data)
     const resolved = await this.resolver.resolve(user, where, template.config.actions.convertLead)
+    const customerFields = await this.metadata.listFields(user.tenantId, 'customer')
     const memberTargets = new Set(
-      (await this.metadata.listFields(user.tenantId, 'customer'))
+      customerFields
         .filter((field) => field.type === 'member')
         .flatMap((field) => [field.key, field.id]),
+    )
+    const fieldMap = new Map(
+      customerFields.flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
     )
     const set: Record<string, unknown> = {}
     for (const mapping of template.config.fields) {
@@ -768,9 +808,18 @@ export class ExternalEventTemplatesService {
           (mapping.externalKey === template.config.owner?.externalKey
             ? template.config.owner.provider
             : 'CRM')
+        const field = fieldMap.get(mapping.customerFieldKey)
         set[mapping.customerFieldKey] = memberTargets.has(mapping.customerFieldKey)
           ? await this.resolveMember(user, data[mapping.externalKey], identityProvider)
-          : data[mapping.externalKey]
+          : this.mapExternalFieldValue(
+              data[mapping.externalKey],
+              {
+                source: 'event',
+                externalKey: mapping.externalKey,
+                fieldKey: mapping.customerFieldKey,
+              },
+              field,
+            )
       }
     }
     const ownerId =
