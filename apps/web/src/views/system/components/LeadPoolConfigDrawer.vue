@@ -17,17 +17,10 @@ const saving = ref(false)
 
 type RecycleConditionForm = ResourcePoolRecycleCondition & { fixedRange: string[] }
 const dynamicOptions = [
-  { label: '今天', value: 'TODAY' },
-  { label: '昨天', value: 'YESTERDAY' },
-  { label: '本周', value: 'WEEK' },
-  { label: '上周', value: 'LAST_WEEK' },
-  { label: '本月', value: 'MONTH' },
-  { label: '上月', value: 'LAST_MONTH' },
-  { label: '过去 7 天', value: 'LAST_SEVEN' },
-  { label: '过去 30 天', value: 'LAST_THIRTY' },
-  { label: '早于 7 天前', value: 'CUSTOM,7,BEFORE_DAY' },
-  { label: '早于 30 天前', value: 'CUSTOM,30,BEFORE_DAY' },
-  { label: '早于 90 天前', value: 'CUSTOM,90,BEFORE_DAY' },
+  { label: '超过 24 小时', value: 'CUSTOM,24,BEFORE_HOUR' },
+  { label: '超过 48 小时', value: 'CUSTOM,48,BEFORE_HOUR' },
+  { label: '超过 72 小时', value: 'CUSTOM,72,BEFORE_HOUR' },
+  { label: '超过 1 周（168 小时）', value: 'CUSTOM,168,BEFORE_HOUR' },
 ]
 
 const form = reactive({
@@ -65,7 +58,7 @@ function addCondition() {
   form.recycleConditions.push({
     column: 'storageTime',
     operator: 'DYNAMICS',
-    value: 'CUSTOM,7,BEFORE_DAY',
+    value: 'CUSTOM,24,BEFORE_HOUR',
     scope: ['Picked'],
     fixedRange: [],
   })

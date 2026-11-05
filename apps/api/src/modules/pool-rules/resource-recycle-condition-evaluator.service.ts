@@ -208,6 +208,7 @@ export class ResourceRecycleConditionEvaluator {
       return { time, direction: 'before' as const }
     }
 
+    // 动态阈值以所选时间字段为锚点；HOUR 按精确小时计算，DAY/WEEK/MONTH 保留旧配置兼容。
     // Cordys 新格式：首段为自定义标记，第二段为数量，第三段为 BEFORE/AFTER_*。
     if (parts.length !== 3) return null
     const amount = Number(parts[1])
@@ -221,7 +222,8 @@ export class ResourceRecycleConditionEvaluator {
         : null
     if (!direction) return null
     const sign = direction === 'before' ? -1 : 1
-    if (unit.endsWith('_DAY')) time.setDate(time.getDate() + sign * amount)
+    if (unit.endsWith('_HOUR')) time.setTime(time.getTime() + sign * amount * 60 * 60 * 1000)
+    else if (unit.endsWith('_DAY')) time.setDate(time.getDate() + sign * amount)
     else if (unit.endsWith('_WEEK')) time.setDate(time.getDate() + sign * amount * 7)
     else if (unit.endsWith('_MONTH')) time.setMonth(time.getMonth() + sign * amount)
     else return null
