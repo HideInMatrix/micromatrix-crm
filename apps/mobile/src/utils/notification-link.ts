@@ -2,7 +2,7 @@
 export function resolveMobileNotificationPath(link: string): string | null {
   if (!link.startsWith('/')) return null
 
-  const url = new URL(link, 'https://lore-mobile.invalid')
+  const url = new URL(link, 'https://admissions-crm.invalid')
   let path = url.pathname
 
   // 兼容已带移动端部署前缀的通知链接。
