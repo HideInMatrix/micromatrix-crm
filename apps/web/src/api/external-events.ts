@@ -12,6 +12,7 @@ export interface ExternalEventPreviewVO {
   resolvedId: string
   action: string
   customerOwnerId?: string | null
+  leadPoolId?: string | null
   fieldUpdates: Record<string, unknown>
   note: string
 }

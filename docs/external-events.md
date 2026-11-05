@@ -67,6 +67,55 @@
 
 创建时使用 `nameExternalKey` 指定外部数据中的名称字段；旧的创建/转换动作继续使用 `flow.owner`，支持 CRM 或同步过映射的外部成员身份。转换动作的目标模块是 lead，但动态字段映射到新客户；`leadOwner` 来源仅在转换动作中有效。
 
+新增线索时，如果配置了 `flow.owner`，系统会尝试将外部负责人身份解析为当前租户的有效 CRM 成员：匹配成功则正常分配负责人；未匹配、映射不唯一或成员已停用时，则读取字段映射中的 `__leadPool`，根据第三方传入的参数值和 `valueMap` 确定线索池。配置了外部负责人时，必须增加 `__leadPool` 映射，不能使用固定兜底线索池，也不会把线索错误分配给 API Key 调用账号。
+
+`__leadPool` 是新增线索专用的特殊映射目标，不是 CRM 自定义字段。管理员指定外部参数名（例如 `pool`），并配置外部值到 CRM 线索池的对应关系，例如 `1` → 华东线索池、`2` → 华南线索池。负责人匹配成功时仍由该成员负责，不使用线索池映射；负责人无法匹配时，外部参数必须提供已配置的值，否则拒绝创建并返回明确错误。未配置负责人映射但配置了 `__leadPool` 时，则直接按外部参数指定的线索池创建无负责人线索。线索池必须处于启用状态，并且执行 API Key 的账号需要拥有该池的可访问范围。
+
+```json
+{
+  "flow": {
+    "target": "lead",
+    "action": "create",
+    "nameExternalKey": "studentName",
+    "owner": { "externalKey": "ownerId", "provider": "WECOM" },
+    "fields": [
+      {
+        "source": "event",
+        "externalKey": "consultStage",
+        "fieldKey": "cf_consult_stage",
+        "valueMap": [{ "externalValue": "NEW", "crmValue": "new" }]
+      },
+      {
+        "source": "event",
+        "externalKey": "pool",
+        "fieldKey": "__leadPool",
+        "valueMap": [
+          { "externalValue": "1", "crmValue": "EAST_LEAD_POOL_ID" },
+          { "externalValue": "2", "crmValue": "SOUTH_LEAD_POOL_ID" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+当 `ownerId` 映射到有效成员时，线索仍由该成员负责；当无法匹配时，示例中的 `pool` 决定线索池：传入 `1` 进入华东线索池，传入 `2` 进入华南线索池。此时必须传入 `pool`，且值必须命中已配置的映射，不存在固定兜底池。
+
+第三方调用示例：
+
+```json
+{
+  "eventType": "LEAD_CREATED",
+  "externalEventId": "LEAD-20261105-0001",
+  "data": {
+    "studentName": "张三",
+    "ownerId": "external_user_123",
+    "pool": "1",
+    "consultStage": "NEW"
+  }
+}
+```
+
 ### 缴费成功同步流程
 
 选择 `flow.action = "upsertCustomer"`（保留的配置兼容标识，界面显示为「缴费成功同步」）后，按学生姓名 + 手机号同时精确匹配客户和线索：

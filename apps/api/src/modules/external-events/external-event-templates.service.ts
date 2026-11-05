@@ -16,7 +16,11 @@ import type {
   ExternalEventUserProvider,
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
-import { filterOpsForType, hasPermission } from '@micromatrix/shared'
+import {
+  EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+  filterOpsForType,
+  hasPermission,
+} from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma.service'
 import { instantToISOString, nowInstant } from '../../prisma/temporal'
@@ -295,6 +299,31 @@ export class ExternalEventTemplatesService {
       if (item.source === 'event') requireKey(item.externalKey, '映射来源字段')
       if (item.source === 'leadOwner' && flow.action !== 'convert')
         throw new BadRequestException('原线索负责人只能用于线索转化动作')
+
+      if (item.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY) {
+        if (flow.action !== 'create' || flow.target !== 'lead' || item.source !== 'event')
+          throw new BadRequestException('线索池映射仅支持新增线索，且必须来自外部事件参数')
+        if (item.provider !== undefined)
+          throw new BadRequestException('线索池映射不支持成员身份来源')
+        if (targets.has(EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY))
+          throw new BadRequestException('线索池不能重复映射')
+        if (!Array.isArray(item.valueMap) || item.valueMap.length < 1 || item.valueMap.length > 100)
+          throw new BadRequestException('线索池映射至少需要一个选项，最多支持 100 项')
+        const externalValues = new Set<string>()
+        for (const value of item.valueMap) {
+          if (typeof value.externalValue !== 'string' || !value.externalValue.trim())
+            throw new BadRequestException('外部线索池选项值不能为空')
+          if (externalValues.has(value.externalValue))
+            throw new BadRequestException('外部线索池选项值不能重复')
+          if (typeof value.crmValue !== 'string' || !value.crmValue.trim())
+            throw new BadRequestException('请选择对应的 CRM 线索池')
+          await this.leads.assertExternalLeadPool(user, value.crmValue)
+          externalValues.add(value.externalValue)
+        }
+        targets.add(EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY)
+        continue
+      }
+
       const field = writable.get(item.fieldKey)
       if (!field) throw new BadRequestException('字段映射目标必须为可写的自定义字段')
       if (targets.has(field.key)) throw new BadRequestException('目标字段重复映射')
@@ -319,6 +348,21 @@ export class ExternalEventTemplatesService {
       if (flow.action === 'upsertCustomer' && item.source !== 'event')
         throw new BadRequestException('缴费成功同步的客户字段映射必须来自外部事件参数')
       targets.add(field.key)
+    }
+
+    const poolMapping = flow.fields.find(
+      (item) => item.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+    )
+    if (flow.owner && poolMapping && flow.owner.externalKey === poolMapping.externalKey) {
+      throw new BadRequestException('负责人身份参数与线索池参数不能使用同一个外部字段')
+    }
+    if (
+      flow.action === 'create' &&
+      flow.target === 'lead' &&
+      flow.owner &&
+      !poolMapping
+    ) {
+      throw new BadRequestException('配置了外部负责人时，必须增加「线索池」字段映射，用于负责人无法匹配时确定线索归属')
     }
 
     if (flow.action === 'upsertCustomer') {
@@ -440,8 +484,9 @@ export class ExternalEventTemplatesService {
       flow,
       resolved,
       set: normalizedSet,
-      // Keep the common prepared-flow shape stable; payment sync never assigns a new owner.
+      // Keep the common prepared-flow shape stable; payment sync never assigns a new owner or lead pool.
       ownerId: null,
+      poolId: null,
       name,
     }
   }
@@ -489,6 +534,7 @@ export class ExternalEventTemplatesService {
     )
     const set: Record<string, unknown> = {}
     for (const mapping of flow.fields) {
+      if (mapping.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY) continue
       if (mapping.source === 'leadOwner') {
         if (!resolved || resolved.kind !== 'LEAD')
           throw new BadRequestException('原线索负责人不存在')
@@ -506,8 +552,25 @@ export class ExternalEventTemplatesService {
       }
     }
     const ownerId = flow.owner
-      ? await this.resolveMember(user, requireData(flow.owner.externalKey), flow.owner.provider)
+      ? flow.action === 'create' && flow.target === 'lead'
+        ? await this.resolveMemberOptional(user, data[flow.owner.externalKey], flow.owner.provider)
+        : await this.resolveMember(user, requireData(flow.owner.externalKey), flow.owner.provider)
       : null
+    const poolMapping = flow.fields.find(
+      (mapping) => mapping.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+    )
+    let poolId: string | null = null
+    if (flow.action === 'create' && flow.target === 'lead' && !ownerId && poolMapping) {
+      const externalPoolValue = data[poolMapping.externalKey]
+      if (externalPoolValue === undefined || externalPoolValue === null || externalPoolValue === '') {
+        const reason = flow.owner ? '负责人无法匹配' : '未指定线索负责人'
+        throw new BadRequestException(`${reason}，且缺少用于确定线索池的外部参数：${poolMapping.externalKey}`)
+      }
+      poolId = this.resolveMappedLeadPool(externalPoolValue, poolMapping)
+    }
+    if (flow.action === 'create' && flow.target === 'lead' && flow.owner && !ownerId && !poolId) {
+      throw new BadRequestException('负责人无法匹配，且外部线索池参数未能映射到有效线索池')
+    }
     const rawName = flow.action === 'create' ? requireData(flow.nameExternalKey!) : null
     if (
       rawName !== null &&
@@ -519,8 +582,8 @@ export class ExternalEventTemplatesService {
       resolved,
       set,
       ownerId,
+      poolId,
       name: rawName as string | null,
-      ownerFallbackReason: null as string | null,
     }
   }
 
@@ -631,6 +694,54 @@ export class ExternalEventTemplatesService {
       .first()
     if (!active) throw new BadRequestException('指定的客户负责人不存在或已被停用')
     return active.id
+  }
+
+  /** Lead creation treats an unresolved external owner as an unassigned pool lead. */
+  private async resolveMemberOptional(
+    user: AuthUser,
+    externalId: unknown,
+    provider: ExternalEventUserProvider,
+  ): Promise<string | null> {
+    if (typeof externalId !== 'string' || !externalId.trim()) return null
+    let ownerId = externalId.trim()
+    if (provider !== 'CRM') {
+      const rows = await this.prisma.client.orm.public.ExternalUserMappings.where({
+        tenantId: user.tenantId,
+        provider,
+        active: true,
+      })
+        .where((row) => or(row.externalId.eq(ownerId), row.externalKey.eq(ownerId)))
+        .select('userId')
+        .all()
+      const ids = [...new Set(rows.map((row) => row.userId))]
+      if (ids.length !== 1) return null
+      ownerId = ids[0]!
+    }
+    const active = await this.prisma.client.orm.public.Users.where({
+      id: ownerId,
+      tenantId: user.tenantId,
+      status: 'ACTIVE',
+    })
+      .select('id')
+      .first()
+    return active?.id ?? null
+  }
+
+  private resolveMappedLeadPool(
+    value: unknown,
+    mapping: ExternalEventFlow['fields'][number],
+  ) {
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      throw new BadRequestException(`外部字段 ${mapping.externalKey} 必须提供有效的线索池选项值`)
+    }
+    const lookup = new Map((mapping.valueMap ?? []).map((item) => [item.externalValue, item.crmValue]))
+    const mapped = lookup.get(String(value))
+    if (!mapped) {
+      throw new BadRequestException(
+        `外部字段 ${mapping.externalKey} 的值「${String(value)}」未配置线索池映射`,
+      )
+    }
+    return mapped
   }
 
   async prepare(user: AuthUser, template: ExternalEventTemplateVO, data: Record<string, unknown>) {
@@ -760,6 +871,7 @@ export class ExternalEventTemplatesService {
             name: plan.name!,
             customData: set,
             ownerId: ownerId ?? undefined,
+            ...(plan.poolId ? { toPool: true, poolId: plan.poolId } : {}),
           })
       }
       return {
@@ -768,8 +880,13 @@ export class ExternalEventTemplatesService {
         resolvedId: resolved?.kind === 'LEAD' ? resolved.leadId : (resolved?.customerId ?? ''),
         action: flow.action.toUpperCase(),
         customerOwnerId: ownerId,
+        leadPoolId: plan.poolId ?? null,
         fieldUpdates: set,
-        note: '模拟验证通过；未写入数据。正式执行还会重新检查权限及并发状态',
+        note: plan.poolId
+          ? flow.owner
+            ? '负责人未能匹配到有效 CRM 成员，已根据外部线索池参数映射到目标线索池；未写入数据。'
+            : '已根据外部线索池参数映射到目标线索池；未写入数据。'
+          : '模拟验证通过；未写入数据。正式执行还会重新检查权限及并发状态',
       }
     }
     const prepared = await this.prepare(user, template, data)

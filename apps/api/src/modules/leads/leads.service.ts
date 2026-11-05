@@ -817,20 +817,30 @@ export class LeadsService {
     return updated
   }
 
+  /** Validate a configured external-event pool against the integration account's accessible pools. */
+  async assertExternalLeadPool(user: AuthUser, poolId: string) {
+    if (!poolId) throw new BadRequestException('请选择线索池')
+    const pool = await this.pools.resolveTargetPool(user, 'lead', poolId)
+    return pool.id
+  }
+
   /** Prepare and execute lead creation under the same transaction as the external event inbox. */
   async prepareExternalLeadCreation(user: AuthUser, dto: LeadCreateInput) {
     this.assertFunctionalPermission(user, 'lead:create', '缺少新建线索权限')
     if (!dto.name || typeof dto.name !== 'string' || !dto.name.trim() || dto.name.length > 100)
       throw new BadRequestException('线索名称不合法')
-    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId)
+    const targetPool = dto.toPool
+      ? await this.pools.resolveTargetPool(user, 'lead', dto.poolId)
+      : null
+    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
     await this.assertLeadSystemUniqueRules(user.tenantId, { name: dto.name }, uniqueScope)
     await this.fieldValues.validate(user.tenantId, 'clue', dto.customData ?? {}, {
       mode: 'create',
       uniqueScope,
     })
-    const owner = await this.resolveOwner(user, dto.ownerId)
-    await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
-    return { dto, uniqueScope, owner }
+    const owner = targetPool ? null : await this.resolveOwner(user, dto.ownerId)
+    if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
+    return { dto, uniqueScope, owner, targetPool }
   }
 
   async createPreparedExternalLeadInTransaction(
@@ -838,7 +848,7 @@ export class LeadsService {
     prepared: Awaited<ReturnType<LeadsService['prepareExternalLeadCreation']>>,
     tx: PrismaTransaction,
   ) {
-    const { dto, owner, uniqueScope } = prepared
+    const { dto, owner, targetPool, uniqueScope } = prepared
     const now = BigInt(Date.now())
     const lead = await tx.orm.public.Clue.create({
       id: createLegacyId32(),
@@ -846,10 +856,10 @@ export class LeadsService {
       contact: null,
       phone: null,
       organizationId: user.tenantId,
-      inSharedPool: false,
-      poolId: null,
-      owner: owner.id,
-      collectionTime: now,
+      inSharedPool: Boolean(targetPool),
+      poolId: targetPool?.id ?? null,
+      owner: owner?.id ?? null,
+      collectionTime: owner ? now : null,
       createTime: now,
       updateTime: now,
       createUser: user.id,

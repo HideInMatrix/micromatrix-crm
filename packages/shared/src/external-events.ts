@@ -7,6 +7,8 @@ export type ExternalEventUserProvider = 'CRM' | 'WECOM' | 'DINGTALK' | 'LARK'
 export type ExternalEventTarget = 'lead' | 'customer'
 /** `upsertCustomer` is a persisted compatibility key for payment sync; it never creates records. */
 export type ExternalEventAction = 'update' | 'convert' | 'create' | 'upsertCustomer'
+/** Reserved mapping target used to route newly-created leads into a pool. */
+export const EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY = '__leadPool'
 
 export interface ExternalEventFlow {
   target: ExternalEventTarget
@@ -14,6 +16,7 @@ export interface ExternalEventFlow {
   fields: Array<{
     source: 'event' | 'leadOwner'
     externalKey: string
+    /** Dynamic field key, or EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY for lead-pool routing. */
     fieldKey: string
     provider?: ExternalEventUserProvider
     /** Optional external enum/value translation before CRM field validation. */

@@ -297,7 +297,7 @@ export class ExternalEventsService {
       return this.executePaymentSync(user, template, data, inboxId, requestHash, audit)
     }
     const plan = await this.templates.prepareFlow(user, template, data)
-    const { flow, resolved, set, ownerId } = plan
+    const { flow, resolved, set, ownerId, poolId } = plan
     const commit = (
       tx: PrismaTransaction,
       type: 'LEAD' | 'CUSTOMER',
@@ -387,6 +387,7 @@ export class ExternalEventsService {
         name: plan.name!,
         ownerId: ownerId ?? undefined,
         customData: set,
+        ...(poolId ? { toPool: true, poolId } : {}),
       })
       const inbox = await this.prisma.client.transaction(async (tx) => {
         const lead = await this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx)

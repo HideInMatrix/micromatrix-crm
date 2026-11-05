@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY } from '@micromatrix/shared'
 import type {
   ExternalEventTemplateInput,
   ExternalEventTemplateVO,
@@ -11,6 +12,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { metadataApi } from '@/api/metadata'
 import { memberApi } from '@/api/system'
+import { leadApi, type ResourcePoolVO } from '@/api/sales'
 import { externalEventTemplateApi, type ExternalEventPreviewVO } from '@/api/external-events'
 import { extractErrorMessage } from '@/api/http'
 
@@ -24,6 +26,7 @@ const savedId = ref<string | null>(null)
 const leadFields = ref<FieldVO[]>([])
 const customerFields = ref<FieldVO[]>([])
 const members = ref<MemberOption[]>([])
+const leadPools = ref<ResourcePoolVO[]>([])
 const exampleText = ref('{}')
 const previewResult = ref<ExternalEventPreviewVO | null>(null)
 
@@ -138,6 +141,18 @@ function addMatch() {
 function addField() {
   flow.value.fields.push({ source: 'event', externalKey: '', fieldKey: '', valueMap: [] })
 }
+function changeMappingSource(mapping: ExternalEventFlow['fields'][number]) {
+  mapping.externalKey = ''
+  mapping.provider = undefined
+  if (mapping.source === 'leadOwner' && mapping.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY) {
+    mapping.fieldKey = ''
+    mapping.valueMap = []
+  }
+}
+function changeMappingTarget(mapping: ExternalEventFlow['fields'][number]) {
+  mapping.provider = undefined
+  mapping.valueMap = []
+}
 function sample() {
   const data: Record<string, string> = {}
   if (!creating.value)
@@ -188,14 +203,16 @@ watch(visible, async (open) => {
     ElMessage.warning('此事件原先使用的线索状态动作已移除，请重新配置业务动作和字段映射')
   }
   try {
-    const [lead, customer, people] = await Promise.all([
+    const [lead, customer, people, pools] = await Promise.all([
       metadataApi.fields('lead'),
       metadataApi.fields('customer'),
       memberApi.options(),
+      leadApi.moveTargetOptions(),
     ])
     leadFields.value = lead.data
     customerFields.value = customer.data
     members.value = people.data
+    leadPools.value = pools.data
   } catch (e) {
     ElMessage.error(extractErrorMessage(e))
   }
@@ -232,6 +249,24 @@ async function save() {
   if (needsName.value && !flow.value.nameExternalKey) {
     step.value = 4
     ElMessage.warning('请指定学生姓名参数')
+    return
+  }
+  const leadPoolMapping = flow.value.fields.find(
+    (mapping) => mapping.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+  )
+  if (creating.value && flow.value.target === 'lead' && flow.value.owner && !leadPoolMapping) {
+    step.value = 4
+    ElMessage.warning('请在字段映射中增加「线索池」映射，用于负责人无法匹配时确定线索归属')
+    return
+  }
+  if (
+    creating.value &&
+    flow.value.target === 'lead' &&
+    leadPoolMapping &&
+    (!leadPoolMapping.externalKey || !leadPoolMapping.valueMap?.length)
+  ) {
+    step.value = 4
+    ElMessage.warning('请完善线索池外部参数及选项值映射')
     return
   }
   if (upserting.value) {
@@ -547,7 +582,11 @@ async function preview() {
             class="flex flex-col gap-3 rounded-md border border-[var(--el-border-color-lighter)] p-3"
           >
             <div class="flex flex-wrap items-center gap-2">
-              <el-select v-model="m.source" class="!w-[148px]" @change="m.externalKey = ''">
+              <el-select
+                v-model="m.source"
+                class="!w-[148px]"
+                @change="changeMappingSource(m)"
+              >
                 <el-option label="外部事件参数" value="event" />
                 <el-option v-if="flow.action === 'convert' && !upserting" label="原线索负责人" value="leadOwner" />
               </el-select>
@@ -555,7 +594,7 @@ async function preview() {
                 v-if="m.source === 'event'"
                 v-model="m.externalKey"
                 class="!w-[185px]"
-                placeholder="外部参数名"
+                :placeholder="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '外部参数名，例如 pool' : '外部参数名'"
               />
               <span v-else class="w-[185px] text-xs">Clue.owner</span>
               <span>→</span>
@@ -563,9 +602,14 @@ async function preview() {
                 v-model="m.fieldKey"
                 filterable
                 class="!min-w-[190px] flex-1"
-                placeholder="目标自定义字段"
-                @change="m.valueMap = []"
+                placeholder="目标字段"
+                @change="changeMappingTarget(m)"
               >
+                <el-option
+                  v-if="creating && flow.target === 'lead' && m.source === 'event'"
+                  label="线索池（负责人未匹配时分配）"
+                  :value="EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY"
+                />
                 <el-option
                   v-for="f in writable.filter((x) => m.source !== 'leadOwner' || x.type === 'member')"
                   :key="f.id"
@@ -591,10 +635,25 @@ async function preview() {
               /></el-button>
             </div>
             <div
-              v-if="writable.find((field) => field.key === m.fieldKey)?.options?.length"
+              v-if="
+                m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ||
+                writable.find((field) => field.key === m.fieldKey)?.options?.length
+              "
               class="rounded-md bg-[var(--el-fill-color-lighter)] p-3"
             >
-              <div class="mb-2 text-xs font-medium">选项值映射（可选）</div>
+              <div class="mb-2 text-xs font-medium">
+                {{
+                  m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY
+                    ? '线索池选项值映射（按外部参数选择）'
+                    : '选项值映射（可选）'
+                }}
+              </div>
+              <p
+                v-if="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY"
+                class="mb-2 text-xs text-[var(--el-text-color-secondary)]"
+              >
+                负责人匹配成功时仍分配给该成员；只有负责人无法匹配时，才使用这里映射的线索池。未配置负责人时，则直接按此映射选择线索池。所选线索池必须对 API Key 所属账号可访问。
+              </p>
               <div
                 v-for="(valueMapping, mapIndex) in m.valueMap ?? []"
                 :key="mapIndex"
@@ -603,20 +662,30 @@ async function preview() {
                 <el-input
                   v-model="valueMapping.externalValue"
                   class="w-full min-w-0"
-                  placeholder="外部值，例如 PAID"
+                  :placeholder="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '外部值，例如 1' : '外部值，例如 PAID'"
                 />
                 <span class="text-center">→</span>
                 <el-select
                   v-model="valueMapping.crmValue"
                   class="w-full min-w-0"
-                  placeholder="CRM 选项值"
+                  :placeholder="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '选择线索池' : 'CRM 选项值'"
                 >
-                  <el-option
-                    v-for="option in writable.find((field) => field.key === m.fieldKey)?.options ?? []"
-                    :key="option.value"
-                    :value="option.value"
-                    :label="option.label + '（' + option.value + '）'"
-                  />
+                  <template v-if="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY">
+                    <el-option
+                      v-for="pool in leadPools"
+                      :key="pool.id"
+                      :value="pool.id"
+                      :label="pool.name"
+                    />
+                  </template>
+                  <template v-else>
+                    <el-option
+                      v-for="option in writable.find((field) => field.key === m.fieldKey)?.options ?? []"
+                      :key="option.value"
+                      :value="option.value"
+                      :label="option.label + '（' + option.value + '）'"
+                    />
+                  </template>
                 </el-select>
                 <el-button
                   link
@@ -650,7 +719,11 @@ async function preview() {
           >
             <el-switch
               v-model="ownerEnabled"
-              active-text="指定新记录的负责人（否则使用默认负责人）"
+              :active-text="
+                creating && flow.target === 'lead'
+                  ? '指定新记录负责人（无法匹配时进入线索池）'
+                  : '指定新记录的负责人（否则使用默认负责人）'
+              "
             />
             <div v-if="flow.owner" class="mt-3 flex flex-wrap gap-3">
               <el-input
@@ -695,6 +768,9 @@ async function preview() {
               previewResult.resolvedId || '无匹配记录'
             }}</el-descriptions-item>
             <el-descriptions-item label="动作">{{ previewResult.action }}</el-descriptions-item>
+            <el-descriptions-item v-if="previewResult.leadPoolId" label="新线索归属">
+              {{ leadPools.find((pool) => pool.id === previewResult?.leadPoolId)?.name ?? previewResult.leadPoolId }}
+            </el-descriptions-item>
             <el-descriptions-item v-if="previewResult.releasedFromPool" label="公海处理">
               完结规则命中后移出客户公海
             </el-descriptions-item>
