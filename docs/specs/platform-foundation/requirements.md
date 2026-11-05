@@ -37,7 +37,7 @@ Platform Foundation 负责招生 CRM 的组织、成员、角色权限、数据�
 
 - 模块配置以 `tenantId + key` 持久化启用状态和排序。
 - 当前主导航产品边界只允许 `home / lead / customer / system`。
-- 当前顶部导航只允许 `task / event / notify / about / help`。
+- 当前可配置顶部导航只允许 `event / notify`，分别对应记录/计划和消息通知；未实现或已退出的 `task / about / help` 不得作为可配置入口。
 - 历史数据库中的退出 key 可以保留记录，但 API 不得继续暴露或让前端重新配置出无效入口。
 - `system` 等固定模块不可被错误关闭；尚无真实页面/能力的模块不得进入可配置定义。
 - 模块开关只控制发现入口，不能替代后端权限 Guard。

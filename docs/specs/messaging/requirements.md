@@ -8,7 +8,7 @@ Messaging 负责站内 Notification、业务事件模板、多语言渲染、实
 
 当前正式事件只覆盖 `CUSTOMER` 与 `CLUE` 两个业务模块，定义以 `packages/shared/src/message-settings.ts` 的 `MESSAGE_TASK_DEFINITIONS` 为唯一事实源。
 
-当前共 26 个事件：Customer 13 个、Clue 13 个。已删除交易模块的 Opportunity/Contract/Order 等事件不得重新进入消息设置或模板注册表。
+当前共 25 个事件：Customer 12 个、Clue 13 个。数量与事件定义以 `packages/shared/src/message-settings.ts` 的 `MESSAGE_TASK_DEFINITIONS` 为准；已删除交易模块的 Opportunity/Contract/Order 等事件不得重新进入消息设置或模板注册表。
 
 ## 3. 站内 Notification
 

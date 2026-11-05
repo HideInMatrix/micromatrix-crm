@@ -128,22 +128,26 @@ Seed 使用同一个 `db`；项目不保留测试专用数据库 client。
 - `src/prisma/generated/`
 - Prisma 7 adapter / generated Client
 
-## 9. Release 规则
+## 9. Release 流程与校验边界
 
-Migration 镜像是生产数据库结构变更入口。Release 至少执行：
+当前 GitHub Tag workflow `.github/workflows/release-docker.yml` 负责构建并推送 API、Migration、Web 三类镜像；它本身不执行数据库迁移，也不直接部署生产 Compose。
 
-1. `prisma contract emit`
-2. `prisma migration check`
-3. `prisma db migrate`
-4. bootstrap Seed（仅空安装补基础数据）
-5. `prisma db verify`
-6. `prisma migration status`
+- Migration 镜像构建阶段执行 `prisma contract emit`。
+- 生产 Compose 启动时，Migration 一次性容器执行 `prisma db migrate --yes`，随后执行 bootstrap Seed；API / worker / Web 按 Compose 依赖等待迁移成功后启动。
+- 当前 Tag workflow 不会自动执行 `prisma migration check`、`prisma db verify` 或 `prisma migration status`。不能把 Tag 构建成功等同于数据库迁移验证或生产部署成功。
 
-正式环境 destructive migration 仍必须针对目标数据库单独做只读 precheck，不能用开发库数据结论代替。
+推送发布 Tag 前，应在开发/预发布环境完成：
+
+1. `pnpm prisma:emit`
+2. `pnpm db:verify-migrations`
+3. `pnpm db:status`
+4. `pnpm db:verify`
+
+正式环境 destructive migration 仍必须针对目标数据库单独做只读 precheck，不能用开发库数据结论代替。部署完成后，应连接目标数据库再次执行 `pnpm db:status` 与 `pnpm db:verify`，确认 marker、migration graph 和真实 schema 一致。
 
 ## 10. 审计原则
 
 - migration from/to contract hash、migration hash、operation list 和 precheck 结果都属于发布审计证据。
 - 不允许手工修改数据库 marker/ref 来绕过 schema drift。
 - 高风险 DDL 先在隔离数据库演练，再进入开发主库和生产发布链。
-- 文档里的 migration 数量/hash 发生变化时同步更新本文件和当前主线任务文档。
+- migration 数量或当前 ref hash 发生变化时同步更新本文件；若其他长期维护文档引用了这些信息，也应一并更新。

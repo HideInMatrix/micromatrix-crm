@@ -6,26 +6,26 @@
 
 ## 当前业务范围
 
-- 线索：线索池、领取/分配、负责人、阶段、判重、SLA、导入导出、转客户。
+- 线索：线索池、领取/分配、负责人、判重、SLA、导入导出、转客户；不再维护固定的线索阶段/状态字段。
 - 客户：客户、公海、负责人历史、跟进记录与跟进计划。
 - 元数据：模块表单、动态字段、字段联动、显隐、唯一性、附件和列表/筛选能力。
-- 首页分析：渠道、阶段漏斗、负责人/部门等招生统计。
-- 外部事件：API Key 调用、幂等 Inbox、严格字段匹配、单动作执行及客户优先的智能归档分支流程。
+- 首页分析：渠道来源、转化趋势、负责人/部门绩效、客户结果及自定义字段分布。
+- 外部事件：API Key 调用、幂等 Inbox、显式模块/动作配置、动态字段映射及缴费成功跨模块同步。
 - 平台能力：通知/公告、组织/角色/成员、日志、企业设置、企业微信/钉钉/飞书。
 
 商机、产品、报价、合同、回款、发票、订单、标讯等旧交易链已从当前 `master` 的产品入口、生产 API 和 Prisma contract 中退出。
 
 ## 技术栈
 
-| 层 | 选型 |
-| --- | --- |
-| PC | Vue 3 + TypeScript + Vite + Element Plus |
-| Mobile | Vue 3 + Vite + Vant 4 + UnoCSS presetWind4 |
-| 前端共享 | `packages/frontend-shared` + `packages/shared` |
-| API | NestJS 11 + Prisma ORM 8 PostgreSQL runtime |
-| 数据库 | PostgreSQL 18 |
-| 缓存/实时/队列 | Redis + Pub/Sub + BullMQ |
-| 工程 | Node `>=25 <26` + pnpm `11.25.0` + TypeScript `7.0.2` |
+| 层             | 选型                                                  |
+| -------------- | ----------------------------------------------------- |
+| PC             | Vue 3 + TypeScript + Vite + Element Plus              |
+| Mobile         | Vue 3 + Vite + Vant 4 + UnoCSS presetWind4            |
+| 前端共享       | `packages/frontend-shared` + `packages/shared`        |
+| API            | NestJS 11 + Prisma ORM 8 PostgreSQL runtime           |
+| 数据库         | PostgreSQL 18                                         |
+| 缓存/实时/队列 | Redis + Pub/Sub + BullMQ                              |
+| 工程           | Node `>=25 <26` + pnpm `11.25.0` + TypeScript `7.0.2` |
 
 ## 目录结构
 

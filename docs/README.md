@@ -1,16 +1,18 @@
-# 项目文档索引
+# 微矩阵 CRM（招生 CRM）项目文档索引
+
+当前项目名称为「微矩阵 CRM（MicroMatrix CRM）」，产品定位为通用招生 CRM，Git 仓库标识为 `micromatrix-crm`。
 
 本文档索引只列出当前代码仍在使用的产品能力、工程规范和运行维护文档。历史实施过程、临时审计及已结束的任务清单不作为当前开发依据；需要追溯时使用 Git 历史。
 
-| 文档 | 用途 |
-| --- | --- |
-| [architecture.md](./architecture.md) | 当前系统架构、业务边界与关键技术决策 |
-| [conventions.md](./conventions.md) | 当前开发约定与新增能力接入规则 |
-| [api.md](./api.md) | Swagger / OpenAPI 使用与鉴权约定 |
-| [external-events.md](./external-events.md) | 外部事件配置、调用、幂等与审计 |
+| 文档                                                       | 用途                                             |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| [architecture.md](./architecture.md)                       | 当前系统架构、业务边界与关键技术决策             |
+| [conventions.md](./conventions.md)                         | 当前开发约定与新增能力接入规则                   |
+| [api.md](./api.md)                                         | Swagger / OpenAPI 使用与鉴权约定                 |
+| [external-events.md](./external-events.md)                 | 外部事件配置、调用、幂等与审计                   |
 | [prisma-migration-policy.md](./prisma-migration-policy.md) | Prisma ORM 8 contract / migration graph 管理规范 |
-| [docker-release.md](./docker-release.md) | Docker 镜像、Migration 与生产 Compose 发布流程 |
-| [specs/README.md](./specs/README.md) | 当前领域需求与设计规格索引 |
+| [docker-release.md](./docker-release.md)                   | Docker 镜像、Migration 与生产 Compose 发布流程   |
+| [specs/README.md](./specs/README.md)                       | 当前领域需求与设计规格索引                       |
 
 ## 当前事实源
 

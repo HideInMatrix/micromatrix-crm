@@ -18,7 +18,7 @@ Form Engine 是当前招生 CRM 的公共元数据能力，负责模块表单、
 
 ## 3. 字段值
 
-- 固定业务列继续保存 tenant、owner、pool、stage、status、索引和资源关联。
+- 固定业务列继续保存 tenant、owner、pool、当前模块明确存在的状态、索引和资源关联；Lead 不再保留固定系统 `stage / status / lastStage` 字段。
 - 普通动态值进入 Field 表；大字段、数组和复杂值进入 FieldBlob。
 - Formula 不保存最终值，按当前字段定义和运行时上下文计算。
 - 动态值读写必须同时校验 tenant、resource、form 与 field 归属。

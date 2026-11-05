@@ -4,21 +4,22 @@
 
 ## 产品主线
 
-| 主题 | 需求 | 设计 |
-| --- | --- | --- |
-| 招生 CRM：线索、客户、公海、转化及产品边界 | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) |
+| 主题                                                   | 需求                                                            | 设计                                                |
+| ------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------- |
+| 招生 CRM：线索、客户、公海、转化及产品边界             | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) |
+| 线索/客户快捷搜索：PC 配置、PC/H5 查询语义与服务端校验 | —                                                               | [design](./module-quick-search.md)                  |
 
 ## 平台领域
 
-| 领域 | 需求 | 设计 |
-| --- | --- | --- |
-| Platform Foundation：组织、成员、RBAC、DataScope、模块配置、个人账号/API Key | [requirements](./platform-foundation/requirements.md) | [design](./platform-foundation/design.md) |
-| Form Engine：ModuleForm、动态字段、Data Source、子表、联动、自定义表单 | [requirements](./form-engine/requirements.md) | [design](./form-engine/design.md) |
-| Follow-up：跟进计划、跟进记录、评论、提醒、计划转记录 | [requirements](./follow-up/requirements.md) | [design](./follow-up/design.md) |
-| Enterprise Platform：企业设置、WeCom/DingTalk/Lark、组织同步、SSO、外部消息 | [requirements](./enterprise-platform/requirements.md) | [design](./enterprise-platform/design.md) |
-| Infrastructure Runtime：Redis、缓存、SSE、协调、BullMQ Worker | [requirements](./infrastructure-runtime/requirements.md) | [design](./infrastructure-runtime/design.md) |
-| Messaging：业务事件、模板/i18n、Notification、公告 | [requirements](./messaging/requirements.md) | [design](./messaging/design.md) |
-| Operation Log：审计、详情 Blob、Retention、清理、客户端 IP | [requirements](./operation-log/requirements.md) | [design](./operation-log/design.md) |
+| 领域                                                                         | 需求                                                     | 设计                                         |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| Platform Foundation：组织、成员、RBAC、DataScope、模块配置、个人账号/API Key | [requirements](./platform-foundation/requirements.md)    | [design](./platform-foundation/design.md)    |
+| Form Engine：ModuleForm、动态字段、Data Source、子表、联动、自定义表单       | [requirements](./form-engine/requirements.md)            | [design](./form-engine/design.md)            |
+| Follow-up：跟进计划、跟进记录、评论、提醒、计划转记录                        | [requirements](./follow-up/requirements.md)              | [design](./follow-up/design.md)              |
+| Enterprise Platform：企业设置、WeCom/DingTalk/Lark、组织同步、SSO、外部消息  | [requirements](./enterprise-platform/requirements.md)    | [design](./enterprise-platform/design.md)    |
+| Infrastructure Runtime：Redis、缓存、SSE、协调、BullMQ Worker                | [requirements](./infrastructure-runtime/requirements.md) | [design](./infrastructure-runtime/design.md) |
+| Messaging：业务事件、模板/i18n、Notification、公告                           | [requirements](./messaging/requirements.md)              | [design](./messaging/design.md)              |
+| Operation Log：审计、详情 Blob、Retention、清理、客户端 IP                   | [requirements](./operation-log/requirements.md)          | [design](./operation-log/design.md)          |
 
 ## 维护规则
 
