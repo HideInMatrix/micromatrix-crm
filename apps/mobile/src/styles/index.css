@@ -162,38 +162,3 @@ html:root {
 .van-picker__confirm {
   color: var(--van-primary-color);
 }
-
-.slide-left-enter-active,
-.slide-left-leave-active,
-.slide-right-enter-active,
-.slide-right-leave-active {
-  position: absolute !important;
-  inset: 0;
-  z-index: 20;
-  width: 100%;
-  min-height: 100%;
-  background: var(--mobile-page-background);
-  transition:
-    transform 0.3s ease,
-    opacity 0.3s ease;
-}
-
-.slide-left-enter-from,
-.slide-right-leave-to {
-  transform: translateX(100%);
-}
-
-.slide-right-enter-from,
-.slide-left-leave-to {
-  transform: translateX(-100%);
-}
-
-.slide-left-leave-to,
-.slide-right-leave-to {
-  opacity: 0.3;
-}
-
-.transition-none-enter-active,
-.transition-none-leave-active {
-  transition: none;
-}

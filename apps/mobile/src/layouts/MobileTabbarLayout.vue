@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { House, Lightbulb, UserRound, Users } from 'lucide-vue-next'
-import { computed, onUnmounted, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MobileHeader from '@/components/MobileHeader.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -12,8 +12,6 @@ const router = useRouter()
 const auth = useAuthStore()
 const searchSelect = useSearchSelectStore()
 const isWeCom = isWeComWorkbenchBrowser()
-const transitionName = ref('transition-none')
-let lastHistoryPosition = router.options.history.state.position ?? 0
 
 const tabs = [
   { name: 'mobile-home', title: '首页', icon: House, path: '/home' },
@@ -43,33 +41,6 @@ const headerTitle = computed(() => {
 })
 const headerBack = computed(() => headerConfig.value?.back === true)
 
-const removeTransitionGuard = router.beforeEach((to, from) => {
-  const toDepth = to.meta.depth ?? 0
-  const fromDepth = from.meta.depth ?? 0
-  const currentHistoryPosition = router.options.history.state.position ?? lastHistoryPosition
-
-  if (toDepth === 1 && fromDepth === 1) {
-    transitionName.value = 'transition-none'
-    return
-  }
-  // 同层级的详情、编辑等路由也需要区分前进与返回。
-  if (currentHistoryPosition < lastHistoryPosition) {
-    transitionName.value = 'slide-right'
-  } else if (currentHistoryPosition > lastHistoryPosition) {
-    transitionName.value = 'slide-left'
-  } else {
-    transitionName.value = toDepth >= fromDepth ? 'slide-left' : 'slide-right'
-  }
-})
-const removeHistoryTracker = router.afterEach(() => {
-  lastHistoryPosition = router.options.history.state.position ?? lastHistoryPosition
-})
-
-onUnmounted(() => {
-  removeTransitionGuard()
-  removeHistoryTracker()
-})
-
 const active = computed({
   get: () => (route.name as string) ?? 'home',
   set: (name: string) => {
@@ -92,16 +63,14 @@ const active = computed({
     />
     <router-view v-slot="{ Component, route: viewRoute }">
       <div class="relative min-h-0 flex-1 overflow-hidden bg-[var(--mobile-page-background)]">
-        <transition :name="transitionName">
-          <keep-alive v-if="viewRoute.meta.depth === 1">
-            <component :is="Component" :key="String(viewRoute.name)" />
-          </keep-alive>
-          <component
-            :is="Component"
-            v-else
-            :key="viewRoute.meta.stableViewKey ? String(viewRoute.name) : viewRoute.fullPath"
-          />
-        </transition>
+        <keep-alive v-if="viewRoute.meta.depth === 1">
+          <component :is="Component" :key="String(viewRoute.name)" />
+        </keep-alive>
+        <component
+          :is="Component"
+          v-else
+          :key="viewRoute.meta.stableViewKey ? String(viewRoute.name) : viewRoute.fullPath"
+        />
       </div>
     </router-view>
     <van-tabbar
