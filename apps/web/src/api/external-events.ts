@@ -13,6 +13,8 @@ export interface ExternalEventPreviewVO {
   action: string
   customerOwnerId?: string | null
   leadPoolId?: string | null
+  /** Base Clue columns written by the lead-create action. */
+  systemFieldUpdates?: { contact?: string; phone?: string }
   fieldUpdates: Record<string, unknown>
   note: string
 }

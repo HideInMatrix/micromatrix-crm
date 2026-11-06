@@ -1,3 +1,5 @@
+import type { FieldVO } from './metadata'
+
 /** External integrations expose a fixed set of CRM business actions; no user-supplied scripts. */
 export type ExternalEventUserProvider = 'CRM' | 'WECOM' | 'DINGTALK' | 'LARK'
 
@@ -7,8 +9,32 @@ export type ExternalEventUserProvider = 'CRM' | 'WECOM' | 'DINGTALK' | 'LARK'
 export type ExternalEventTarget = 'lead' | 'customer'
 /** `upsertCustomer` is a persisted compatibility key for payment sync; it never creates records. */
 export type ExternalEventAction = 'update' | 'convert' | 'create' | 'upsertCustomer'
+/** Reserved mapping targets for system columns on newly-created leads. */
+export const EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY = 'contact'
+export const EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY = 'phone'
 /** Reserved mapping target used to route newly-created leads into a pool. */
 export const EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY = '__leadPool'
+
+/**
+ * The mapping picker and server validator must derive writable targets from the
+ * current module form. Internal business columns are never exposed as ordinary
+ * mappings; name/owner and lead-pool routing keep their dedicated workflows.
+ */
+export function externalEventWritableFormFields(
+  fields: readonly FieldVO[],
+  action: ExternalEventAction,
+  target: ExternalEventTarget,
+): FieldVO[] {
+  return fields.filter((field) => {
+    if (field.hidden || ['formula', 'sub_product'].includes(field.type)) return false
+    if (!field.system) return true
+    if (action !== 'create' || target !== 'lead') return false
+    return (
+      (field.key === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY && field.type === 'text') ||
+      (field.key === EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY && field.type === 'phone')
+    )
+  })
+}
 
 export interface ExternalEventFlow {
   target: ExternalEventTarget
@@ -16,7 +42,7 @@ export interface ExternalEventFlow {
   fields: Array<{
     source: 'event' | 'leadOwner'
     externalKey: string
-    /** Dynamic field key, or EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY for lead-pool routing. */
+    /** Dynamic field key; lead-create may also target contact/phone system columns or EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY. */
     fieldKey: string
     provider?: ExternalEventUserProvider
     /** Optional external enum/value translation before CRM field validation. */

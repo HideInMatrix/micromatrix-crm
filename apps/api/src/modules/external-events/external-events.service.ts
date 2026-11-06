@@ -297,7 +297,7 @@ export class ExternalEventsService {
       return this.executePaymentSync(user, template, data, inboxId, requestHash, audit)
     }
     const plan = await this.templates.prepareFlow(user, template, data)
-    const { flow, resolved, set, ownerId, poolId } = plan
+    const { flow, resolved, set, systemFieldUpdates, ownerId, poolId } = plan
     const commit = (
       tx: PrismaTransaction,
       type: 'LEAD' | 'CUSTOMER',
@@ -385,6 +385,8 @@ export class ExternalEventsService {
       }
       const prepared = await this.leads.prepareExternalLeadCreation(user, {
         name: plan.name!,
+        contactName: systemFieldUpdates.contact,
+        phone: systemFieldUpdates.phone,
         ownerId: ownerId ?? undefined,
         customData: set,
         ...(poolId ? { toPool: true, poolId } : {}),
@@ -439,11 +441,12 @@ export class ExternalEventsService {
           customerId,
           plan.set,
         )
-        const updated = await this.customers.applyPreparedExternalEventDynamicFieldUpdateInTransaction(
-          user,
-          prepared,
-          tx,
-        )
+        const updated =
+          await this.customers.applyPreparedExternalEventDynamicFieldUpdateInTransaction(
+            user,
+            prepared,
+            tx,
+          )
         const inbox = await this.markSuccessInTransaction(tx, {
           inboxId,
           requestHash,

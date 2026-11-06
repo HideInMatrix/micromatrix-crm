@@ -17,7 +17,10 @@ import type {
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
 import {
+  EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY,
+  EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY,
   EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+  externalEventWritableFormFields,
   filterOpsForType,
   hasPermission,
 } from '@micromatrix/shared'
@@ -39,6 +42,15 @@ function validKey(key: unknown): key is string {
 function requireKey(key: unknown, description: string) {
   if (!validKey(key))
     throw new BadRequestException(`${description} 只能包含字母、数字和下划线，且以字母开头`)
+}
+
+function isEmptyExternalValue(value: unknown) {
+  return (
+    value === undefined ||
+    value === null ||
+    value === '' ||
+    (Array.isArray(value) && value.length === 0)
+  )
 }
 
 @Injectable()
@@ -217,12 +229,13 @@ export class ExternalEventTemplatesService {
       config.matches.length > 10 ||
       (!['create', 'upsertCustomer'].includes(flow.action) && config.matches.length === 0)
     ) {
-      throw new BadRequestException('资源定位需要 1～10 个字段；创建和缴费成功同步使用各自的定位配置')
+      throw new BadRequestException(
+        '资源定位需要 1～10 个字段；创建和缴费成功同步使用各自的定位配置',
+      )
     }
 
-    const target = flow.action === 'convert' || flow.action === 'upsertCustomer'
-      ? 'customer'
-      : flow.target
+    const target =
+      flow.action === 'convert' || flow.action === 'upsertCustomer' ? 'customer' : flow.target
     const [lookupFields, targetFields, customerFields, leadFields] = await Promise.all([
       this.metadata.listFields(user.tenantId, flow.target),
       this.metadata.listFields(user.tenantId, target),
@@ -241,10 +254,13 @@ export class ExternalEventTemplatesService {
       if (identity.phoneExternalKey === flow.nameExternalKey)
         throw new BadRequestException('姓名和手机号不能使用同一个外部参数')
       const customerPhone = customerFields.find(
-        (field) => field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
+        (field) =>
+          field.key === identity.customerPhoneFieldKey ||
+          field.id === identity.customerPhoneFieldKey,
       )
       const leadPhone = leadFields.find(
-        (field) => field.key === identity.leadPhoneFieldKey || field.id === identity.leadPhoneFieldKey,
+        (field) =>
+          field.key === identity.leadPhoneFieldKey || field.id === identity.leadPhoneFieldKey,
       )
       if (
         !customerPhone ||
@@ -263,7 +279,10 @@ export class ExternalEventTemplatesService {
       ) {
         throw new BadRequestException('线索手机号必须映射到可精确匹配的手机号或文本字段')
       }
-      if (flow.owner) throw new BadRequestException('缴费成功同步不支持指定新负责人；客户保留原负责人，线索转化继承原负责人')
+      if (flow.owner)
+        throw new BadRequestException(
+          '缴费成功同步不支持指定新负责人；客户保留原负责人，线索转化继承原负责人',
+        )
     }
 
     const knownMatch = new Set([
@@ -287,9 +306,14 @@ export class ExternalEventTemplatesService {
       throw new BadRequestException('字段映射不能超过 30 个')
     if (['update', 'upsertCustomer'].includes(flow.action) && !flow.fields.length)
       throw new BadRequestException('字段更新至少需要一个映射')
+    const formWritableFields = externalEventWritableFormFields(
+      targetFields,
+      flow.action,
+      flow.target,
+    )
     const writable = new Map(
-      targetFields
-        .filter((field) => !field.hidden && !field.system && !['formula', 'sub_product'].includes(field.type))
+      formWritableFields
+        .filter((field) => !field.system)
         .flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
     )
     const targets = new Set<string>()
@@ -299,6 +323,35 @@ export class ExternalEventTemplatesService {
       if (item.source === 'event') requireKey(item.externalKey, '映射来源字段')
       if (item.source === 'leadOwner' && flow.action !== 'convert')
         throw new BadRequestException('原线索负责人只能用于线索转化动作')
+
+      if (
+        flow.action === 'create' &&
+        flow.target === 'lead' &&
+        [EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY, EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY].includes(
+          item.fieldKey as
+            | typeof EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY
+            | typeof EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY,
+        )
+      ) {
+        if (item.source !== 'event')
+          throw new BadRequestException('联系人和电话系统字段必须来自外部事件参数')
+        if (
+          (item.provider !== undefined && item.provider !== null) ||
+          (item.valueMap !== undefined &&
+            (!Array.isArray(item.valueMap) || item.valueMap.length > 0))
+        ) {
+          throw new BadRequestException('联系人和电话系统字段不支持成员身份或选项值映射')
+        }
+        const field = formWritableFields.find((candidate) => candidate.key === item.fieldKey)
+        const expectedType =
+          item.fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY ? 'text' : 'phone'
+        if (!field || field.hidden || !field.system || field.type !== expectedType)
+          throw new BadRequestException(`线索系统字段不可用：${item.fieldKey}`)
+        if (targets.has(field.key))
+          throw new BadRequestException(`线索系统字段重复映射：${field.label}`)
+        targets.add(field.key)
+        continue
+      }
 
       if (item.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY) {
         if (flow.action !== 'create' || flow.target !== 'lead' || item.source !== 'event')
@@ -329,7 +382,10 @@ export class ExternalEventTemplatesService {
       if (targets.has(field.key)) throw new BadRequestException('目标字段重复映射')
       if (item.source === 'leadOwner' && field.type !== 'member')
         throw new BadRequestException('原线索负责人只能写入成员类型字段')
-      if (item.provider && (!PROVIDERS.includes(item.provider) || field.type !== 'member' || item.source !== 'event'))
+      if (
+        item.provider &&
+        (!PROVIDERS.includes(item.provider) || field.type !== 'member' || item.source !== 'event')
+      )
         throw new BadRequestException('只有外部成员字段支持身份来源选择')
       if (item.valueMap !== undefined) {
         if (!Array.isArray(item.valueMap) || item.valueMap.length > 100)
@@ -350,25 +406,38 @@ export class ExternalEventTemplatesService {
       targets.add(field.key)
     }
 
+    if (flow.action === 'create' && flow.target === 'lead') {
+      for (const fieldKey of [
+        EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY,
+        EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY,
+      ]) {
+        const field = targetFields.find((candidate) => candidate.key === fieldKey)
+        if (field?.required && !targets.has(field.key)) {
+          throw new BadRequestException(
+            `线索表单中的「${field.label}」为必填字段，请配置对应的外部事件映射`,
+          )
+        }
+      }
+    }
+
     const poolMapping = flow.fields.find(
       (item) => item.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
     )
     if (flow.owner && poolMapping && flow.owner.externalKey === poolMapping.externalKey) {
       throw new BadRequestException('负责人身份参数与线索池参数不能使用同一个外部字段')
     }
-    if (
-      flow.action === 'create' &&
-      flow.target === 'lead' &&
-      flow.owner &&
-      !poolMapping
-    ) {
-      throw new BadRequestException('配置了外部负责人时，必须增加「线索池」字段映射，用于负责人无法匹配时确定线索归属')
+    if (flow.action === 'create' && flow.target === 'lead' && flow.owner && !poolMapping) {
+      throw new BadRequestException(
+        '配置了外部负责人时，必须增加「线索池」字段映射，用于负责人无法匹配时确定线索归属',
+      )
     }
 
     if (flow.action === 'upsertCustomer') {
       const identity = flow.identity!
       const customerPhone = customerFields.find(
-        (field) => field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
+        (field) =>
+          field.key === identity.customerPhoneFieldKey ||
+          field.id === identity.customerPhoneFieldKey,
       )!
       const phoneMapping = flow.fields.find(
         (item) =>
@@ -478,7 +547,8 @@ export class ExternalEventTemplatesService {
 
     const customerFields = await this.metadata.listFields(user.tenantId, 'customer')
     const customerPhoneField = customerFields.find(
-      (field) => field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
+      (field) =>
+        field.key === identity.customerPhoneFieldKey || field.id === identity.customerPhoneFieldKey,
     )
     if (
       !customerPhoneField ||
@@ -489,18 +559,30 @@ export class ExternalEventTemplatesService {
       throw new BadRequestException('客户手机号匹配字段已失效，请重新配置外部事件')
     }
     const memberTargets = new Set(
-      customerFields.filter((field) => field.type === 'member').flatMap((field) => [field.id, field.key]),
+      customerFields
+        .filter((field) => field.type === 'member')
+        .flatMap((field) => [field.id, field.key]),
     )
     const fieldMap = new Map(
-      customerFields.flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
+      externalEventWritableFormFields(customerFields, flow.action, flow.target).flatMap((field) => [
+        [field.id, field] as const,
+        [field.key, field] as const,
+      ]),
     )
     const set: Record<string, unknown> = {}
     for (const mapping of flow.fields) {
       if (mapping.source !== 'event')
         throw new BadRequestException('缴费成功同步的客户字段映射必须来自外部事件参数')
-      const value = requireData(mapping.externalKey)
       const field = fieldMap.get(mapping.fieldKey)
-      if (!field) throw new BadRequestException(`客户字段不存在：${mapping.fieldKey}`)
+      if (!field) throw new BadRequestException(`客户表单字段已失效或不可写：${mapping.fieldKey}`)
+      const value = data[mapping.externalKey]
+      if (isEmptyExternalValue(value)) {
+        if (field.required)
+          throw new BadRequestException(
+            `缺少外部事件参数：${mapping.externalKey}（${field.label}为必填项）`,
+          )
+        continue
+      }
       const normalizedValue =
         mapping.externalKey === identity.phoneExternalKey && field.key === customerPhoneField.key
           ? phone
@@ -515,7 +597,8 @@ export class ExternalEventTemplatesService {
       flow,
       resolved,
       set: normalizedSet,
-      // Keep the common prepared-flow shape stable; payment sync never assigns a new owner or lead pool.
+      // Keep the common prepared-flow shape stable; payment sync never assigns a new owner, lead pool or lead system fields.
+      systemFieldUpdates: {} as { contact?: string; phone?: string },
       ownerId: null,
       poolId: null,
       name,
@@ -565,11 +648,18 @@ export class ExternalEventTemplatesService {
         .flatMap((field) => [field.id, field.key]),
     )
     const fieldMap = new Map(
-      targetFields.flatMap((field) => [[field.id, field] as const, [field.key, field] as const]),
+      externalEventWritableFormFields(targetFields, flow.action, flow.target).flatMap((field) =>
+        field.system
+          ? [[field.key, field] as const]
+          : [[field.id, field] as const, [field.key, field] as const],
+      ),
     )
     const set: Record<string, unknown> = {}
+    const systemFieldUpdates: { contact?: string; phone?: string } = {}
     for (const mapping of flow.fields) {
       if (mapping.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY) continue
+      if (!fieldMap.has(mapping.fieldKey))
+        throw new BadRequestException(`目标表单字段已失效或不可写：${mapping.fieldKey}`)
       if (mapping.source === 'leadOwner') {
         if (!resolved || resolved.kind !== 'LEAD')
           throw new BadRequestException('原线索负责人不存在')
@@ -577,11 +667,54 @@ export class ExternalEventTemplatesService {
         // misattribute the event-mapped new owner as the historical inviter.
         if (resolved.ownerId) set[mapping.fieldKey] = resolved.ownerId
       } else {
-        const value = requireData(mapping.externalKey)
+        const field = fieldMap.get(mapping.fieldKey)
+        if (!field) throw new BadRequestException(`字段不存在：${mapping.fieldKey}`)
+        const value = data[mapping.externalKey]
+        if (
+          flow.action === 'create' &&
+          flow.target === 'lead' &&
+          (mapping.fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY ||
+            mapping.fieldKey === EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY)
+        ) {
+          if (isEmptyExternalValue(value)) {
+            if (field.required)
+              throw new BadRequestException(
+                `缺少外部事件参数：${mapping.externalKey}（${field.label}为必填项）`,
+              )
+            continue
+          }
+          if (typeof value !== 'string')
+            throw new BadRequestException(
+              `外部事件参数 ${mapping.externalKey}（${field.label}）必须是字符串`,
+            )
+          const normalizedValue = value.trim()
+          if (!normalizedValue) {
+            if (field.required)
+              throw new BadRequestException(
+                `缺少外部事件参数：${mapping.externalKey}（${field.label}为必填项）`,
+              )
+            continue
+          }
+          const maxLength = mapping.fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY ? 255 : 30
+          if (normalizedValue.length > maxLength)
+            throw new BadRequestException(
+              `外部事件参数 ${mapping.externalKey}（${field.label}）不能超过 ${maxLength} 个字符`,
+            )
+          if (mapping.fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY)
+            systemFieldUpdates.contact = normalizedValue
+          else systemFieldUpdates.phone = normalizedValue
+          continue
+        }
+        if (isEmptyExternalValue(value)) {
+          if (field.required)
+            throw new BadRequestException(
+              `缺少外部事件参数：${mapping.externalKey}（${field.label}为必填项）`,
+            )
+          continue
+        }
         const provider =
           mapping.provider ??
           (mapping.externalKey === flow.owner?.externalKey ? flow.owner.provider : 'CRM')
-        const field = fieldMap.get(mapping.fieldKey)
         set[mapping.fieldKey] = memberTargets.has(mapping.fieldKey)
           ? await this.resolveMember(user, value, provider)
           : this.mapExternalFieldValue(value, mapping, field)
@@ -598,9 +731,15 @@ export class ExternalEventTemplatesService {
     let poolId: string | null = null
     if (flow.action === 'create' && flow.target === 'lead' && !ownerId && poolMapping) {
       const externalPoolValue = data[poolMapping.externalKey]
-      if (externalPoolValue === undefined || externalPoolValue === null || externalPoolValue === '') {
+      if (
+        externalPoolValue === undefined ||
+        externalPoolValue === null ||
+        externalPoolValue === ''
+      ) {
         const reason = flow.owner ? '负责人无法匹配' : '未指定线索负责人'
-        throw new BadRequestException(`${reason}，且缺少用于确定线索池的外部参数：${poolMapping.externalKey}`)
+        throw new BadRequestException(
+          `${reason}，且缺少用于确定线索池的外部参数：${poolMapping.externalKey}`,
+        )
       }
       poolId = this.resolveMappedLeadPool(externalPoolValue, poolMapping)
     }
@@ -617,6 +756,7 @@ export class ExternalEventTemplatesService {
       flow,
       resolved,
       set,
+      systemFieldUpdates,
       ownerId,
       poolId,
       name: rawName as string | null,
@@ -763,14 +903,13 @@ export class ExternalEventTemplatesService {
     return active?.id ?? null
   }
 
-  private resolveMappedLeadPool(
-    value: unknown,
-    mapping: ExternalEventFlow['fields'][number],
-  ) {
+  private resolveMappedLeadPool(value: unknown, mapping: ExternalEventFlow['fields'][number]) {
     if (typeof value !== 'string' && typeof value !== 'number') {
       throw new BadRequestException(`外部字段 ${mapping.externalKey} 必须提供有效的线索池选项值`)
     }
-    const lookup = new Map((mapping.valueMap ?? []).map((item) => [item.externalValue, item.crmValue]))
+    const lookup = new Map(
+      (mapping.valueMap ?? []).map((item) => [item.externalValue, item.crmValue]),
+    )
     const mapped = lookup.get(String(value))
     if (!mapped) {
       throw new BadRequestException(
@@ -837,7 +976,7 @@ export class ExternalEventTemplatesService {
     const template = await this.get(user, id)
     if (template.config.flow) {
       const plan = await this.prepareFlow(user, template, data)
-      const { flow, resolved, set, ownerId } = plan
+      const { flow, resolved, set, systemFieldUpdates, ownerId } = plan
       if (flow.action === 'upsertCustomer') {
         if (resolved?.kind === 'CUSTOMER') {
           const prepared = await this.customers.prepareExternalEventDynamicFieldUpdate(
@@ -918,6 +1057,8 @@ export class ExternalEventTemplatesService {
         else
           await this.leads.prepareExternalLeadCreation(user, {
             name: plan.name!,
+            contactName: systemFieldUpdates.contact,
+            phone: systemFieldUpdates.phone,
             customData: set,
             ownerId: ownerId ?? undefined,
             ...(plan.poolId ? { toPool: true, poolId: plan.poolId } : {}),
@@ -931,6 +1072,7 @@ export class ExternalEventTemplatesService {
         customerOwnerId: ownerId,
         leadPoolId: plan.poolId ?? null,
         fieldUpdates: set,
+        ...(Object.keys(systemFieldUpdates).length ? { systemFieldUpdates } : {}),
         note: plan.poolId
           ? flow.owner
             ? '负责人未能匹配到有效 CRM 成员，已根据外部线索池参数映射到目标线索池；未写入数据。'

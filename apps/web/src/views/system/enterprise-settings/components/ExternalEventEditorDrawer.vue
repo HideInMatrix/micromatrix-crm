@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY } from '@micromatrix/shared'
+import {
+  EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY,
+  EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY,
+  EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+  externalEventWritableFormFields,
+} from '@micromatrix/shared'
 import type {
   ExternalEventTemplateInput,
   ExternalEventTemplateVO,
@@ -73,14 +78,16 @@ const customerPhoneFields = computed(() =>
     (field) =>
       !field.hidden &&
       !field.system &&
-      (field.type === 'phone' || (field.type === 'text' && /手机|电话|phone/i.test(field.label + field.key))),
+      (field.type === 'phone' ||
+        (field.type === 'text' && /手机|电话|phone/i.test(field.label + field.key))),
   ),
 )
 const leadPhoneFields = computed(() =>
   leadFields.value.filter(
     (field) =>
       !field.hidden &&
-      (field.type === 'phone' || (field.type === 'text' && /手机|电话|phone/i.test(field.label + field.key))),
+      (field.type === 'phone' ||
+        (field.type === 'text' && /手机|电话|phone/i.test(field.label + field.key))),
   ),
 )
 const lookupFields = computed(() =>
@@ -94,8 +101,21 @@ const lookupFields = computed(() =>
   ),
 )
 const writable = computed(() =>
-  mappingFields.value.filter(
-    (f) => !f.hidden && !f.system && !['formula', 'sub_product'].includes(f.type),
+  externalEventWritableFormFields(mappingFields.value, flow.value.action, flow.value.target),
+)
+const mappingModuleLabel = computed(() =>
+  flow.value.action === 'convert' || upserting.value || flow.value.target === 'customer'
+    ? '客户'
+    : '线索',
+)
+const outdatedMappings = computed(() =>
+  flow.value.fields.filter(
+    (mapping) =>
+      mapping.fieldKey &&
+      mapping.fieldKey !== EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY &&
+      !writable.value.some(
+        (field) => field.key === mapping.fieldKey || field.id === mapping.fieldKey,
+      ),
   ),
 )
 const ownerEnabled = computed({
@@ -121,7 +141,9 @@ function changeAction(action: ExternalEventFlow['action']) {
     flow.value.identity = {
       phoneExternalKey: flow.value.identity?.phoneExternalKey || 'phone',
       customerPhoneFieldKey:
-        customerPhoneFields.value.find((field) => field.key === flow.value.identity?.customerPhoneFieldKey)?.key ??
+        customerPhoneFields.value.find(
+          (field) => field.key === flow.value.identity?.customerPhoneFieldKey,
+        )?.key ??
         customerPhoneFields.value[0]?.key ??
         '',
       leadPhoneFieldKey: flow.value.identity?.leadPhoneFieldKey || 'phone',
@@ -129,10 +151,12 @@ function changeAction(action: ExternalEventFlow['action']) {
     form.config.matches = []
   }
   if (['update', 'convert'].includes(action) && form.config.matches.length === 0) {
-    form.config.matches = [{
-      externalKey: 'phone',
-      crmFieldKey: flow.value.target === 'lead' ? 'phone' : 'cf_phone',
-    }]
+    form.config.matches = [
+      {
+        externalKey: 'phone',
+        crmFieldKey: flow.value.target === 'lead' ? 'phone' : 'cf_phone',
+      },
+    ]
   }
 }
 function addMatch() {
@@ -159,9 +183,12 @@ function sample() {
     for (const m of form.config.matches)
       if (m.externalKey)
         data[m.externalKey] = /phone/i.test(m.externalKey) ? '13800000000' : 'EXAMPLE_VALUE'
-  for (const m of flow.value.fields)
-    if (m.source === 'event' && m.externalKey)
-      data[m.externalKey] = m.valueMap?.[0]?.externalValue || 'EXAMPLE_VALUE'
+  for (const m of flow.value.fields) {
+    if (m.source !== 'event' || !m.externalKey) continue
+    if (m.fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY) data[m.externalKey] = '张女士'
+    else if (m.fieldKey === EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY) data[m.externalKey] = '13800000000'
+    else data[m.externalKey] = m.valueMap?.[0]?.externalValue || 'EXAMPLE_VALUE'
+  }
   if (needsName.value && flow.value.nameExternalKey) data[flow.value.nameExternalKey] = '张三'
   if (upserting.value && flow.value.identity?.phoneExternalKey)
     data[flow.value.identity.phoneExternalKey] = '13800000000'
@@ -219,7 +246,8 @@ watch(visible, async (open) => {
   if (flow.value.action === 'upsertCustomer') {
     flow.value.identity ??= {
       phoneExternalKey: 'phone',
-      customerPhoneFieldKey: customerPhoneFields.value.find((field) => field.type === 'phone')?.key ?? '',
+      customerPhoneFieldKey:
+        customerPhoneFields.value.find((field) => field.type === 'phone')?.key ?? '',
       leadPhoneFieldKey: leadPhoneFields.value.find((field) => field.type === 'phone')?.key ?? '',
     }
   }
@@ -524,37 +552,62 @@ async function preview() {
             :closable="false"
             title="单动作模式保留兼容；需要根据查询结果执行不同动作时，选择「缴费成功同步」。"
           />
-          <div v-if="upserting" class="max-w-[900px] rounded-lg bg-[var(--el-fill-color-lighter)] p-4">
+          <div
+            v-if="upserting"
+            class="max-w-[900px] rounded-lg bg-[var(--el-fill-color-lighter)] p-4"
+          >
             <div class="flex justify-center">
-              <div class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] px-5 py-2 text-sm font-medium">
+              <div
+                class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] px-5 py-2 text-sm font-medium"
+              >
                 接收外部事件
               </div>
             </div>
             <div class="py-2 text-center text-[var(--el-text-color-secondary)]">↓</div>
             <div class="flex justify-center">
-              <div class="rounded-md border border-[var(--el-color-primary-light-5)] bg-[var(--el-color-primary-light-9)] px-5 py-2 text-sm font-medium">
+              <div
+                class="rounded-md border border-[var(--el-color-primary-light-5)] bg-[var(--el-color-primary-light-9)] px-5 py-2 text-sm font-medium"
+              >
                 同时匹配客户与线索：学生姓名 + 手机号
               </div>
             </div>
-            <div class="py-2 text-center text-[var(--el-text-color-secondary)]">↙ 命中 / 未命中 ↘</div>
+            <div class="py-2 text-center text-[var(--el-text-color-secondary)]">
+              ↙ 命中 / 未命中 ↘
+            </div>
             <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div class="rounded-md border border-[var(--el-color-success-light-5)] bg-[var(--el-bg-color)] p-3">
+              <div
+                class="rounded-md border border-[var(--el-color-success-light-5)] bg-[var(--el-bg-color)] p-3"
+              >
                 <div class="mb-1 text-xs text-[var(--el-color-success)]">客户已存在</div>
                 <div class="font-semibold">更新客户字段</div>
-                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">保留原负责人；完结规则命中时自动移出客户公海</div>
+                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+                  保留原负责人；完结规则命中时自动移出客户公海
+                </div>
               </div>
-              <div class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-3">
+              <div
+                class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-3"
+              >
                 <div class="mb-1 text-xs text-[var(--el-color-warning)]">客户未命中 · 线索命中</div>
                 <div class="font-semibold">线索转化为客户</div>
-                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">迁移跟进资料并继承原负责人；无负责人时保持为空</div>
+                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+                  迁移跟进资料并继承原负责人；无负责人时保持为空
+                </div>
               </div>
-              <div class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-3">
-                <div class="mb-1 text-xs text-[var(--el-text-color-secondary)]">客户、线索均未命中</div>
+              <div
+                class="rounded-md border border-[var(--el-border-color)] bg-[var(--el-bg-color)] p-3"
+              >
+                <div class="mb-1 text-xs text-[var(--el-text-color-secondary)]">
+                  客户、线索均未命中
+                </div>
                 <div class="font-semibold">不执行写入</div>
-                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">返回 PAYMENT_TARGET_NOT_FOUND，不创建客户</div>
+                <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+                  返回 PAYMENT_TARGET_NOT_FOUND，不创建客户
+                </div>
               </div>
             </div>
-            <div class="mt-3 rounded-md border border-dashed border-[var(--el-color-primary-light-5)] px-3 py-2 text-center text-xs text-[var(--el-text-color-secondary)]">
+            <div
+              class="mt-3 rounded-md border border-dashed border-[var(--el-color-primary-light-5)] px-3 py-2 text-center text-xs text-[var(--el-text-color-secondary)]"
+            >
               两个命中分支共用下方客户动态字段映射；选项字段支持外部值转换为 CRM 选项值
             </div>
             <el-alert
@@ -569,10 +622,22 @@ async function preview() {
           <el-alert
             type="info"
             :closable="false"
-            :title="upserting ? '客户更新和线索转客户共用同一套客户自定义字段映射；单选、多选等选项可配置外部值到 CRM 选项值的转换。' : '仅展示目标动作允许写入的字段；系统负责人使用单独的身份映射。'"
+            :title="`目标字段实时读取${mappingModuleLabel}表单配置，仅展示当前动作允许写入的字段；名称、负责人及线索池使用各自专用配置。`"
+          />
+          <el-alert
+            v-if="outdatedMappings.length"
+            type="warning"
+            :closable="false"
+            title="有字段映射已不在当前表单可写范围内（可能被删除、隐藏或更改类型），请重新选择后保存。"
           />
           <el-form v-if="needsName" label-position="top" class="max-w-[440px]">
-            <el-form-item :label="upserting ? '学生姓名来自哪个外部参数（同时用于身份匹配）' : '创建记录的名称来自哪个外部参数'">
+            <el-form-item
+              :label="
+                upserting
+                  ? '学生姓名来自哪个外部参数（同时用于身份匹配）'
+                  : '创建记录的名称来自哪个外部参数'
+              "
+            >
               <el-input v-model="flow.nameExternalKey" placeholder="例如 studentName" />
             </el-form-item>
           </el-form>
@@ -582,19 +647,23 @@ async function preview() {
             class="flex flex-col gap-3 rounded-md border border-[var(--el-border-color-lighter)] p-3"
           >
             <div class="flex flex-wrap items-center gap-2">
-              <el-select
-                v-model="m.source"
-                class="!w-[148px]"
-                @change="changeMappingSource(m)"
-              >
+              <el-select v-model="m.source" class="!w-[148px]" @change="changeMappingSource(m)">
                 <el-option label="外部事件参数" value="event" />
-                <el-option v-if="flow.action === 'convert' && !upserting" label="原线索负责人" value="leadOwner" />
+                <el-option
+                  v-if="flow.action === 'convert' && !upserting"
+                  label="原线索负责人"
+                  value="leadOwner"
+                />
               </el-select>
               <el-input
                 v-if="m.source === 'event'"
                 v-model="m.externalKey"
                 class="!w-[185px]"
-                :placeholder="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '外部参数名，例如 pool' : '外部参数名'"
+                :placeholder="
+                  m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY
+                    ? '外部参数名，例如 pool'
+                    : '外部参数名'
+                "
               />
               <span v-else class="w-[185px] text-xs">Clue.owner</span>
               <span>→</span>
@@ -605,17 +674,25 @@ async function preview() {
                 placeholder="目标字段"
                 @change="changeMappingTarget(m)"
               >
-                <el-option
+                <el-option-group :label="`${mappingModuleLabel}表单字段`">
+                  <el-option
+                    v-for="f in writable.filter(
+                      (x) => m.source !== 'leadOwner' || x.type === 'member',
+                    )"
+                    :key="f.id"
+                    :value="f.key"
+                    :label="f.label + (f.required ? '（必填）' : '') + '（' + f.key + '）'"
+                  />
+                </el-option-group>
+                <el-option-group
                   v-if="creating && flow.target === 'lead' && m.source === 'event'"
-                  label="线索池（负责人未匹配时分配）"
-                  :value="EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY"
-                />
-                <el-option
-                  v-for="f in writable.filter((x) => m.source !== 'leadOwner' || x.type === 'member')"
-                  :key="f.id"
-                  :value="f.key"
-                  :label="f.label + '（' + f.key + '）'"
-                />
+                  label="线索池专用路由（非表单字段）"
+                >
+                  <el-option
+                    label="线索池（负责人未匹配时分配）"
+                    :value="EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY"
+                  />
+                </el-option-group>
               </el-select>
               <el-select
                 v-if="
@@ -652,7 +729,8 @@ async function preview() {
                 v-if="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY"
                 class="mb-2 text-xs text-[var(--el-text-color-secondary)]"
               >
-                负责人匹配成功时仍分配给该成员；只有负责人无法匹配时，才使用这里映射的线索池。未配置负责人时，则直接按此映射选择线索池。所选线索池必须对 API Key 所属账号可访问。
+                负责人匹配成功时仍分配给该成员；只有负责人无法匹配时，才使用这里映射的线索池。未配置负责人时，则直接按此映射选择线索池。所选线索池必须对
+                API Key 所属账号可访问。
               </p>
               <div
                 v-for="(valueMapping, mapIndex) in m.valueMap ?? []"
@@ -662,13 +740,19 @@ async function preview() {
                 <el-input
                   v-model="valueMapping.externalValue"
                   class="w-full min-w-0"
-                  :placeholder="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '外部值，例如 1' : '外部值，例如 PAID'"
+                  :placeholder="
+                    m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY
+                      ? '外部值，例如 1'
+                      : '外部值，例如 PAID'
+                  "
                 />
                 <span class="text-center">→</span>
                 <el-select
                   v-model="valueMapping.crmValue"
                   class="w-full min-w-0"
-                  :placeholder="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '选择线索池' : 'CRM 选项值'"
+                  :placeholder="
+                    m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY ? '选择线索池' : 'CRM 选项值'
+                  "
                 >
                   <template v-if="m.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY">
                     <el-option
@@ -680,7 +764,8 @@ async function preview() {
                   </template>
                   <template v-else>
                     <el-option
-                      v-for="option in writable.find((field) => field.key === m.fieldKey)?.options ?? []"
+                      v-for="option in writable.find((field) => field.key === m.fieldKey)
+                        ?.options ?? []"
                       :key="option.value"
                       :value="option.value"
                       :label="option.label + '（' + option.value + '）'"
@@ -769,7 +854,15 @@ async function preview() {
             }}</el-descriptions-item>
             <el-descriptions-item label="动作">{{ previewResult.action }}</el-descriptions-item>
             <el-descriptions-item v-if="previewResult.leadPoolId" label="新线索归属">
-              {{ leadPools.find((pool) => pool.id === previewResult?.leadPoolId)?.name ?? previewResult.leadPoolId }}
+              {{
+                leadPools.find((pool) => pool.id === previewResult?.leadPoolId)?.name ??
+                previewResult.leadPoolId
+              }}
+            </el-descriptions-item>
+            <el-descriptions-item v-if="previewResult.systemFieldUpdates" label="线索系统字段">
+              <pre class="m-0 whitespace-pre-wrap text-xs">{{
+                JSON.stringify(previewResult.systemFieldUpdates, null, 2)
+              }}</pre>
             </el-descriptions-item>
             <el-descriptions-item v-if="previewResult.releasedFromPool" label="公海处理">
               完结规则命中后移出客户公海

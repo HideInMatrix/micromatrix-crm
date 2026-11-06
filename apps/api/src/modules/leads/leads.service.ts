@@ -829,18 +829,38 @@ export class LeadsService {
     this.assertFunctionalPermission(user, 'lead:create', '缺少新建线索权限')
     if (!dto.name || typeof dto.name !== 'string' || !dto.name.trim() || dto.name.length > 100)
       throw new BadRequestException('线索名称不合法')
-    const targetPool = dto.toPool
-      ? await this.pools.resolveTargetPool(user, 'lead', dto.poolId)
+    if (
+      dto.contactName !== undefined &&
+      (typeof dto.contactName !== 'string' || dto.contactName.length > 255)
+    )
+      throw new BadRequestException('联系人名称必须是 255 个字符以内的字符串')
+    if (dto.phone !== undefined && (typeof dto.phone !== 'string' || dto.phone.length > 30))
+      throw new BadRequestException('联系人电话必须是 30 个字符以内的字符串')
+    const normalizedDto: LeadCreateInput = {
+      ...dto,
+      contactName: dto.contactName?.trim() || undefined,
+      phone: dto.phone?.trim() || undefined,
+    }
+    const targetPool = normalizedDto.toPool
+      ? await this.pools.resolveTargetPool(user, 'lead', normalizedDto.poolId)
       : null
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
-    await this.assertLeadSystemUniqueRules(user.tenantId, { name: dto.name }, uniqueScope)
-    await this.fieldValues.validate(user.tenantId, 'clue', dto.customData ?? {}, {
+    await this.assertLeadSystemUniqueRules(
+      user.tenantId,
+      {
+        name: normalizedDto.name,
+        contactName: normalizedDto.contactName,
+        phone: normalizedDto.phone,
+      },
+      uniqueScope,
+    )
+    await this.fieldValues.validate(user.tenantId, 'clue', normalizedDto.customData ?? {}, {
       mode: 'create',
       uniqueScope,
     })
-    const owner = targetPool ? null : await this.resolveOwner(user, dto.ownerId)
+    const owner = targetPool ? null : await this.resolveOwner(user, normalizedDto.ownerId)
     if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
-    return { dto, uniqueScope, owner, targetPool }
+    return { dto: normalizedDto, uniqueScope, owner, targetPool }
   }
 
   async createPreparedExternalLeadInTransaction(
@@ -853,8 +873,8 @@ export class LeadsService {
     const lead = await tx.orm.public.Clue.create({
       id: createLegacyId32(),
       name: dto.name.trim(),
-      contact: null,
-      phone: null,
+      contact: dto.contactName ?? null,
+      phone: dto.phone ?? null,
       organizationId: user.tenantId,
       inSharedPool: Boolean(targetPool),
       poolId: targetPool?.id ?? null,
@@ -1441,8 +1461,8 @@ export class LeadsService {
     tx: PrismaTransaction,
   ) {
     const ownerId = prepared.lead.inSharedPool
-      ? prepared.customerPrepared.owner?.id ?? null
-      : prepared.lead.owner ?? null
+      ? (prepared.customerPrepared.owner?.id ?? null)
+      : (prepared.lead.owner ?? null)
     if (!ownerId && !prepared.allowUnassignedOwner)
       throw new BadRequestException('线索暂无负责人，无法转换')
     await acquirePoolTransactionLocksPrisma(

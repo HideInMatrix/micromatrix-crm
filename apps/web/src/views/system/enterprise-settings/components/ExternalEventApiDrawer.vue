@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY,
+  EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY,
+  EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
+} from '@micromatrix/shared'
 import type { ExternalEventTemplateVO } from '@micromatrix/shared'
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -33,7 +38,13 @@ const sampleData = computed(() => {
   for (const mapping of flow?.fields ?? props.template?.config.fields ?? []) {
     if (mapping.source === 'event' && mapping.externalKey && !(mapping.externalKey in data)) {
       const sampleValue = 'valueMap' in mapping ? mapping.valueMap?.[0]?.externalValue : undefined
-      data[mapping.externalKey] = sampleValue || 'EXAMPLE_VALUE'
+      const fieldKey = 'fieldKey' in mapping ? mapping.fieldKey : mapping.customerFieldKey
+      data[mapping.externalKey] =
+        fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY
+          ? '张女士'
+          : fieldKey === EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY
+            ? '13800000000'
+            : sampleValue || 'EXAMPLE_VALUE'
     }
   }
   if ((flow?.action === 'create' || flow?.action === 'upsertCustomer') && flow.nameExternalKey)
@@ -104,6 +115,23 @@ const sortedFields = computed(() => [
       : []),
   ]),
 ])
+const parameterRows = computed(() =>
+  sortedFields.value.map((key) => {
+    const flow = props.template?.config.flow
+    const meanings: string[] = []
+    if (flow?.nameExternalKey === key) meanings.push('新建记录的名称')
+    if (flow?.owner?.externalKey === key) meanings.push('负责人身份标识')
+    if (flow?.identity?.phoneExternalKey === key) meanings.push('客户与线索身份匹配手机号')
+    const mapping = flow?.fields.find((item) => item.source === 'event' && item.externalKey === key)
+    if (mapping?.fieldKey === EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY)
+      meanings.push('家长姓名，写入线索系统字段 contact')
+    else if (mapping?.fieldKey === EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY)
+      meanings.push('家长手机号，写入线索系统字段 phone')
+    else if (mapping?.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY)
+      meanings.push('线索池路由参数')
+    return { key: `data.${key}`, meaning: meanings.join('；') || '由管理员配置的外部参数' }
+  }),
+)
 watch(visible, (open) => {
   if (!open) return
   activeTab.value = 'docs'
@@ -192,7 +220,9 @@ async function simulate() {
                 </p>
                 <template v-if="template.config.flow.action === 'upsertCustomer'">
                   <p class="text-sm">
-                    使用学生姓名 + 手机号同时精确匹配客户和线索：命中客户则更新缴费状态；仅命中线索则直接转化为客户并写入缴费状态。两者均未命中时不创建客户，返回 PAYMENT_TARGET_NOT_FOUND。客户保留原负责人，线索转化继承原负责人。
+                    使用学生姓名 +
+                    手机号同时精确匹配客户和线索：命中客户则更新缴费状态；仅命中线索则直接转化为客户并写入缴费状态。两者均未命中时不创建客户，返回
+                    PAYMENT_TARGET_NOT_FOUND。客户保留原负责人，线索转化继承原负责人。
                   </p>
                   <p class="text-xs text-[var(--el-text-color-secondary)]">
                     执行账号必须有客户和线索全局数据范围；租户存在客户公海或线索池时，还需对应的池查询权限。
@@ -204,6 +234,16 @@ async function simulate() {
                       ? '本动作无需匹配现有资源'
                       : '定位条件在目标模块内执行 AND 精确匹配，必须唯一命中'
                   }}；参数与动作均由管理员预先配置，调用方不能任意指定操作。
+                </p>
+                <p
+                  v-if="
+                    template.config.flow.action === 'create' &&
+                    template.config.flow.target === 'lead'
+                  "
+                  class="text-sm"
+                >
+                  新增线索可通过字段映射传入家长姓名（系统字段 contact）和家长手机号（系统字段
+                  phone）；学生姓名仍由单独的名称参数提供，负责人和线索池也分别配置。
                 </p>
               </template>
               <template v-else>
@@ -239,10 +279,7 @@ async function simulate() {
                     key: 'eventType',
                     meaning: 'CRM 自动生成的事件唯一标识：' + template.eventType,
                   },
-                  ...sortedFields.map((key) => ({
-                    key: `data.${key}`,
-                    meaning: '由管理员配置的外部参数',
-                  })),
+                  ...parameterRows,
                 ]"
                 size="small"
                 border
@@ -285,7 +322,7 @@ async function simulate() {
         <el-tab-pane name="debug" label="在线调试">
           <el-alert
             type="warning"
-            title="这里执行只读模拟，不会创建客户或修改客户负责人。真实调用请使用 API Key。"
+            title="这里执行只读模拟，不会创建线索或客户，也不会修改负责人。真实调用请使用 API Key。"
             :closable="false"
             class="mb-4"
           />
@@ -308,12 +345,23 @@ async function simulate() {
             :type="preview.action === 'NO_MATCH' ? 'warning' : 'success'"
             :closable="false"
             class="mt-4"
-            :title="preview.action === 'NO_MATCH' ? '未匹配到现有客户或线索，不会创建客户' : `预览结果：${preview.resolvedType} / ${preview.resolvedId}`"
-            :description="[
-              preview.action,
-              preview.releasedFromPool ? '客户完结后将移出客户公海' : '',
-              preview.note,
-            ].filter(Boolean).join('；')"
+            :title="
+              preview.action === 'NO_MATCH'
+                ? '未匹配到现有客户或线索，不会创建客户'
+                : `预览结果：${preview.resolvedType} / ${preview.resolvedId}`
+            "
+            :description="
+              [
+                preview.action,
+                preview.systemFieldUpdates
+                  ? `线索系统字段：${JSON.stringify(preview.systemFieldUpdates)}`
+                  : '',
+                preview.releasedFromPool ? '客户完结后将移出客户公海' : '',
+                preview.note,
+              ]
+                .filter(Boolean)
+                .join('；')
+            "
           />
         </el-tab-pane>
       </el-tabs>
