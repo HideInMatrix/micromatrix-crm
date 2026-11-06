@@ -45,7 +45,7 @@ Infrastructure Runtime 统一描述 Redis、缓存、实时事件、分布式协
 - `runExclusive`：用于组织同步等长任务；Redis lease 正常时执行 token-safe acquire/renew/release。
 - `runScheduledOnce`：用于 Cron 时间槽 claim；Redis unavailable 时回退 PostgreSQL advisory transaction lock。
 
-当前协调的 Cron 包括：`pool-recycle`、`operation-log-cleanup`、`lead-sla-reminder`、`follow-plan-reminder`、`announcement-publish`、`resource-field-attachment-cleanup`、`message-delivery`。
+各定时任务通过统一协调层执行；新增或移除定时任务时，应在对应业务模块中维护任务定义，并继续使用统一协调与幂等机制。
 
 Redis 协调层只能减少重复进入；业务自身 CAS、唯一约束、状态字段和 transaction 仍必须保留。
 
@@ -69,7 +69,7 @@ Redis 协调层只能减少重复进入；业务自身 CAS、唯一约束、状�
 
 ## 9. 观测与部署
 
-- `/health` 只暴露 Redis enabled/ready、缓存命中/回退计数和 async job 指标，不暴露连接 Secret 或业务数据。
+- `/api/health` 只暴露必要的 Redis ready 状态、缓存/异步任务运行指标，不暴露连接 Secret 或业务数据。
 - 生产 Redis 不发布宿主端口；Migration 不依赖 Redis。
 - API 不把 Redis healthy 作为核心启动门槛；worker 因队列语义可以依赖 Redis healthy。
 - release smoke 必须真实验证 API、Redis、worker、异步任务和 `dist/worker.js` 入口。

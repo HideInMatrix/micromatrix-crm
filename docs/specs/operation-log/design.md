@@ -44,7 +44,7 @@ client
 
 ## 5. Cleanup
 
-每日 04:15 的 scheduled wrapper 进入 DistributedCoordinator：
+每日定时清理任务通过 DistributedCoordinator 执行：
 
 ```text
 runScheduledOnce('operation-log-cleanup','DAILY')

@@ -15,7 +15,7 @@ Operation Log 是当前系统的审计基础能力，负责请求级操作摘要
 
 - 业务代码只使用 Nest/Express 已解析的 `request.ip / @Ip()`，不自行解析原始 X-Forwarded-For。
 - `TRUST_PROXY_HOPS` 明确配置受控代理层数；非法值启动失败。
-- Compose Web 直连 API 默认 1 hop；若前面还有 1Panel/Nginx 等受控代理，由部署环境显式调整。
+- 根目录 Compose 的 Web 直连 API 默认 1 hop；若前面还有 1Panel/Nginx 等受控代理，由部署环境按真实可信代理层数调整。
 - IPv4-mapped IPv6 统一规范化为 IPv4 文本。
 - 密码登录、Provider 登录和 OperationLog 共用同一 IP 规范化逻辑。
 
@@ -29,7 +29,7 @@ Operation Log 是当前系统的审计基础能力，负责请求级操作摘要
 ## 5. Retention
 
 - 默认系统日志保留天数来自 `OPERATION_LOG_RETENTION_DAYS`，缺省 180 天。
-- 三种日志分别可配置 30～3650 天或永久保留。新配置继承部署默认天数；已有租户迁移时，登录与事件策略先复制原操作日志策略，之后独立修改。
+- 三种日志分别可配置 30～3650 天或永久保留。未显式配置时继承部署默认天数；各类别后续独立修改。
 - 未显式配置时继续继承环境默认值；永久保留必须有明确状态，不用歧义空值。
 - batchSize/maxBatches/Cron 时间仍属于运维安全参数，不开放给租户 UI。
 

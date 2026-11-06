@@ -18,7 +18,7 @@ Business event
 
 ## 2. Event registry
 
-`MESSAGE_TASK_DEFINITIONS` 同时给 API/Web 提供 module、event、显示名称和默认 channel 行为。事件集合只包含当前 Customer/Clue 业务，不从历史数据库或旧 Cordys 事件自动恢复。
+`MESSAGE_TASK_DEFINITIONS` 同时给 API/Web 提供 module、event、显示名称和默认 channel 行为。事件集合只包含当前 Customer/Clue 业务；新增或删除业务模块时应同步维护事件注册表、模板和触发点。
 
 MessageSettings 以 event 为稳定键存 channel 开关；共享类型保证前后端不各自维护事件字符串。
 
@@ -65,7 +65,7 @@ Messaging 只产生统一 delivery input；WeCom/DingTalk/Lark 的凭据、身�
 
 `/system/messages` 聚合消息设置和公告管理。公告列表提供搜索、时间、接收范围、编辑/删除；编辑使用部门/成员选择并遵守当前 Element Plus 页面设计。
 
-通知中心只提供真实当前动作，不恢复已经删除的“全部已读”移动端页面按钮。
+通知中心的交互以当前 PC/Mobile 实际实现为准。
 
 ## 9. 维护规则
 

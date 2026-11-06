@@ -56,7 +56,7 @@ Redis 只缓存派生 AuthContext，PostgreSQL 是角色与成员状态真相源
 
 ## 7. 前端
 
-- `/system/org`：单根部门树 + 当前部门成员。
+- `/system/departments`：单根部门树 + 当前部门成员。
 - `/system/roles`：角色列表 + 权限/成员管理。
 - `/system/modules`：主/顶部导航配置与 Lead/Customer 业务配置入口。
 - 个人中心从统一用户入口进入，不为每项自助能力新增系统菜单。

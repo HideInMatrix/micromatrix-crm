@@ -1,132 +1,113 @@
-# Docker 发布与 Git Tag 打包
+# Docker 发布与部署
 
-生产发布使用三个职责隔离的镜像；异步导出 worker 复用 API 镜像：
+## 1. 镜像结构
 
-- API：`ghcr.io/<owner>/<repo>-api`
-- Migration：`ghcr.io/<owner>/<repo>-migrate`
-- Web：`ghcr.io/<owner>/<repo>-web`
+生产发布使用三个镜像，异步导出 Worker 复用 API 镜像：
+
+- API：`ghcr.io/hideinmatrix/micromatrix-crm-api`
+- Migration：`ghcr.io/hideinmatrix/micromatrix-crm-migrate`
+- Web：`ghcr.io/hideinmatrix/micromatrix-crm-web`
 
 Web 镜像同时包含 PC `apps/web/dist` 与 Mobile `apps/mobile/dist`，Mobile 固定发布在 `/mobile/`。
 
-## 1. 工具链
+## 2. Git Tag 发布
 
-- Node.js：25
-- pnpm：11.25.0
-- API / Migration 使用 Alpine runtime；Web 使用 Nginx runtime。
-- GitHub Release workflow：`.github/workflows/release-docker.yml`。
-
-API 镜像只包含生产运行时，不承担数据库 migration。Migration 镜像负责 Prisma ORM 8 migration graph 和 bootstrap Seed。worker 通过同一 API 镜像执行 `node dist/worker.js`。
-
-## 2. 发布版本
-
-只有 `v*.*.*` Tag 会触发镜像发布：
+发布 workflow：`.github/workflows/release-docker.yml`，仅由 `v*.*.*` Tag 触发。
 
 ```bash
-git tag v0.0.1
-git push origin v0.0.1
+VERSION=1.0.0
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
+git push origin "v${VERSION}"
 ```
 
-Workflow 会分别原生构建 amd64 / arm64 的 API 与 Migration 镜像，再合并 multi-arch manifest；Web 静态产物只需构建一次，再组装多架构 Nginx runtime。
+Workflow 会分别构建 API 与 Migration 的 amd64 / arm64 镜像并发布多架构 manifest；Web 静态产物构建一次，再组装多架构 Nginx 镜像。
+
+**Tag workflow 只负责构建和推送镜像，不会自动更新生产容器，也不会执行生产数据库迁移。** GitHub Actions 成功不等于生产部署完成。
 
 ## 3. Migration 镜像
 
-`docker/migrate.Dockerfile` 只复制当前 Prisma 8 所需资产：
+`docker/migrate.Dockerfile` 复制当前 Prisma ORM 8 所需 contract、migration graph 和 bootstrap seed。镜像构建阶段执行 `contract emit`。
 
-- `apps/api/migrations/`
-- `apps/api/prisma.config.ts`
-- `apps/api/src/prisma/contract.prisma`
-- `apps/api/src/prisma/db.ts`
-- `apps/api/src/prisma/seed.ts` / `seed-bootstrap.ts`
-- Prisma runtime helper 与 `@micromatrix/shared`
+`docker/release-init.sh` 的默认 `init` 流程为：
 
-镜像构建阶段执行 `contract emit`，产物落到 `src/prisma/contract.json` / `contract.d.ts`。
+1. 通过 Prisma ORM 运行时执行 `db migrate --yes`。
+2. 执行 `src/prisma/seed.ts`，补齐首次安装所需基础数据。
 
-`docker/release-init.sh` 默认执行：
-
-```text
-prisma db migrate --yes
-tsx src/prisma/seed.ts
-```
-
-`--yes` is required for non-interactive release containers: it confirms the reviewed destructive operations already encoded in the migration graph, so release startup does not hang or abort waiting for a terminal prompt.
-
-Migration 是一次性服务；数据库结构升级成功后才允许 API / worker / Web 进入后续启动阶段。
+Migration 是一次性服务；Migration 成功后，Compose 才允许 API、Worker 和 Web 按依赖启动。Migration 命令、contract 与 graph 的维护规则见 [Prisma Migration 规范](./prisma-migration-policy.md)。
 
 ## 4. 本地发布构建验证
-
-项目不保留测试专用脚本。发布前执行类型检查与正式构建：
 
 ```bash
 pnpm typecheck
 pnpm build
+pnpm db:verify-migrations
+pnpm db:status
+pnpm db:verify
+
 docker build -f docker/api.Dockerfile -t micromatrix-crm-api:local .
 docker build -f docker/migrate.Dockerfile -t micromatrix-crm-migrate:local .
 docker build -f docker/web.Dockerfile -t micromatrix-crm-web:local .
 ```
 
-部署后需在实际环境中确认数据库迁移、API/Worker 健康状态及 PC、移动端路由正常运行。
+部署后还需在目标环境确认 Migration 成功、API 健康状态、Worker 日志与任务处理状态，以及 PC、Mobile 路由。
 
-## 5. 生产 Compose
+## 5. 使用根目录 Compose 部署
 
-根目录 `docker-compose.yml` 是生产部署入口。部署时先准备 `docker/.env.release`，再执行：
+根目录 `docker-compose.yml` 是标准生产 Compose 入口。以 `.env.example` 为模板准备部署环境文件，例如：
+
+```bash
+cp .env.example docker/.env.release
+```
+
+在 `docker/.env.release` 中至少设置：
+
+- `APP_VERSION`：固定为已成功发布的 Tag，例如 `v1.0.0`，不要依赖 `latest`。
+- PostgreSQL、Redis、JWT 和企业集成加密密钥。
+- `WEB_PUBLIC_URL`：生产 Web 公开域名；启用 Provider OAuth 时必须使用真实可访问地址。
+- `WEB_PORT`、`TRUST_PROXY_HOPS`：按实际网络拓扑设置。
+
+拉取并重建服务：
 
 ```bash
 docker compose --env-file docker/.env.release pull
 docker compose --env-file docker/.env.release up -d
 ```
 
-推荐把 `APP_VERSION` 固定到已成功发布的 Tag，避免依赖本机旧 `latest` 缓存。
+如果需要覆盖镜像地址，才设置 `API_IMAGE`、`MIGRATE_IMAGE`、`WEB_IMAGE`；否则由 `APP_VERSION` 统一决定三个镜像的版本。
 
-如果启用企业微信、钉钉或飞书 OAuth，`docker/.env.release` 必须显式设置对外 Web 域名，例如 `WEB_PUBLIC_URL=https://crm.example.com`；也可以为企微单独设置 `WECOM_OAUTH_REDIRECT_URI`。生产 Compose 不再提供 localhost 默认值，避免忘记配置时生成不可用的 OAuth 回调地址；缺少公开地址时 Provider 登录会按服务端现有校验明确失败。
+## 6. 1Panel 等外部 Compose 部署
 
-标准启动顺序：
+如果生产环境使用 1Panel 管理独立 Compose，更新该 Compose 使用的 `APP_VERSION` 为目标 Tag，再执行镜像拉取和服务重建。确认 API、Migration、Web 三类镜像版本一致；Worker 应继续复用同版本 API 镜像并执行 `node dist/worker.js`。
 
-1. PostgreSQL / Redis 启动并通过 healthcheck。
-2. Migration 服务执行 Prisma 8 graph 与 bootstrap Seed。
-3. Migration 成功后启动 API。
-4. worker 等待 Migration 与 Redis healthy 后启动。
-5. API healthy 后启动 Web。
+镜像发布不会自动修改 1Panel 中保存的 Compose 文件或容器。
 
-Redis 故障不能破坏普通 PostgreSQL 业务的真实性；但依赖 BullMQ 的异步导出在 queue 不可用时必须 fail-closed，不能伪装为已排队。
+## 7. 反向代理与客户端 IP
 
-## 6. 反向代理与客户端 IP
-
-Compose 内部标准链路：
+标准 Compose 内部链路：
 
 ```text
 client -> web/Nginx -> api
 ```
 
-此时 `TRUST_PROXY_HOPS=1`。
-
-若宿主机还有 1Panel/Nginx：
+此时 `TRUST_PROXY_HOPS=1`。如果宿主机前面还有一层受控 1Panel/Nginx：
 
 ```text
 client -> 1Panel Nginx -> web/Nginx -> api
 ```
 
-此时设置 `TRUST_PROXY_HOPS=2`。每一层受控 Nginx 使用 `X-Forwarded-For $proxy_add_x_forwarded_for`；业务代码不要直接信任客户端提交的 forwarding header。
+此时设置 `TRUST_PROXY_HOPS=2`。每一层受控代理应正确传递 `X-Forwarded-For`；业务代码不要直接信任客户端提交的 forwarding header。
 
-## 7. 数据持久化
+## 8. 数据持久化与启动依赖
 
-- PostgreSQL：生产 volume / 外部数据库。
-- Redis：AOF volume；只保存缓存、实时协调和 BullMQ delivery metadata。
-- 附件/导出：API 与 worker 共享 uploads volume。
+- PostgreSQL：持久化业务数据、审计、Inbox 和导出任务。
+- Redis：AOF 持久化队列所需状态；同时承载缓存、实时信号和协调数据。
+- 附件/导出：API 与 Worker 共享 uploads volume。
+- API 启动依赖 Migration 成功；Worker 依赖 Migration 与 Redis；Web 依赖 API healthy。
 
-PostgreSQL 始终是业务与 `ExportTask` 的真相源；Redis queue metadata 丢失时，worker 通过 PostgreSQL PENDING task 恢复缺失 job。
+PostgreSQL 始终是业务与 `ExportTask` 的事实源。Redis queue metadata 丢失时，Worker 可根据 PostgreSQL 中的待处理任务恢复 job。
 
-## 8. 首次安装
+## 9. 首次安装与数据库安全
 
-bootstrap Seed 只在空安装补基础数据和默认管理员；检测到已有用户后不会覆盖现有安装。
+Bootstrap Seed 只在空安装时补齐基础数据和初始管理员；检测到已有用户后不会覆盖现有安装。初始账号凭据以当前 Seed 实现为准，不要将明文密码写入仓库文档、Compose 文件或公开问题记录；首次登录后应立即修改初始凭据。
 
-默认管理员：
-
-```text
-admin@demo.com / admin123
-```
-
-首次登录后应立即修改默认密码。
-
-## 9. 数据库发布前检查
-
-Prisma ORM 8 规则见 [prisma-migration-policy.md](./prisma-migration-policy.md)。任何 destructive migration 在正式环境发布前都必须针对目标数据库重新执行只读 precheck，不能复用开发库结论。
+任何 destructive migration 在正式环境发布前都必须针对目标数据库重新执行只读 precheck，不能复用开发库结论。部署完成后检查 Migration 状态、API 健康、Worker 日志以及 PC/Mobile 实际访问。

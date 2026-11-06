@@ -1,119 +1,106 @@
-# 架构设计与技术决策记录
+# 招生CRM 系统架构
 
-## 1. 当前系统边界
+## 1. 系统边界
 
-当前 `master` 是通用招生 CRM，不再是完整销售交易链 CRM。核心业务主线为线索进入、池化与分配、跟进、转客户、客户持续跟进，以及外部财务事件驱动的客户结果更新。
+招生CRM 是面向招生团队的通用 CRM。核心业务围绕线索获取、分配、跟进、转化客户和客户持续跟进；课程、报名、缴费等具体业务事实由外部业务系统负责，通过受控外部事件同步必要结果。
 
 ```mermaid
 flowchart LR
   PC[apps/web\nVue 3 + Element Plus] --> API[NestJS API]
-  M[apps/mobile\nVue 3 + Vant 4] --> API
+  Mobile[apps/mobile\nVue 3 + Vant 4] --> API
   API --> PG[(PostgreSQL 18\nPrisma ORM 8)]
-  API --> R[(Redis)]
-  API --> W[BullMQ / Worker]
-  API --> EXT[WeCom / DingTalk / Lark]
+  API --> Redis[(Redis)]
+  API --> Worker[BullMQ / Worker]
+  API --> Provider[WeCom / DingTalk / Lark]
 ```
 
 Monorepo 主要边界：
 
-- `apps/api`：NestJS API、独立 worker、Prisma ORM 8 runtime 与 migration contract。
-- `apps/web`：PC 管理端，Element Plus。
-- `apps/mobile`：独立 Mobile H5，Vant 4 + UnoCSS presetWind4，生产路径 `/mobile/`。
+- `apps/api`：NestJS API、独立 Worker、Prisma ORM 8 runtime。
+- `apps/web`：PC 管理端，Vue 3 + Element Plus。
+- `apps/mobile`：独立 Mobile H5，Vue 3 + Vant 4 + UnoCSS presetWind4，生产路径 `/mobile/`。
 - `packages/shared`：前后端共享 DTO、枚举、权限和纯领域逻辑。
-- `packages/frontend-shared`：PC / Mobile 共用的 HTTP、token、设备判断和浏览器侧基础能力。
+- `packages/frontend-shared`：PC/Mobile 共用的 HTTP、Token、设备判断和浏览器基础能力。
+- `packages/migrate`：生产数据库迁移运行时。
 
 ## 2. 当前业务域
 
-主产品只保留真实运行入口与对应数据模型：
+- **线索**：线索列表、线索池、负责人、判重、跟进超时、导入导出和转客户。不再使用固定系统阶段/状态字段。
+- **客户**：客户资料、客户公海、负责人历史、跟进记录、跟进计划和客户完结规则。
+- **动态表单**：模块表单、动态字段、数据源、字段联动、唯一性、列表展示和筛选。
+- **首页分析**：线索与客户统计、渠道来源、转化趋势、负责人/部门表现及自定义字段分布。
+- **外部事件**：API Key 调用、事件模板、目标模块/动作、动态字段映射、幂等 Inbox 和审计。
+- **平台能力**：组织、成员、角色权限、通知、公告、日志、企业设置与第三方 Provider 集成。
 
-- 线索：线索池、负责人、判重、SLA、导入导出、转客户；不再维护固定系统阶段/状态字段。
-- 客户：客户、公海、负责人历史、跟进记录与跟进计划。
-- 元数据：模块表单、动态字段、Field / Blob 值、表单联动与字段权限。
-- 首页：渠道来源、转化趋势、负责人/部门绩效、客户结果和自定义字段分布等招生分析。
-- 外部事件：API Key 调用、显式模块/动作与匹配条件、幂等 Inbox、动态字段映射、缴费成功跨模块同步及受控的线索池路由。
-- 协同与平台：通知、公告、组织/角色/成员、日志、企业设置、企业微信/钉钉/飞书。
+联系人不再作为独立模块或资源；审批能力保留，但当前不参与招生主流程自动触发。商机、产品、报价、合同、回款、发票、订单和标讯等传统销售交易链不属于当前产品范围。
 
-商机、产品、报价、合同、回款、发票、订单、标讯等旧交易链已从当前产品入口、生产 API 与 Prisma contract 中退出；历史实现由 Git / 备份分支追溯，不在当前架构文档中继续维护。
+## 3. 多租户、权限与数据范围
 
-## 3. Prisma ORM 8
+- Tenant 是所有业务数据的首要隔离边界，业务查询必须显式保持租户条件。
+- RBAC 功能权限由角色权限并集决定；数据范围只合并真正拥有目标动作权限的角色，避免无关角色扩大可见范围。
+- 数据范围支持本人、部门、部门及下级、自定义部门和全部范围；列表、详情、统计、导入导出与写操作都必须执行服务端校验。
+- API Key 请求仍进入同一租户、功能权限和 DataScope 边界，不因第三方调用绕过授权。
 
-数据库层采用 Prisma ORM 8 contract/runtime，不再使用 Prisma Client class 继承模式。
+## 4. 动态表单与数据
+
+模块表单由 Metadata 服务统一管理。固定业务列负责租户、负责人、池归属、关联关系和必要索引；扩展值使用 Field / FieldBlob 保存。字段定义、值校验、唯一性、筛选、附件生命周期、联动和跨表单显式 formLink 由统一 Metadata 能力处理，业务模块不得另建字段协议。
+
+## 5. Lead → Customer
+
+Lead 与 Customer 是独立业务资源。转化建立两者之间的业务关联，并按显式表单链接规则处理跟进记录、跟进计划、附件和动态字段；不创建销售交易资源。
+
+## 6. 外部事件
+
+外部系统使用 API Key 调用已启用的事件模板。模板限定目标模块、动作、匹配条件和字段映射；服务端重新校验权限、数据范围、表单字段和唯一资源定位。Inbox 用于幂等控制，业务写入、Inbox 成功状态和审计记录在同一事务中提交。
+
+缴费成功同步按学生姓名和手机号检查客户与线索：命中客户则更新客户字段；仅命中未转化线索则转化为客户；均未命中或出现冲突时拒绝执行，不自动创建客户。详细规则见[外部事件文档](./external-events.md)。
+
+## 7. Prisma ORM 8
+
+数据库层采用 Prisma ORM 8 contract/runtime，不使用 Prisma Client class 继承模式。
 
 ```text
 apps/api/
 ├── prisma.config.ts
-├── migrations/                # 正式 migration graph
-└── src/
-    ├── prisma/
-    │   ├── contract.prisma    # 数据模型唯一事实源
-    │   ├── contract.json      # contract emit 产物
-    │   ├── contract.d.ts      # contract emit 产物
-    │   ├── db.ts              # 进程级 plain-object client
-    │   └── seed*.ts
-    ├── prisma.service.ts      # NestJS DI wrapper
-    └── prisma.module.ts
+├── migrations/                 # 正式 migration graph
+└── src/prisma/
+    ├── contract.prisma         # 数据模型唯一事实源
+    ├── contract.json           # contract emit 产物
+    ├── contract.d.ts           # contract emit 产物
+    ├── db.ts                   # 进程级 client 创建点
+    └── seed*.ts
 ```
 
-`db.ts` 是应用运行时唯一 client 创建点；API 与 worker 各自在自己的 Node.js 进程中持有一个连接池。NestJS shutdown hooks 负责在进程关闭时统一 `db.close()`。项目不保留测试专用数据库 client。
+`db.ts` 是应用运行时唯一 client 创建点；API 与 Worker 各自在独立 Node.js 进程中持有连接池。NestJS Prisma service 负责依赖注入与生命周期管理。结构变更只追加 forward migration，具体规则见 [Prisma Migration 规范](./prisma-migration-policy.md)。
 
-Migration graph 固定在 `apps/api/migrations/`，结构变化只追加新的 forward migration。详细规则见 [prisma-migration-policy.md](./prisma-migration-policy.md)。
+## 8. Redis、通知与异步任务
 
-## 4. 多租户、权限与数据范围
+- PostgreSQL 是业务状态、通知、幂等记录和导出任务的持久化事实源。
+- Redis 承载派生缓存、Pub/Sub 实时信号、分布式协调租约和 BullMQ 队列传输信息。
+- Redis 缓存或实时信号故障不能改变已提交的业务事实；依赖 BullMQ 的异步导出在队列不可用时必须明确失败。
+- BullMQ job 只携带任务标识，导出参数和状态保存在 PostgreSQL；Worker 可根据待处理任务恢复缺失 job。
 
-- 业务请求以 tenant 为首要隔离边界，服务查询必须显式保持租户条件。
-- RBAC 功能权限由角色权限并集决定；数据范围只合并真正拥有目标权限的角色，避免无关角色扩大数据可见范围。
-- 部门范围支持本部门、下级、自定义等展开；负责人/创建人等业务过滤在统一 DataScope 层处理。
-- API Key 请求仍进入相同租户和数据范围边界，不因为第三方调用绕过权限模型。
+## 9. 企业集成
 
-## 5. 动态表单与业务数据
+企业微信、钉钉和飞书使用统一的企业集成配置边界。凭据加密持久化，不在 API、日志或前端回显明文。组织同步、外部身份和 OAuth 均绑定租户，并执行成员映射、state 一次性消费和防重放校验。
 
-模块表单由 `SysModuleForm / SysModuleField` 等元数据描述。固定业务列负责关联、权限、索引和关键状态；扩展字段通过 Field / FieldBlob 持久化，复杂字段与普通标量字段分开处理。
+## 10. 生产发布
 
-字段定义、值校验、唯一性、动态筛选、附件 claim、表单联动和跨模块显式 formLink 都由 Metadata 相关服务统一处理。业务服务不得自行复制一套动态字段协议。
-
-## 6. Lead → Customer 与外部财务事件
-
-Lead 转 Customer 不再创建 Opportunity。转换只复制显式配置的 formLink 字段，并保持负责人、来源与转换结果的可审计语义。
-
-外部系统通过 External Event API 调用时，按事件配置声明的目标模块、动作和匹配条件执行；普通模块动作不隐式跨模块回退。缴费成功同步（`upsertCustomer`）单独按姓名与手机号同时检查 Customer 和 Lead：命中客户则更新，命中未转化线索则转化；均未命中或出现多条/跨模块冲突时拒绝执行。未设置新流程配置的旧事件及兼容 customer-sync 接口继续遵循旧的客户优先兼容逻辑。事件使用 Inbox 保存幂等键、payload 摘要、attempts 与最终状态，避免财务系统重试造成重复转换或重复更新。
-
-## 7. Redis、通知与异步任务
-
-- PostgreSQL 始终是业务真相源；Redis 只承载派生缓存、Pub/Sub 实时信号、分布式协调和 BullMQ delivery metadata。
-- Redis 故障时普通缓存与实时通知可以降级；需要 durable queue 的异步导出不能伪装成功，enqueue 失败明确返回错误。
-- BullMQ job 只携带轻量任务标识，真实导出参数和状态存 PostgreSQL `ExportTask`；worker 可根据数据库 PENDING 状态恢复缺失 job。
-- 通知先落库再做 SSE / 企业消息投递，跨实例实时信号丢失不会造成通知数据丢失。
-
-## 8. 企业集成
-
-企业微信、钉钉、飞书使用统一的企业集成配置边界，Secret 只以加密形态持久化且不在 API 响应中回显。组织同步和 SSO 都必须绑定 tenant，并保持 OAuth state 一次性消费、防重放和本地成员映射。
-
-企业微信工作台入口在企业微信容器内走静默授权链；Mobile 页面通过 `wxwork` 等环境判断隐藏不适合工作台容器的重复 Header。真实企业微信客户端运行态仍属于发布前验收项。
-
-## 9. 发布边界
-
-生产发布使用三类镜像：API、Migration、Web。Web 镜像同时打包 `apps/web/dist` 与 `apps/mobile/dist`；worker 复用 API 镜像执行 `dist/worker.js`。Migration 镜像是数据库结构变更与 bootstrap Seed 的唯一生产入口。
-
-生产拓扑、代理层数和发布流程见 [docker-release.md](./docker-release.md)。
-
-## 10. Cordys 参考原则
-
-`CordysCRM/` 只作为业务语义和交互参考，不作为运行时依赖。继续维护的能力可以参考其 Controller / Service / Domain / Mapper / PC / Mobile 行为；但当前产品边界由招生 CRM 规格和现有代码决定，不再为了追求完整 Cordys 模块数量恢复已删除的交易链。
+生产发布使用 API、Migration、Web 三类镜像；Worker 复用 API 镜像执行 `dist/worker.js`。Web 镜像同时包含 PC `apps/web/dist` 和 Mobile `apps/mobile/dist`。Git Tag workflow 负责构建并推送镜像，不直接更新生产 Compose；部署环境需单独拉取指定版本并重建服务。详见 [Docker 发布文档](./docker-release.md)。
 
 ## 11. 工程基线
 
-- Node.js：`>=25 <26`。
-- pnpm：`11.25.0`。
-- TypeScript：`7.0.2`；Vue typecheck 使用仓库 `tools/vue-tsc.mjs` 兼容脚本。
-- API：NestJS 11 + Prisma ORM 8 PostgreSQL runtime。
+- Node.js：`>=25 <26`；pnpm：`11.25.0`。
+- TypeScript：`7.0.2`；Vue typecheck 使用仓库 `tools/vue-tsc.mjs`。
+- API：NestJS 11 + Prisma ORM 8。
 - PC：Vue 3 + Vite + Element Plus。
 - Mobile：Vue 3 + Vite + Vant 4 + UnoCSS presetWind4。
-- 提交前至少执行对应范围 typecheck、tests、build、ESLint 和 `git diff --check`。
+- 提交前按改动范围执行 typecheck、测试、build、ESLint 和 `git diff --check`。
 
 ## 12. 安全基线
 
-- 全局 AuthGuard，只有显式 `@Public` 路由跳过鉴权。
-- JWT / API Key 都必须进入 tenant、功能权限与数据范围检查。
-- 密码使用 bcrypt；登录行为记录审计日志。
-- 企业集成 Secret 使用 AES-256-GCM 等项目既有加密边界，不允许日志或接口回显明文。
-- Webhook、外部 URL 和企业 Provider 请求保持现有 SSRF、Header 与错误分类约束。
+- 除显式 `@Public` 路由外，API 统一经过认证与权限校验。
+- JWT 与 API Key 都必须进入 tenant、功能权限和数据范围检查。
+- 密码使用 bcrypt；禁用密码登录的账号不得通过密码登录或修改密码入口绕过限制。
+- 企业集成 Secret 使用项目统一加密边界，不允许日志或接口回显明文。
+- Webhook、外部 URL 和 Provider 请求遵守现有 SSRF、Header 与错误分类约束。

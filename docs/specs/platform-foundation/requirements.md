@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-Platform Foundation 负责招生 CRM 的组织、成员、角色权限、数据范围、导航模块配置和用户自助账号能力。业务模块必须建立在这一层之上，不各自实现成员、角色或可见范围。
+Platform Foundation 负责招生CRM的组织、成员、角色权限、数据范围、导航模块配置和用户自助账号能力。业务模块必须建立在这一层之上，不各自实现成员、角色或可见范围。
 
 ## 2. 组织架构
 
@@ -45,7 +45,7 @@ Platform Foundation 负责招生 CRM 的组织、成员、角色权限、数据�
 ## 6. 个人中心与 API Key
 
 - 当前用户可读取个人资料、角色、部门、语言等上下文，并更新允许自助修改的手机号/邮箱。
-- 修改密码必须校验原密码并递增 `authVersion`，使旧 access/refresh 会话失效。
+- 仅 `passwordLoginEnabled=true` 的账号可以使用密码登录和修改密码；修改密码必须校验原密码并递增 `authVersion`，使旧 access/refresh 会话失效。禁用密码登录的企业微信/钉钉/飞书账号不得显示或调用密码修改入口。
 - 个人 API Key 使用 `X-Access-Key / X-Secret-Key`，按用户所有权、启用状态、有效期和权限验证。
 - API Key 认证成功后仍进入同一 RBAC/DataScope，不获得额外业务权限。
 - Secret 只在创建时返回必要值，不以明文持久化或日志输出。

@@ -2,9 +2,9 @@
 
 ## Swagger / OpenAPI
 
-| 地址 | 用途 |
-| --- | --- |
-| `http://localhost:3000/api/docs` | Swagger UI |
+| 地址                                  | 用途         |
+| ------------------------------------- | ------------ |
+| `http://localhost:3000/api/docs`      | Swagger UI   |
 | `http://localhost:3000/api/docs-json` | OpenAPI JSON |
 
 Swagger 默认关闭。仅在开发或排障环境显式设置 `SWAGGER_ENABLED=true` 后注册上述入口；生产环境不要为了方便长期开放交互式文档。
@@ -14,6 +14,7 @@ Swagger 默认关闭。仅在开发或排障环境显式设置 `SWAGGER_ENABLED=
 - 用户交互及普通业务 API 使用登录后获得的 Bearer access token。
 - 服务集成使用个人中心创建的 API Key，通过 `X-Access-Key` 和 `X-Secret-Key` 请求头认证。
 - 外部事件执行使用 API Key，不接受 JWT 替代。调用账号仍受其角色权限和数据范围约束。
+- 禁用密码登录的账号不能通过密码登录或修改密码接口绕过账号设置。
 - 不要把 API Key、Secret、access token 或真实用户凭证写入文档、代码仓库和问题截图。
 
 ## 调试与导入
@@ -26,17 +27,17 @@ Swagger 默认关闭。仅在开发或排障环境显式设置 `SWAGGER_ENABLED=
 ## 当前接口约定
 
 - API 路由以当前控制器实现及运行时 OpenAPI 输出为准；本文不维护手工复制的接口清单，避免与代码漂移。
-- 分页、筛选、动态字段和错误结构以具体接口 schema 与 `packages/shared` 类型为准，不要将历史 Cordys 接口路径当作当前 API。
+- 分页、筛选、动态字段和错误结构以具体接口 schema 与 `packages/shared` 类型为准。
 - 业务资源范围由当前登录成员的角色权限和数据范围共同决定；拥有菜单入口不代表拥有所有数据或动作权限。
 - 动态字段写入规则、系统字段保护和资源转换规则以对应模块 API 校验为准。
 
 ## 外部事件
 
-外部事件的配置、请求示例、幂等处理和审计说明见[外部事件文档](./external-events.md)。
+外部事件的配置、请求示例、字段映射、幂等处理和审计说明见[外部事件文档](./external-events.md)。
 
 ## 相关文档
 
-- [当前系统架构](./architecture.md)
+- [系统架构](./architecture.md)
 - [开发约定](./conventions.md)
 - [Prisma ORM 8 Migration 规范](./prisma-migration-policy.md)
 - [Docker 发布流程](./docker-release.md)

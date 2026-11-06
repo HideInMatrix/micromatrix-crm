@@ -1,89 +1,86 @@
-# 招生 CRM
+# 招生CRM
 
-当前 `master` 已收敛为通用招生 CRM：以线索获取、池化分配、跟进、转客户和客户持续跟进为主线，同时保留动态表单、通知、组织权限、企业集成、导入导出和开放 API。
+招生CRM 是面向招生团队的通用 CRM，以线索获取、分配、跟进、转化客户和客户持续跟进为核心流程。学校、课程、报名和缴费等具体业务信息通过动态表单与外部系统集成承载，不固化为 CRM 的销售交易模型。
 
-项目内 `CordysCRM/` 只作为业务语义和交互参考，不是运行时依赖，也不再要求恢复已从当前产品删除的完整销售交易链。
+当前项目名称为「招生CRM」，Git 仓库名为 `micromatrix-crm`。
 
-## 当前业务范围
+## 产品范围
 
-- 线索：线索池、领取/分配、负责人、判重、SLA、导入导出、转客户；不再维护固定的线索阶段/状态字段。
-- 客户：客户、公海、负责人历史、跟进记录与跟进计划。
-- 元数据：模块表单、动态字段、字段联动、显隐、唯一性、附件和列表/筛选能力。
-- 首页分析：渠道来源、转化趋势、负责人/部门绩效、客户结果及自定义字段分布。
-- 外部事件：API Key 调用、幂等 Inbox、显式模块/动作配置、动态字段映射及缴费成功跨模块同步。
-- 平台能力：通知/公告、组织/角色/成员、日志、企业设置、企业微信/钉钉/飞书。
+- **线索**：线索创建、负责人分配、线索池、判重、跟进超时、导入导出和转化客户。不再使用固定系统阶段/状态字段。
+- **客户**：客户资料、负责人、客户公海、跟进记录和跟进计划；客户完结条件由管理员配置的字段及命中值判断。
+- **动态表单**：线索、客户及跟进表单的动态字段、数据源、显隐联动、唯一性、列表和筛选配置。
+- **招生分析**：线索与客户统计、渠道来源、转化趋势、负责人/部门表现及自定义字段分析。
+- **外部事件**：通过 API Key 接收外部业务事件，按已配置的目标模块、动作和字段映射执行，并提供幂等保护与审计。
+- **平台能力**：组织、成员、角色权限、通知、公告、日志、企业设置、企业微信/钉钉/飞书集成和个人 API Key。
 
-商机、产品、报价、合同、回款、发票、订单、标讯等旧交易链已从当前 `master` 的产品入口、生产 API 和 Prisma contract 中退出。
+联系人不再作为独立业务模块，家长姓名和电话等信息属于线索字段。审批能力保留，但当前不参与招生主流程自动触发；不得成为线索、客户或外部事件的默认前置环节。商机、产品、报价、合同、回款、发票、订单和标讯等传统销售交易链不属于当前产品范围。
 
 ## 技术栈
 
-| 层             | 选型                                                  |
-| -------------- | ----------------------------------------------------- |
-| PC             | Vue 3 + TypeScript + Vite + Element Plus              |
-| Mobile         | Vue 3 + Vite + Vant 4 + UnoCSS presetWind4            |
-| 前端共享       | `packages/frontend-shared` + `packages/shared`        |
-| API            | NestJS 11 + Prisma ORM 8 PostgreSQL runtime           |
-| 数据库         | PostgreSQL 18                                         |
-| 缓存/实时/队列 | Redis + Pub/Sub + BullMQ                              |
-| 工程           | Node `>=25 <26` + pnpm `11.25.0` + TypeScript `7.0.2` |
+| 层级       | 技术                                                   |
+| ---------- | ------------------------------------------------------ |
+| PC         | Vue 3、TypeScript、Vite、Element Plus                  |
+| Mobile H5  | Vue 3、Vite、Vant 4、UnoCSS presetWind4                |
+| 前端共享   | `packages/frontend-shared`、`packages/shared`          |
+| API        | NestJS 11、Prisma ORM 8                                |
+| 数据库     | PostgreSQL 18                                          |
+| 缓存与任务 | Redis、Pub/Sub、BullMQ、独立 Worker                    |
+| 工程       | Node.js `>=25 <26`、pnpm `11.25.0`、TypeScript `7.0.2` |
 
 ## 目录结构
 
 ```text
 micromatrix-crm/
 ├── apps/
-│   ├── api/                     # NestJS API + worker + Prisma 8 contract/runtime
-│   ├── web/                     # PC Vue 应用
-│   └── mobile/                  # Mobile Vue/Vant 应用，生产路径 /mobile/
+│   ├── api/                 # NestJS API、Worker、Prisma contract/runtime
+│   ├── web/                 # PC 管理端
+│   └── mobile/              # 独立 Mobile H5，生产路径 /mobile/
 ├── packages/
-│   ├── shared/                  # 前后端共享类型/权限/纯领域逻辑
-│   ├── frontend-shared/         # PC/Mobile HTTP、Token、设备等浏览器公共能力
-│   └── migrate/                 # 生产 Migration runtime
-├── docs/
-├── docker/
+│   ├── shared/              # 前后端共享类型、权限与领域逻辑
+│   ├── frontend-shared/     # PC/Mobile 共用浏览器能力
+│   └── migrate/             # 生产 Migration runtime
+├── docs/                    # 项目与领域文档
+├── docker/                  # Dockerfile、Nginx 与发布脚本
 ├── docker-compose.dev.yml
 └── docker-compose.yml
 ```
 
-Prisma 8 的当前结构：
+Prisma ORM 8 的主要文件：
 
 ```text
 apps/api/
 ├── prisma.config.ts
 ├── migrations/
-└── src/
-    ├── prisma/
-    │   ├── contract.prisma
-    │   ├── contract.json
-    │   ├── contract.d.ts
-    │   ├── db.ts
-    │   └── seed*.ts
-    ├── prisma.service.ts
-    └── prisma.module.ts
+└── src/prisma/
+    ├── contract.prisma     # 数据模型唯一事实源
+    ├── contract.json       # contract emit 产物
+    ├── contract.d.ts       # contract emit 产物
+    ├── db.ts               # 进程级数据库 client
+    └── seed*.ts
 ```
 
-## 快速开始
+## 本地开发
+
+环境要求：Node.js 25、pnpm 11.25.0、Docker。
 
 ```bash
 pnpm install
 cp apps/api/.env.example apps/api/.env
 
-# 本地 PostgreSQL / Redis
+# 启动本地 PostgreSQL / Redis
 pnpm dev:infra
 
-# 应用当前 Prisma 8 migration graph
+# 应用 Prisma ORM 8 migration graph，并初始化基础数据
 pnpm db:deploy
-
-# 初始化基础数据；空库只创建默认企业、根部门、管理员角色和 admin@demo.com；已有用户时仅校准默认 Pro 套餐
 pnpm --filter @micromatrix/api run db:seed
 
-# 启动 API / PC / Mobile
+# 启动 API、PC 与 Mobile
 pnpm dev
 ```
 
-默认开发端口：API `3000`、PC `5173`、Mobile `5174`。
+默认端口：API `3000`、PC `5173`、Mobile `5174`。本地数据库连接参数应与 `apps/api/.env` 和 `docker-compose.dev.yml` 保持一致。
 
-数据库模型发生变化时先修改 `apps/api/src/prisma/contract.prisma`，再按 [Prisma ORM 8 Migration 管理规范](./docs/prisma-migration-policy.md) 生成和验证 forward migration。不要重新引入 Prisma 7 `schema.prisma`、generated Client 或 `db push` 工作流。
+数据库模型变更先修改 `apps/api/src/prisma/contract.prisma`，再按 [Prisma ORM 8 Migration 规范](./docs/prisma-migration-policy.md)生成并验证 forward migration。不要重新引入 Prisma 7 `schema.prisma`、generated Client 或 `db push` 工作流。
 
 ## 常用验证
 
@@ -91,30 +88,33 @@ pnpm dev
 pnpm typecheck
 pnpm build
 pnpm lint
+pnpm prisma:emit
 pnpm db:verify-migrations
 pnpm db:status
 pnpm db:verify
 ```
 
-Mobile build/typecheck 会同时执行 Vant + UnoCSS 规范门禁。
+Mobile 的 typecheck/build 会同时执行 Vant + UnoCSS 规范检查。
 
-## Docker Release
+## Docker 发布
 
-生产发布使用 API、Migration、Web 三类镜像；worker 复用 API 镜像。Web 镜像同时包含 PC `apps/web/dist` 和 Mobile `apps/mobile/dist`。
-
-发布通过 `v*.*.*` Git Tag 触发 GitHub Actions：
+生产发布使用 API、Migration、Web 三类镜像；Worker 复用 API 镜像，Web 镜像同时包含 PC 与 Mobile 静态产物。
 
 ```bash
-git tag v0.0.1
-git push origin v0.0.1
+VERSION=1.0.0
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
+git push origin "v${VERSION}"
 ```
 
-详细说明见 [Docker 发布文档](./docs/docker-release.md)。
+Git Tag 触发 GitHub Actions 构建并推送镜像，不会自动更新生产容器。生产环境仍需在 Compose/1Panel 中指定发布版本、拉取镜像并重建服务。详见 [Docker 发布文档](./docs/docker-release.md)。
 
 ## 文档
 
 - [文档索引](./docs/README.md)
-- [当前架构](./docs/architecture.md)
+- [系统架构](./docs/architecture.md)
 - [开发约定](./docs/conventions.md)
+- [API 使用指南](./docs/api.md)
+- [外部事件](./docs/external-events.md)
 - [Prisma ORM 8 Migration 规范](./docs/prisma-migration-policy.md)
-- [招生 CRM 主线规格](./docs/specs/admissions-crm-transformation/requirements.md)
+- [Docker 发布](./docs/docker-release.md)
+- [领域规格索引](./docs/specs/README.md)
