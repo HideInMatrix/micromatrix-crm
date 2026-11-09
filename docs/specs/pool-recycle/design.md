@@ -1,6 +1,6 @@
 # Pool Recycle 设计
 
-> **实现状态：核心功能已实现。** 线索池「领取后 2 分钟」真实后端业务闭环已通过本地 PostgreSQL、Redis、BullMQ 和 Worker 验证。客户公海真实闭环、PC 页面视觉验收，以及 Redis/Worker 故障恢复和并发边界的专项集成测试仍需补齐；不能将这些未执行的测试标记为通过。
+> **实现状态：核心功能已实现。** 截至 2026-11-09，线索池与客户公海的「领取后 2 分钟」真实后端闭环均已通过本地 PostgreSQL、Redis、BullMQ 和 Worker 验证，覆盖无跟进和新增跟进重新计时。PC/H5 页面视觉验收，以及 Redis/Worker 故障恢复和并发边界专项集成测试仍待补齐；不能将这些未执行的测试标记为通过。
 
 ## 1. 设计目标与边界
 
@@ -66,7 +66,7 @@
 - `storageTime + Picked`：以当前 `collectionTime` 为锚点。
 - `storageTime + Created`：以 `createTime` 为锚点。
 - 同时选择 Created 和 Picked：AND 语义下以较晚到期边界为准。
-- `followUpTime`：以当前 `followTime` 为锚点；每次跟进提交后刷新计划和 generation。
+- `followUpTime`：优先以当前 `followTime` 为锚点；`followTime` 为空（从未跟进）时回退到最近一次领取时间 `collectionTime`。每次跟进提交后刷新计划和 generation；跟进时间缺失且领取时间也缺失时，不创建计划。该 evaluator 同时服务线索池和客户公海。
 - 分钟、小时、天、周、月动态阈值使用锚点加时长计算；保留旧格式解析兼容。
 - 现有比较采用严格的“早于”语义，计划边界增加 1ms，避免恰好到达阈值时提前回收。
 - AND / OR、固定时间范围、TODAY/LAST_SEVEN 等既有条件仍由 evaluator 完整判断。延迟 Job 只负责唤醒，不直接决定回收。
@@ -103,5 +103,7 @@ Worker 通过 `taskId + generation` 获取当前计划并领取执行锁，然�
 | Worker 启动补建与恢复         | 已实现             | 尚待 Redis/Worker 重启故障注入测试                     |
 | PC 配置页面                   | 已实现             | TypeScript 与生产构建通过；浏览器视觉验收待补          |
 | Mobile H5 业务操作            | 沿用现有池业务接口 | 本轮未做专门视觉验收                                   |
+
+2026-11-09 本地真实数据验收：线索与客户各创建两条记录，分别验证领取后不跟进、领取后写跟进。无跟进记录使用领取时间生成首个计划；写跟进后 `generation` 从 1 增至 2，`dueAt` 按最后跟进时间重新计算。Worker 最终将 4 条记录全部回收到各自原池，负责人和领取时间清空，2 条跟进记录与负责人历史保留，任务均为 `COMPLETED` 且 `lastError` 为空。测试记录保留在本地。
 
 线索池真实闭环验收以实际业务状态为准：测试成员领取后，PostgreSQL 计划到期时间按领取时间加 2 分钟生成；BullMQ Job 由 Worker 消费；线索回到原线索池、负责人清空、负责人历史保留且未产生跟进记录。具体验收结果与未完成项目以本表为准，不得将调度链路测试等同于完整业务验收。

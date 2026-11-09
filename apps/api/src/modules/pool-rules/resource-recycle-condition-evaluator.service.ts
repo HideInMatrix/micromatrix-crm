@@ -10,10 +10,10 @@ export interface RecycleTimeResource {
 type SearchMode = 'AND' | 'OR'
 
 /**
- * CordysCRM 公海/线索池专用时间回收条件。
+ * 线索池与客户公海共用的时间回收条件计算器。
  *
- * 注意：这不是普通高级筛选器。Cordys 当前只把 storageTime / followUpTime
- * 用作自动回收条件，因此这里保持独立语义，避免后续任意字段意外触发自动回收。
+ * 注意：这不是普通高级筛选器。当前只把 storageTime / followUpTime
+ * 用作自动回收条件，因此这里保持独立语义，避免任意字段意外触发自动回收。
  */
 @Injectable()
 export class ResourceRecycleConditionEvaluator {
@@ -35,12 +35,7 @@ export class ResourceRecycleConditionEvaluator {
     if (conditions.length === 0) return false
 
     const searchMode: SearchMode = mode === 'OR' ? 'OR' : 'AND'
-    const canTreatMissingFollowUpAsNoFollowUp =
-      searchMode === 'AND' &&
-      conditions.some((condition) => this.isPickedStorageThreshold(condition, now))
-    const results = conditions.map((condition) =>
-      this.matchesCondition(condition, resource, now, canTreatMissingFollowUpAsNoFollowUp),
-    )
+    const results = conditions.map((condition) => this.matchesCondition(condition, resource, now))
     return searchMode === 'AND' ? results.every(Boolean) : results.some(Boolean)
   }
 
@@ -61,9 +56,6 @@ export class ResourceRecycleConditionEvaluator {
     if (!conditions.length) return null
 
     const searchMode: SearchMode = mode === 'OR' ? 'OR' : 'AND'
-    const canTreatMissingFollowUpAsNoFollowUp =
-      searchMode === 'AND' &&
-      conditions.some((condition) => this.isPickedStorageThreshold(condition, now))
     const dueCandidates: number[] = []
     const nonThresholdResults: boolean[] = []
 
@@ -73,18 +65,7 @@ export class ResourceRecycleConditionEvaluator {
         dueCandidates.push(dueAt)
         continue
       }
-      if (
-        searchMode === 'AND' &&
-        condition.column === 'followUpTime' &&
-        resource.lastFollowedAt === null &&
-        canTreatMissingFollowUpAsNoFollowUp
-      ) {
-        nonThresholdResults.push(true)
-        continue
-      }
-      nonThresholdResults.push(
-        this.matchesCondition(condition, resource, now, canTreatMissingFollowUpAsNoFollowUp),
-      )
+      nonThresholdResults.push(this.matchesCondition(condition, resource, now))
     }
 
     const immediate = now.getTime() + 1_000
@@ -122,7 +103,8 @@ export class ResourceRecycleConditionEvaluator {
       return due.getTime() + 1
     }
 
-    if (condition.column === 'followUpTime') return dueFor(resource.lastFollowedAt)
+    if (condition.column === 'followUpTime')
+      return dueFor(resource.lastFollowedAt ?? resource.collectedAt)
     if (condition.column !== 'storageTime') return null
     const scope = condition.scope ?? []
     const anchors: Array<Date | null> = []
@@ -189,7 +171,6 @@ export class ResourceRecycleConditionEvaluator {
     condition: ResourcePoolRecycleCondition,
     resource: RecycleTimeResource,
     now: Date,
-    canTreatMissingFollowUpAsNoFollowUp: boolean,
   ) {
     if (condition.column === 'storageTime') {
       const scope = condition.scope ?? []
@@ -207,40 +188,9 @@ export class ResourceRecycleConditionEvaluator {
       if (picked) return this.matchesTime(condition, resource.collectedAt, now)
       return false
     }
-    if (resource.lastFollowedAt === null) {
-      return canTreatMissingFollowUpAsNoFollowUp && this.matchesMissingFollowUp(condition, now)
-    }
-    return this.matchesTime(condition, resource.lastFollowedAt, now)
-  }
-
-  private isPickedStorageThreshold(condition: ResourcePoolRecycleCondition, now: Date) {
-    if (
-      condition.column !== 'storageTime' ||
-      condition.operator !== 'DYNAMICS' ||
-      !condition.scope?.includes('Picked')
-    ) {
-      return false
-    }
-    const parts = condition.value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-    return this.dynamicThreshold(parts, now)?.direction === 'before'
-  }
-
-  /**
-   * 没有跟进记录只表示“从未跟进”，不能命中“过去 7 天”等任意时间区间。
-   * 只有在 AND 规则中同时配置了“最近领取时间早于某个时间点”时，才视为满足
-   * “早于某个时间点”的跟进条件，避免仅配置跟进条件就立即回收从未跟进的线索。
-   */
-  private matchesMissingFollowUp(condition: ResourcePoolRecycleCondition, now: Date) {
-    if (condition.operator !== 'DYNAMICS') return false
-    const parts = condition.value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-    const threshold = this.dynamicThreshold(parts, now)
-    return threshold?.direction === 'before'
+    // 从未跟进时，以最近一次领取时间作为初始计时锚点；一旦有跟进记录，
+    // 则只使用最后跟进时间。领取时间缺失时仍不匹配，避免错误回收。
+    return this.matchesTime(condition, resource.lastFollowedAt ?? resource.collectedAt, now)
   }
 
   private matchesTime(condition: ResourcePoolRecycleCondition, time: Date | null, now: Date) {

@@ -46,9 +46,60 @@ const lastFollowedTwoMinutes = [
   },
 ]
 assert.equal(
+  evaluator.nextDueAt('AND', lastFollowedTwoMinutes, resource, anchor)?.getTime(),
+  anchor.getTime() + 120_001,
+  '从未跟进时应回退到最近领取时间，确保领取后也会生成延迟任务',
+)
+assert.equal(
+  evaluator.matches('AND', lastFollowedTwoMinutes, resource, new Date(anchor.getTime() + 120_000)),
+  false,
+  '从未跟进时，领取后两分钟边界不能提前回收',
+)
+assert.equal(
+  evaluator.matches('AND', lastFollowedTwoMinutes, resource, new Date(anchor.getTime() + 120_002)),
+  true,
+  '从未跟进时，超过领取时间两分钟应命中最后跟进时间规则',
+)
+assert.equal(
+  evaluator.nextDueAt('AND', lastFollowedTwoMinutes, { ...resource, collectedAt: null }, anchor),
+  null,
+  '领取时间和最后跟进时间都缺失时不能猜测回收时间',
+)
+assert.equal(
+  evaluator.matches(
+    'AND',
+    lastFollowedTwoMinutes,
+    { ...resource, collectedAt: null },
+    new Date(anchor.getTime() + 120_002),
+  ),
+  false,
+  '领取时间和最后跟进时间都缺失时不能命中回收条件',
+)
+assert.equal(
   evaluator.nextDueAt('AND', lastFollowedTwoMinutes, followedResource, anchor)?.getTime(),
   anchor.getTime() + 180_001,
   '最后跟进时间应成为新的计时锚点',
+)
+
+const customerResource = {
+  createdAt: new Date('2026-11-09T01:00:00.000Z'),
+  collectedAt: new Date(anchor.getTime() + 30_000),
+  lastFollowedAt: null,
+}
+assert.equal(
+  evaluator.nextDueAt('AND', lastFollowedTwoMinutes, customerResource, anchor)?.getTime(),
+  anchor.getTime() + 150_001,
+  '客户公海从未跟进时也应使用最近领取时间生成回收计划',
+)
+assert.equal(
+  evaluator.matches(
+    'AND',
+    lastFollowedTwoMinutes,
+    customerResource,
+    new Date(anchor.getTime() + 150_002),
+  ),
+  true,
+  '客户公海超过领取时间两分钟后应命中最后跟进时间规则',
 )
 
 const orRule = [
@@ -86,4 +137,4 @@ assert.equal(
   '旧版天数格式必须保持兼容',
 )
 
-console.log('Pool recycle evaluator tests passed (6 assertions groups).')
+console.log('Pool recycle evaluator tests passed (12 assertions groups).')
