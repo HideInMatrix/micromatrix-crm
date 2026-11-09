@@ -10,6 +10,8 @@
 | Pool Recycle：线索池/客户公海动态过期、延迟任务与自动回收 | [requirements](./pool-recycle/requirements.md)                  | [design](./pool-recycle/design.md)                  |
 | 线索/客户快捷搜索：PC 配置、PC/H5 查询语义与服务端校验    | —                                                               | [design](./module-quick-search.md)                  |
 
+Pool Recycle 当前状态：核心实现已完成；线索池真实 2 分钟后端闭环已通过。客户公海真实闭环、PC 页面视觉验收及故障恢复/并发专项测试仍待完成，详见 [Pool Recycle 设计中的验收状态](./pool-recycle/design.md#8-验收状态)。
+
 ## 平台领域
 
 | 领域                                                                         | 需求                                                     | 设计                                         |

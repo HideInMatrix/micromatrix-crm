@@ -66,7 +66,7 @@ Redis 协调层只能减少重复进入；业务自身 CAS、唯一约束、状�
 - PostgreSQL 保存每个资源当前有效的回收计划及 generation；BullMQ 只承载 `{ taskId, generation }` 延迟投递，不是回收计划的唯一事实源。
 - 资源领取/分配/转移、跟进时间更新和池规则变化必须刷新或取消计划；业务时间戳与计划更新通过事务或可靠 Outbox 保证一致。
 - Worker 到期后重新加载当前资源、负责人、池配置和动态规则，复用 Pool Recycle evaluator；通过事务锁和 CAS 防止旧任务、重复任务或并发跟进误回收。
-- Worker bootstrap 恢复 PostgreSQL 中缺失的未完成 job；Outbox Dispatcher 持续重试未投递记录；可选每 15–30 分钟低频 reconciliation 修复 Redis job 丢失，不要求每分钟扫描。
+- Worker bootstrap 补建缺失计划并恢复 PostgreSQL 中 Redis 缺失的未完成 Job；`PoolRecycleTask` 的 `PENDING` 状态承担持久化待派发记录，Dispatcher 每 5 秒扫描待派发计划并对投递失败退避重试。当前不运行独立的低频 Redis Job reconciliation，也不要求每分钟全量扫描资源。
 - 延迟任务按 at-least-once 设计，业务执行必须幂等；Redis/Worker 暂时不可用时，PostgreSQL 计划不得丢失。
 - 具体业务规则、字段锚点、状态检查和验收流程以 [Pool Recycle 规格](../pool-recycle/requirements.md) 与 [设计](../pool-recycle/design.md) 为准。
 

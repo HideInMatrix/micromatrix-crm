@@ -68,11 +68,11 @@ Worker
 
 ## 8. Pool Recycle delayed jobs
 
-Pool Recycle 使用独立 BullMQ Queue，不与 Export Queue 共用 job name 或并发预算。PostgreSQL `PoolRecycleTask` 是当前计划的事实源；每个资源一条当前计划，通过 generation 识别领取、跟进、规则变化前后的旧任务。业务事务更新 `collectionTime` / `followTime` 时同步 upsert 计划，commit 后再投递延迟 job。队列 payload 只包含 task ID 和 generation。
+Pool Recycle 使用独立 BullMQ Queue `pool-recycle`，不与 Export Queue 共用 job name 或并发预算。PostgreSQL `PoolRecycleTask` 是每个资源当前计划的事实源；唯一键为 tenant + resource type + resource ID，generation 用于识别领取、跟进和规则变化前后的旧任务。业务事务更新 `collectionTime` / `followTime` 时同步 upsert 或 cancel 计划。`PENDING` 状态同时承担待派发 Outbox 职责，队列 payload 只包含 `{ taskId, generation }`。
 
-Worker 到期后重新加载数据库状态并执行 evaluator；未满足时根据下一动态边界更新计划，满足时使用 Repository 事务锁和 CAS 完成移池。重复投递通过 task generation、任务状态和资源快照检查变为 no-op。事务 Outbox/Dispatcher 持续重试未投递记录；Worker 启动时从 PostgreSQL 恢复缺失 job。可选每 15–30 分钟低频 reconciliation 修复 Redis 数据丢失，不要求每分钟补偿，也不参与正常到期触发。
+`PoolRecycleWorkerService` 启动时补建迁移前缺失的计划，并恢复 PostgreSQL 中 Redis 缺失的未完成 Job。运行期间 Dispatcher 每 5 秒只扫描 PENDING 计划，投递失败有限退避；它不扫描全部业务资源。BullMQ 默认最多尝试 3 次，使用 2 秒起始指数退避。当前没有独立的 15–30 分钟 Redis Job reconciliation 定时器。
 
-动态阈值使用资源字段时间作为锚点，例如测试环境临时配置 `collectionTime + 2 minutes`；2 分钟只是验证延迟任务的测试阈值，不是生产默认值；跟进发生后以新的 `followTime` 重新计算。延迟 job 仅负责唤醒，不直接决定是否回收。固定时间区间、TODAY/LAST_SEVEN 等日历区间旧规则继续由现有每天 02:30 兼容扫描覆盖；它不参与分钟/小时/天/周时长阈值的正常到期触发。
+Worker 到期后重新加载数据库状态并执行 evaluator；未满足时根据下一动态边界刷新计划，满足时使用 Repository 事务锁和 CAS 完成移池。重复投递通过 task generation、任务状态和资源快照检查变为 no-op。动态阈值使用资源字段时间作为锚点，例如测试环境临时配置 `collectionTime + 2 minutes`；2 分钟只是验证延迟任务的测试阈值，不是生产默认值。延迟 Job 仅负责唤醒，不直接决定是否回收。既有每天 02:30 的扫描仍保留为历史规则兼容兜底，不是明确时长阈值的主要触发方式。
 
 ## 9. Export concurrency
 
