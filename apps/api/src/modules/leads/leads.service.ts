@@ -53,6 +53,7 @@ import { SpreadsheetService } from '../import-export/spreadsheet.service'
 import { BusinessNotificationsService } from '../notifications/business-notifications.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
 import { CluePoolRepository } from '../pool-rules/clue-pool.repository'
+import { PoolRecycleTaskService } from '../pool-rules/pool-recycle-task.service'
 import { CustomerPoolRepository } from '../pool-rules/customer-pool.repository'
 import {
   acquirePoolTransactionLocksPrisma,
@@ -172,6 +173,7 @@ export class LeadsService {
     private readonly pools: ResourcePoolsService,
     private readonly cluePools: CluePoolRepository,
     private readonly customerPools: CustomerPoolRepository,
+    private readonly recycleTasks: PoolRecycleTaskService,
     private readonly changeLog: BusinessChangeLogService,
     private readonly userViews: UserViewsService,
     private readonly spreadsheet: SpreadsheetService,
@@ -742,6 +744,7 @@ export class LeadsService {
         user.id,
         uniqueScope,
       )
+      await this.recycleTasks.refreshLeadInTransaction(tx, user.tenantId, created.id)
       return created
     })
     if (owner && owner.id !== user.id) {
@@ -895,6 +898,7 @@ export class LeadsService {
       user.id,
       uniqueScope,
     )
+    await this.recycleTasks.refreshLeadInTransaction(tx, user.tenantId, lead.id)
     return lead
   }
 
@@ -1664,6 +1668,7 @@ export class LeadsService {
         updateUser: user.id,
       })
       if (!updatedLead) throw new NotFoundException('线索不存在')
+      await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', lead.id)
       return { customer }
     })
     await this.customers.notifyCreatedCustomer(user, result.customer, prepared.owner?.id ?? null)
@@ -1882,6 +1887,7 @@ export class LeadsService {
         updateUser: user.id,
       })
       if (!transitioned) throw new NotFoundException('线索不存在')
+      await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', lead.id)
     }
 
     if (newestFollowedAt && newestFollowedAt !== customer.followTime) {
@@ -2549,6 +2555,9 @@ export class LeadsService {
   private async deleteLeadResources(user: AuthUser, leads: Lead[]) {
     const ids = leads.map((lead) => lead.id)
     await this.prisma.client.transaction(async (tx) => {
+      for (const leadId of ids) {
+        await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', leadId)
+      }
       await tx.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'lead',

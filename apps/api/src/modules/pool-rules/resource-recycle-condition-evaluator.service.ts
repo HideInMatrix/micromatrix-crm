@@ -44,6 +44,147 @@ export class ResourceRecycleConditionEvaluator {
     return searchMode === 'AND' ? results.every(Boolean) : results.some(Boolean)
   }
 
+  /**
+   * 计算下一次可能满足回收条件的时间点。该方法只负责调度边界，
+   * 到期后仍必须调用 matches() 重新判断完整规则。
+   */
+  nextDueAt(
+    mode: string | null | undefined,
+    rawConditions: unknown,
+    resource: RecycleTimeResource,
+    now = new Date(),
+  ): Date | null {
+    if (!Array.isArray(rawConditions)) return null
+    const conditions = rawConditions.filter(
+      (condition): condition is ResourcePoolRecycleCondition => this.isValidCondition(condition),
+    )
+    if (!conditions.length) return null
+
+    const searchMode: SearchMode = mode === 'OR' ? 'OR' : 'AND'
+    const canTreatMissingFollowUpAsNoFollowUp =
+      searchMode === 'AND' &&
+      conditions.some((condition) => this.isPickedStorageThreshold(condition, now))
+    const dueCandidates: number[] = []
+    const nonThresholdResults: boolean[] = []
+
+    for (const condition of conditions) {
+      const dueAt = this.thresholdDueAt(condition, resource)
+      if (dueAt !== null) {
+        dueCandidates.push(dueAt)
+        continue
+      }
+      if (
+        searchMode === 'AND' &&
+        condition.column === 'followUpTime' &&
+        resource.lastFollowedAt === null &&
+        canTreatMissingFollowUpAsNoFollowUp
+      ) {
+        nonThresholdResults.push(true)
+        continue
+      }
+      nonThresholdResults.push(
+        this.matchesCondition(condition, resource, now, canTreatMissingFollowUpAsNoFollowUp),
+      )
+    }
+
+    const immediate = now.getTime() + 1_000
+    if (searchMode === 'OR') {
+      if (nonThresholdResults.some(Boolean)) return new Date(immediate)
+      if (!dueCandidates.length) return null
+      return new Date(Math.max(immediate, Math.min(...dueCandidates)))
+    }
+
+    if (nonThresholdResults.some((matched) => !matched)) return null
+    if (!dueCandidates.length) return null
+    return new Date(Math.max(immediate, ...dueCandidates))
+  }
+
+  private thresholdDueAt(
+    condition: ResourcePoolRecycleCondition,
+    resource: RecycleTimeResource,
+  ): number | null {
+    if (condition.operator !== 'DYNAMICS') return null
+    const threshold = this.parseDuration(condition.value)
+    if (!threshold || threshold.direction !== 'before') return null
+
+    const dueFor = (anchor: Date | null) => {
+      if (!anchor) return null
+      const due = new Date(anchor)
+      const sign = 1
+      if (threshold.unit === 'MINUTE') due.setTime(due.getTime() + sign * threshold.amount * 60_000)
+      else if (threshold.unit === 'HOUR')
+        due.setTime(due.getTime() + sign * threshold.amount * 3_600_000)
+      else if (threshold.unit === 'DAY') due.setDate(due.getDate() + sign * threshold.amount)
+      else if (threshold.unit === 'WEEK') due.setDate(due.getDate() + sign * threshold.amount * 7)
+      else if (threshold.unit === 'MONTH') due.setMonth(due.getMonth() + sign * threshold.amount)
+      else return null
+      // matchesTime 使用严格小于，延后 1ms 确保边界时刻不会提前回收。
+      return due.getTime() + 1
+    }
+
+    if (condition.column === 'followUpTime') return dueFor(resource.lastFollowedAt)
+    if (condition.column !== 'storageTime') return null
+    const scope = condition.scope ?? []
+    const anchors: Array<Date | null> = []
+    if (scope.includes('Created')) anchors.push(resource.createdAt)
+    if (scope.includes('Picked')) anchors.push(resource.collectedAt)
+    if (!anchors.length) return null
+    const dueTimes = anchors.map(dueFor)
+    if (dueTimes.some((value) => value === null)) return null
+    // 同时勾选创建/领取时间时，Evaluator 要求二者都满足，取较晚的边界。
+    return Math.max(...(dueTimes as number[]))
+  }
+
+  private parseDuration(value: string): {
+    amount: number
+    direction: 'before' | 'after'
+    unit: 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH'
+  } | null {
+    const parts = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    if (parts.length === 2) {
+      const amount = Number(parts[0])
+      const legacyUnit = parts[1].toUpperCase()
+      const unit =
+        legacyUnit === 'DAY'
+          ? 'DAY'
+          : legacyUnit === 'WEEK'
+            ? 'WEEK'
+            : legacyUnit === 'MONTH'
+              ? 'MONTH'
+              : null
+      return Number.isInteger(amount) && amount > 0 && unit
+        ? { amount, direction: 'before', unit }
+        : null
+    }
+    if (parts.length !== 3) return null
+    const amount = Number(parts[1])
+    const rawUnit = parts[2].toUpperCase()
+    const direction = rawUnit.startsWith('BEFORE_')
+      ? 'before'
+      : rawUnit.startsWith('AFTER_')
+        ? 'after'
+        : null
+    const suffix = rawUnit.replace(/^(BEFORE_|AFTER_)/, '')
+    const unit =
+      suffix === 'MINUTE'
+        ? 'MINUTE'
+        : suffix === 'HOUR'
+          ? 'HOUR'
+          : suffix === 'DAY'
+            ? 'DAY'
+            : suffix === 'WEEK'
+              ? 'WEEK'
+              : suffix === 'MONTH'
+                ? 'MONTH'
+                : null
+    return Number.isInteger(amount) && amount > 0 && direction && unit
+      ? { amount, direction, unit }
+      : null
+  }
+
   private matchesCondition(
     condition: ResourcePoolRecycleCondition,
     resource: RecycleTimeResource,
@@ -222,7 +363,8 @@ export class ResourceRecycleConditionEvaluator {
         : null
     if (!direction) return null
     const sign = direction === 'before' ? -1 : 1
-    if (unit.endsWith('_HOUR')) time.setTime(time.getTime() + sign * amount * 60 * 60 * 1000)
+    if (unit.endsWith('_MINUTE')) time.setTime(time.getTime() + sign * amount * 60 * 1000)
+    else if (unit.endsWith('_HOUR')) time.setTime(time.getTime() + sign * amount * 60 * 60 * 1000)
     else if (unit.endsWith('_DAY')) time.setDate(time.getDate() + sign * amount)
     else if (unit.endsWith('_WEEK')) time.setDate(time.getDate() + sign * amount * 7)
     else if (unit.endsWith('_MONTH')) time.setMonth(time.getMonth() + sign * amount)

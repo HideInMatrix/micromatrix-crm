@@ -66,13 +66,21 @@ Worker
 
 `AsyncJobsService` 负责 Queue/Worker 生命周期；`ExportTasksService` 负责 DB task 和文件生命周期；业务 module 只提供 `buildQueuedExport()`，不 import BullMQ。
 
-## 8. Export concurrency
+## 8. Pool Recycle delayed jobs
+
+Pool Recycle 使用独立 BullMQ Queue，不与 Export Queue 共用 job name 或并发预算。PostgreSQL `PoolRecycleTask` 是当前计划的事实源；每个资源一条当前计划，通过 generation 识别领取、跟进、规则变化前后的旧任务。业务事务更新 `collectionTime` / `followTime` 时同步 upsert 计划，commit 后再投递延迟 job。队列 payload 只包含 task ID 和 generation。
+
+Worker 到期后重新加载数据库状态并执行 evaluator；未满足时根据下一动态边界更新计划，满足时使用 Repository 事务锁和 CAS 完成移池。重复投递通过 task generation、任务状态和资源快照检查变为 no-op。事务 Outbox/Dispatcher 持续重试未投递记录；Worker 启动时从 PostgreSQL 恢复缺失 job。可选每 15–30 分钟低频 reconciliation 修复 Redis 数据丢失，不要求每分钟补偿，也不参与正常到期触发。
+
+动态阈值使用资源字段时间作为锚点，例如测试环境临时配置 `collectionTime + 2 minutes`；2 分钟只是验证延迟任务的测试阈值，不是生产默认值；跟进发生后以新的 `followTime` 重新计算。延迟 job 仅负责唤醒，不直接决定是否回收。固定时间区间、TODAY/LAST_SEVEN 等日历区间旧规则继续由现有每天 02:30 兼容扫描覆盖；它不参与分钟/小时/天/周时长阈值的正常到期触发。
+
+## 9. Export concurrency
 
 同一用户创建任务时使用 PostgreSQL advisory transaction 串行：最多 10 个 PENDING，同一 user+module 同时最多 1 个 PENDING。DB commit 后才 enqueue；enqueue 失败删除新 task。
 
 worker 默认 attempts=3 + exponential backoff。Business/permission errors 直接 final failed；未知/transient error 由 BullMQ 重试。
 
-## 9. Recovery
+## 10. Recovery
 
 worker bootstrap 扫描未过期 PENDING task：
 
@@ -82,11 +90,11 @@ worker bootstrap 扫描未过期 PENDING task：
 
 DB task 与 jobId 共同提供重启恢复，不依赖进程内状态。
 
-## 10. Compose
+## 11. Compose
 
 `redis` 使用 AOF + requirepass + internal network。API 启动只硬依赖 migration；worker 依赖 migration + Redis。API/worker 复用镜像和 `/app/uploads` volume。
 
-## 11. 维护规则
+## 12. 维护规则
 
 - 不因为已有 Redis 就把任意业务状态迁入 Redis。
 - 不用 Pub/Sub 替代 Notification/Inbox/ExportTask 等 durable 表。

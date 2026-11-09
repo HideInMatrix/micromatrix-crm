@@ -60,21 +60,31 @@ Redis 协调层只能减少重复进入；业务自身 CAS、唯一约束、状�
 - transient error 有限重试；确定性 4xx/权限/数据错误直接 FAILED。
 - worker 重启后依据 PostgreSQL PENDING task 恢复缺失 job。
 
-## 8. Cancel / Recovery
+## 8. BullMQ Pool Recycle
+
+- 线索池和客户公海动态过期回收使用独立 `pool-recycle` Queue，与异步导出 Queue 隔离；复用现有 Redis、BullMQ runtime 和 `dist/worker.js` Worker 容器。
+- PostgreSQL 保存每个资源当前有效的回收计划及 generation；BullMQ 只承载 `{ taskId, generation }` 延迟投递，不是回收计划的唯一事实源。
+- 资源领取/分配/转移、跟进时间更新和池规则变化必须刷新或取消计划；业务时间戳与计划更新通过事务或可靠 Outbox 保证一致。
+- Worker 到期后重新加载当前资源、负责人、池配置和动态规则，复用 Pool Recycle evaluator；通过事务锁和 CAS 防止旧任务、重复任务或并发跟进误回收。
+- Worker bootstrap 恢复 PostgreSQL 中缺失的未完成 job；Outbox Dispatcher 持续重试未投递记录；可选每 15–30 分钟低频 reconciliation 修复 Redis job 丢失，不要求每分钟扫描。
+- 延迟任务按 at-least-once 设计，业务执行必须幂等；Redis/Worker 暂时不可用时，PostgreSQL 计划不得丢失。
+- 具体业务规则、字段锚点、状态检查和验收流程以 [Pool Recycle 规格](../pool-recycle/requirements.md) 与 [设计](../pool-recycle/design.md) 为准。
+
+## 9. Cancel / Recovery
 
 - 取消任务先把 DB PENDING 改为 CANCELED，再 best-effort 移除 waiting/delayed job。
 - active job 不强杀；processor 在生成前后和 SUCCESS CAS 前检查 DB 状态。
 - 若任务已取消，刚生成文件必须删除，不能覆盖回 SUCCESS。
 - 24h 到期和文件清理以 PostgreSQL task 为准，不依赖 BullMQ job metadata。
 
-## 9. 观测与部署
+## 10. 观测与部署
 
 - `/api/health` 只暴露必要的 Redis ready 状态、缓存/异步任务运行指标，不暴露连接 Secret 或业务数据。
 - 生产 Redis 不发布宿主端口；Migration 不依赖 Redis。
 - API 不把 Redis healthy 作为核心启动门槛；worker 因队列语义可以依赖 Redis healthy。
 - release smoke 必须真实验证 API、Redis、worker、异步任务和 `dist/worker.js` 入口。
 
-## 10. 验收
+## 11. 验收
 
 - 真实 Redis/PostgreSQL 测试覆盖 fail-open、版本失效、Pub/Sub、lease、slot claim、PG fallback、enqueue/retry/cancel/recovery。
 - 多实例协调测试必须证明同一 slot/job 不重复执行。

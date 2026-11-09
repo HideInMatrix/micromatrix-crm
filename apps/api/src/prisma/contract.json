@@ -288,6 +288,10 @@
       "model": "Plans",
       "namespace": "public"
     },
+    "pool_recycle_task": {
+      "model": "PoolRecycleTask",
+      "namespace": "public"
+    },
     "roles": {
       "model": "Roles",
       "namespace": "public"
@@ -10409,6 +10413,197 @@
               },
               "namespaceId": "public",
               "table": "plans"
+            }
+          },
+          "PoolRecycleTask": {
+            "fields": {
+              "attempts": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "createTime": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "dueAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "expectedCollectionTime": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "expectedCreateTime": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "expectedFollowTime": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "expectedOwnerId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "generation": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "lastError": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "lockedUntil": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "organizationId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "poolId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "resourceId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "resourceType": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "ruleFingerprint": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "updateTime": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "attempts": {
+                  "column": "attempts"
+                },
+                "createTime": {
+                  "column": "create_time"
+                },
+                "dueAt": {
+                  "column": "due_at"
+                },
+                "expectedCollectionTime": {
+                  "column": "expected_collection_time"
+                },
+                "expectedCreateTime": {
+                  "column": "expected_create_time"
+                },
+                "expectedFollowTime": {
+                  "column": "expected_follow_time"
+                },
+                "expectedOwnerId": {
+                  "column": "expected_owner_id"
+                },
+                "generation": {
+                  "column": "generation"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "lastError": {
+                  "column": "last_error"
+                },
+                "lockedUntil": {
+                  "column": "locked_until"
+                },
+                "organizationId": {
+                  "column": "organization_id"
+                },
+                "poolId": {
+                  "column": "pool_id"
+                },
+                "resourceId": {
+                  "column": "resource_id"
+                },
+                "resourceType": {
+                  "column": "resource_type"
+                },
+                "ruleFingerprint": {
+                  "column": "rule_fingerprint"
+                },
+                "status": {
+                  "column": "status"
+                },
+                "updateTime": {
+                  "column": "update_time"
+                }
+              },
+              "namespaceId": "public",
+              "table": "pool_recycle_task"
             }
           },
           "Roles": {
@@ -22187,6 +22382,180 @@
               },
               "uniques": []
             },
+            "pool_recycle_task": {
+              "checks": [
+                {
+                  "expression": "char_length(\"id\") <= 32",
+                  "name": "text_len_pool_recycle_task_id_3d66fb56",
+                  "prefix": "text_len_pool_recycle_task_id"
+                },
+                {
+                  "expression": "char_length(\"organization_id\") <= 32",
+                  "name": "text_len_pool_recycle_task_org_0ac99d67",
+                  "prefix": "text_len_pool_recycle_task_org"
+                },
+                {
+                  "expression": "char_length(\"expected_owner_id\") <= 32",
+                  "name": "text_len_pool_recycle_task_owner_35358913",
+                  "prefix": "text_len_pool_recycle_task_owner"
+                },
+                {
+                  "expression": "char_length(\"pool_id\") <= 32",
+                  "name": "text_len_pool_recycle_task_pool_1f2f1db5",
+                  "prefix": "text_len_pool_recycle_task_pool"
+                },
+                {
+                  "expression": "char_length(\"resource_id\") <= 32",
+                  "name": "text_len_pool_recycle_task_resource_a5ef2b02",
+                  "prefix": "text_len_pool_recycle_task_resource"
+                },
+                {
+                  "expression": "char_length(\"resource_type\") <= 16",
+                  "name": "text_len_pool_recycle_task_type_84f90d67",
+                  "prefix": "text_len_pool_recycle_task_type"
+                }
+              ],
+              "columns": {
+                "attempts": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                },
+                "create_time": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": false
+                },
+                "due_at": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": false
+                },
+                "expected_collection_time": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": true
+                },
+                "expected_create_time": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": false
+                },
+                "expected_follow_time": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": true
+                },
+                "expected_owner_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "generation": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 1
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "last_error": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "locked_until": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": true
+                },
+                "organization_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "pool_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "resource_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "resource_type": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "rule_fingerprint": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "status": {
+                  "codecId": "pg/text@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": "PENDING"
+                  },
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "update_time": {
+                  "codecId": "pg/int8@1",
+                  "nativeType": "int8",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "organization_id",
+                    "status",
+                    "due_at"
+                  ],
+                  "name": "pool_recycle_task_org_status_due_at_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "organization_id",
+                    "resource_type",
+                    "resource_id"
+                  ],
+                  "name": "pool_recycle_task_resource_key",
+                  "unique": true
+                },
+                {
+                  "columns": [
+                    "status",
+                    "due_at"
+                  ],
+                  "name": "pool_recycle_task_status_due_at_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "pool_recycle_task_pkey"
+              },
+              "uniques": []
+            },
             "roles": {
               "columns": {
                 "createdAt": {
@@ -24240,7 +24609,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "53f2de2363c0f079fbeffa0cec23330fe675854e5682a47eb88207af861418e1"
+    "storageHash": "d2d7af91a22e92b04dbaaedaf249b774fec861bcd37d27fede68afb44a2613c9"
   },
   "execution": {
     "executionHash": "4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a",

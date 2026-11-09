@@ -19,6 +19,7 @@ import {
   startOfLocalDay,
 } from './pool-repository.helpers'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
+import { PoolRecycleTaskService } from './pool-recycle-task.service'
 import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
@@ -67,6 +68,11 @@ interface ClueMoveToPoolInput {
   operatorId: string
   reasonId?: string | null
   now?: bigint
+  expectedOwnerId?: string
+  expectedCreateTime?: bigint
+  expectedCollectionTime?: bigint
+  expectedFollowTime?: bigint | null
+  expectedTaskGeneration?: number
 }
 
 /** 只访问 clue_* 直接表，不根据 module 分派到通用模型。 */
@@ -75,6 +81,7 @@ export class CluePoolRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly calculator: PoolRuleCalculator,
+    private readonly recycleTasks: PoolRecycleTaskService,
   ) {}
 
   async listPools(organizationId: string) {
@@ -146,6 +153,7 @@ export class CluePoolRepository {
         updateUser: operatorId,
       })
       await this.replacePoolRelations(tx, pool.id, operatorId, input, now)
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'lead')
       return this.loadPoolView(tx, pool.id)
     })
   }
@@ -172,6 +180,7 @@ export class CluePoolRepository {
       })
       if (!updated) throw new NotFoundException('线索池不存在')
       await this.replacePoolRelations(tx, id, operatorId, input, now)
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'lead')
       return this.loadPoolView(tx, id)
     })
   }
@@ -185,6 +194,7 @@ export class CluePoolRepository {
         updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('线索池不存在')
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'lead')
       return updated
     })
   }
@@ -199,6 +209,7 @@ export class CluePoolRepository {
       }).aggregate((agg) => ({ count: agg.count() }))
       if (linked.count) throw new BadRequestException('线索池中仍有未领取线索，不能删除')
       await tx.orm.public.CluePool.where({ id: pool.id }).delete()
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'lead')
       return pool
     })
   }
@@ -273,6 +284,7 @@ export class CluePoolRepository {
         updateTime: now,
       })
       if (!updated) throw new NotFoundException('线索不存在或已在线索池中')
+      await this.recycleTasks.refreshLeadInTransaction(tx, input.organizationId, clue.id)
       return updated
     })
   }
@@ -328,6 +340,9 @@ export class CluePoolRepository {
           updateUser: input.operatorId,
           updateTime: now,
         })
+      for (const clue of changed) {
+        await this.recycleTasks.refreshLeadInTransaction(tx, input.organizationId, clue.id)
+      }
       return { count }
     })
   }
@@ -417,6 +432,7 @@ export class CluePoolRepository {
       if (updated !== 1) throw new ConflictException(`线索「${clue.name}」已被其他成员领取`)
       const result = await tx.orm.public.Clue.where({ id: clue.id }).first()
       if (!result) throw new ConflictException(`线索「${clue.name}」已被其他成员领取`)
+      await this.recycleTasks.refreshLeadInTransaction(tx, input.organizationId, clue.id)
       return result
     })
   }
@@ -443,11 +459,31 @@ export class CluePoolRepository {
       ])
       if (!clue) throw new NotFoundException('线索不存在或已在线索池中')
       if (!pool) throw new NotFoundException('目标线索池不存在或已禁用')
+      if (automatic && !pool.auto)
+        throw new ConflictException('线索池已关闭自动回收，本次任务已失效')
       if (!clue.owner || clue.collectionTime === null)
         throw new BadRequestException('线索当前没有可结束的负责人')
+      if (
+        (input.expectedOwnerId !== undefined && clue.owner !== input.expectedOwnerId) ||
+        (input.expectedCreateTime !== undefined && clue.createTime !== input.expectedCreateTime) ||
+        (input.expectedCollectionTime !== undefined &&
+          clue.collectionTime !== input.expectedCollectionTime) ||
+        (input.expectedFollowTime !== undefined && clue.followTime !== input.expectedFollowTime)
+      ) {
+        throw new ConflictException('线索已发生变化，自动回收任务已失效')
+      }
 
       await this.appendOwnerHistory(tx, clue, input.operatorId, input.reasonId, now)
-      const updated = await tx.orm.public.Clue.where({ id: clue.id }).update({
+      const updated = await tx.orm.public.Clue.where({
+        id: clue.id,
+        organizationId: input.organizationId,
+        inSharedPool: false,
+        owner: input.expectedOwnerId ?? clue.owner,
+        createTime: input.expectedCreateTime ?? clue.createTime,
+        collectionTime: input.expectedCollectionTime ?? clue.collectionTime,
+        followTime:
+          input.expectedFollowTime === undefined ? clue.followTime : input.expectedFollowTime,
+      }).update({
         poolId: pool.id,
         inSharedPool: true,
         owner: null,
@@ -457,6 +493,17 @@ export class CluePoolRepository {
         updateTime: now,
       })
       if (!updated) throw new NotFoundException('线索不存在或已在线索池中')
+      if (automatic) {
+        await this.recycleTasks.completeInTransaction(
+          tx,
+          input.organizationId,
+          'lead',
+          clue.id,
+          input.expectedTaskGeneration,
+        )
+      } else {
+        await this.recycleTasks.cancelInTransaction(tx, input.organizationId, 'lead', clue.id)
+      }
       return updated
     })
   }

@@ -1,10 +1,20 @@
-import { Injectable, Logger, ServiceUnavailableException, type OnApplicationShutdown } from '@nestjs/common'
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  type OnApplicationShutdown,
+} from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Queue, Worker, type ConnectionOptions, type Processor } from 'bullmq'
 import Redis, { type RedisOptions } from 'ioredis'
 
 export interface ExportJobData {
   taskId: string
+}
+
+export interface PoolRecycleJobData {
+  taskId: string
+  generation: number
 }
 
 interface AsyncJobMetrics {
@@ -22,6 +32,10 @@ interface AsyncJobMetrics {
 }
 
 const QUEUE_NAME = 'export'
+const POOL_RECYCLE_QUEUE_NAME = 'pool-recycle'
+// BullMQ delay is a signed 32-bit millisecond value. Longer horizons are
+// scheduled in safe chunks and re-evaluated by the worker at each wake-up.
+const MAX_BULLMQ_DELAY_MS = 2_147_000_000
 const QUEUE_PREFIX = 'micromatrix-crm:bull'
 
 @Injectable()
@@ -32,6 +46,10 @@ export class AsyncJobsService implements OnApplicationShutdown {
   private producerRedis: Redis | null = null
   private queueInit: Promise<Queue<ExportJobData>> | null = null
   private worker: Worker<ExportJobData> | null = null
+  private poolRecycleQueue: Queue<PoolRecycleJobData> | null = null
+  private poolRecycleProducerRedis: Redis | null = null
+  private poolRecycleQueueInit: Promise<Queue<PoolRecycleJobData>> | null = null
+  private poolRecycleWorker: Worker<PoolRecycleJobData> | null = null
   private readonly metrics: AsyncJobMetrics = {
     enqueueAttempts: 0,
     enqueued: 0,
@@ -66,7 +84,15 @@ export class AsyncJobsService implements OnApplicationShutdown {
     if (!this.enabled) {
       return {
         ...base,
-        queue: { ready: false, workers: 0, waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+        queue: {
+          ready: false,
+          workers: 0,
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          completed: 0,
+          failed: 0,
+        },
       }
     }
     try {
@@ -91,7 +117,15 @@ export class AsyncJobsService implements OnApplicationShutdown {
       await this.resetProducer()
       return {
         ...base,
-        queue: { ready: false, workers: 0, waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+        queue: {
+          ready: false,
+          workers: 0,
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          completed: 0,
+          failed: 0,
+        },
       }
     }
   }
@@ -148,6 +182,67 @@ export class AsyncJobsService implements OnApplicationShutdown {
     }
   }
 
+  async enqueuePoolRecycle(taskId: string, generation: number, dueAt: bigint): Promise<void> {
+    if (!this.enabled) throw new ServiceUnavailableException('自动回收延迟队列未配置，请联系管理员')
+    const queue = await this.readyPoolRecycleQueue()
+    const jobId = this.poolRecycleJobId(taskId, generation)
+    await queue.add(
+      'recycle-resource',
+      { taskId, generation },
+      {
+        jobId,
+        delay: Math.min(MAX_BULLMQ_DELAY_MS, Math.max(0, Number(dueAt) - Date.now())),
+      },
+    )
+  }
+
+  async ensurePoolRecycleJob(
+    taskId: string,
+    generation: number,
+    dueAt: bigint,
+  ): Promise<'RECOVERED' | 'KEPT'> {
+    if (!this.enabled) throw new ServiceUnavailableException('自动回收延迟队列未配置，请联系管理员')
+    const queue = await this.readyPoolRecycleQueue()
+    const existing = await queue.getJob(this.poolRecycleJobId(taskId, generation))
+    if (existing) {
+      const state = await existing.getState()
+      if (['waiting', 'delayed', 'active', 'prioritized', 'waiting-children'].includes(state)) {
+        return 'KEPT'
+      }
+      await existing.remove().catch(() => undefined)
+    }
+    await this.enqueuePoolRecycle(taskId, generation, dueAt)
+    return 'RECOVERED'
+  }
+
+  async getPoolRecycleJobState(taskId: string, generation: number): Promise<string | null> {
+    if (!this.enabled) return null
+    const queue = await this.readyPoolRecycleQueue()
+    const job = await queue.getJob(this.poolRecycleJobId(taskId, generation))
+    return job ? job.getState() : null
+  }
+
+  startPoolRecycleWorker(processor: Processor<PoolRecycleJobData>): Worker<PoolRecycleJobData> {
+    if (this.poolRecycleWorker) return this.poolRecycleWorker
+    if (!this.hasRedisConfig()) throw new Error('BullMQ pool recycle worker 无 Redis 配置')
+    this.poolRecycleWorker = new Worker<PoolRecycleJobData>(POOL_RECYCLE_QUEUE_NAME, processor, {
+      connection: this.connection(true),
+      prefix: QUEUE_PREFIX,
+      concurrency: this.positiveInt('POOL_RECYCLE_CONCURRENCY', 5),
+      lockDuration: 120_000,
+      maxStalledCount: 1,
+    })
+    this.poolRecycleWorker.on('failed', (job, error) => {
+      this.logger.warn(
+        `BullMQ pool recycle worker failed task=${job?.data.taskId ?? '-'} generation=${job?.data.generation ?? '-'}: ${error.message}`,
+      )
+    })
+    this.poolRecycleWorker.on('error', (error) =>
+      this.logger.warn(`BullMQ pool recycle worker error: ${error.message}`),
+    )
+    return this.poolRecycleWorker
+  }
+
   startExportWorker(processor: Processor<ExportJobData>): Worker<ExportJobData> {
     if (this.worker) return this.worker
     if (!this.hasRedisConfig()) throw new Error('BullMQ worker 无 Redis 配置')
@@ -162,30 +257,39 @@ export class AsyncJobsService implements OnApplicationShutdown {
     this.worker.on('completed', () => (this.metrics.workerCompleted += 1))
     this.worker.on('failed', (job, error) => {
       this.metrics.workerFailed += 1
-      this.logger.warn(`BullMQ export worker failed task=${job?.data.taskId ?? '-'}: ${error.message}`)
+      this.logger.warn(
+        `BullMQ export worker failed task=${job?.data.taskId ?? '-'}: ${error.message}`,
+      )
     })
     this.worker.on('error', (error) => this.logger.warn(`BullMQ worker error: ${error.message}`))
     return this.worker
   }
 
   async onApplicationShutdown(): Promise<void> {
-    await this.worker?.close().catch(() => undefined)
-    await this.resetProducer()
+    await Promise.all([
+      this.worker?.close().catch(() => undefined),
+      this.poolRecycleWorker?.close().catch(() => undefined),
+    ])
+    await Promise.all([this.resetProducer(), this.resetPoolRecycleProducer()])
   }
 
   private hasRedisConfig(): boolean {
-    return Boolean(this.config.get<string>('REDIS_URL')?.trim() || this.config.get<string>('REDIS_HOST')?.trim())
+    return Boolean(
+      this.config.get<string>('REDIS_URL')?.trim() || this.config.get<string>('REDIS_HOST')?.trim(),
+    )
   }
 
   private connection(worker: boolean): ConnectionOptions {
     const url = this.config.get<string>('REDIS_URL')?.trim()
     const base = {
-      ...(url ? { url } : {
-        host: this.config.get<string>('REDIS_HOST')?.trim(),
-        port: this.positiveInt('REDIS_PORT', 6379),
-        password: this.config.get<string>('REDIS_PASSWORD') || undefined,
-        db: this.nonNegativeInt('REDIS_DB', 0),
-      }),
+      ...(url
+        ? { url }
+        : {
+            host: this.config.get<string>('REDIS_HOST')?.trim(),
+            port: this.positiveInt('REDIS_PORT', 6379),
+            password: this.config.get<string>('REDIS_PASSWORD') || undefined,
+            db: this.nonNegativeInt('REDIS_DB', 0),
+          }),
       connectTimeout: 1_500,
       maxRetriesPerRequest: worker ? null : 1,
     }
@@ -215,6 +319,81 @@ export class AsyncJobsService implements OnApplicationShutdown {
     })
   }
 
+  private poolRecycleJobId(taskId: string, generation: number): string {
+    // BullMQ reserves ':' in custom job IDs; use a stable, generation-scoped identifier.
+    return `poolrecycle-${taskId}-${generation}`
+  }
+
+  private async readyPoolRecycleQueue(): Promise<Queue<PoolRecycleJobData>> {
+    if (!this.enabled) throw new Error('BullMQ pool recycle queue is disabled')
+    if (this.poolRecycleQueue && this.poolRecycleProducerRedis?.status === 'ready') {
+      return this.poolRecycleQueue
+    }
+    if (this.poolRecycleQueue || this.poolRecycleProducerRedis)
+      await this.resetPoolRecycleProducer()
+    if (!this.poolRecycleQueueInit) this.poolRecycleQueueInit = this.initializePoolRecycleQueue()
+    try {
+      return await this.poolRecycleQueueInit
+    } finally {
+      this.poolRecycleQueueInit = null
+    }
+  }
+
+  private async initializePoolRecycleQueue(): Promise<Queue<PoolRecycleJobData>> {
+    const redis = this.createProducerRedis()
+    redis.on('error', (error) =>
+      this.logger.warn(`BullMQ pool recycle Redis error: ${error.message}`),
+    )
+    const timeoutMs = this.positiveInt('POOL_RECYCLE_QUEUE_READY_TIMEOUT_MS', 1_500)
+    let timer: NodeJS.Timeout | undefined
+    try {
+      await Promise.race([
+        redis.connect(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(`BullMQ pool recycle producer connect timeout after ${timeoutMs}ms`),
+              ),
+            timeoutMs,
+          )
+        }),
+      ])
+      const queue = new Queue<PoolRecycleJobData>(POOL_RECYCLE_QUEUE_NAME, {
+        connection: redis,
+        prefix: QUEUE_PREFIX,
+        skipWaitingForReady: true,
+        skipMetasUpdate: true,
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2_000 },
+          removeOnComplete: { age: 24 * 60 * 60, count: 5_000 },
+          removeOnFail: { age: 7 * 24 * 60 * 60, count: 10_000 },
+        },
+      })
+      queue.on('error', (error) =>
+        this.logger.warn(`BullMQ pool recycle producer error: ${error.message}`),
+      )
+      this.poolRecycleProducerRedis = redis
+      this.poolRecycleQueue = queue
+      return queue
+    } catch (error) {
+      redis.disconnect(false)
+      throw error
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  private async resetPoolRecycleProducer(): Promise<void> {
+    const queue = this.poolRecycleQueue
+    const redis = this.poolRecycleProducerRedis
+    this.poolRecycleQueue = null
+    this.poolRecycleProducerRedis = null
+    await queue?.close().catch(() => undefined)
+    if (redis && redis.status !== 'end') redis.disconnect(false)
+  }
+
   private async readyQueue(): Promise<Queue<ExportJobData>> {
     if (!this.enabled) throw new Error('BullMQ export queue is disabled')
     if (this.queue && this.producerRedis?.status === 'ready') return this.queue
@@ -236,7 +415,10 @@ export class AsyncJobsService implements OnApplicationShutdown {
       await Promise.race([
         redis.connect(),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`BullMQ producer connect timeout after ${timeoutMs}ms`)), timeoutMs)
+          timer = setTimeout(
+            () => reject(new Error(`BullMQ producer connect timeout after ${timeoutMs}ms`)),
+            timeoutMs,
+          )
         }),
       ])
       const queue = new Queue<ExportJobData>(QUEUE_NAME, {

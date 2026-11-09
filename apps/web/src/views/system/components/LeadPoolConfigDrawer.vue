@@ -15,13 +15,86 @@ const emit = defineEmits<{ saved: [] }>()
 const refs = useFieldRefs()
 const saving = ref(false)
 
-type RecycleConditionForm = ResourcePoolRecycleCondition & { fixedRange: string[] }
-const dynamicOptions = [
-  { label: '超过 24 小时', value: 'CUSTOM,24,BEFORE_HOUR' },
-  { label: '超过 48 小时', value: 'CUSTOM,48,BEFORE_HOUR' },
-  { label: '超过 72 小时', value: 'CUSTOM,72,BEFORE_HOUR' },
-  { label: '超过 1 周（168 小时）', value: 'CUSTOM,168,BEFORE_HOUR' },
+type DynamicUnit = 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH'
+type DynamicMode = 'THRESHOLD' | 'RANGE'
+type DynamicDirection = 'BEFORE' | 'AFTER'
+type RecycleConditionForm = ResourcePoolRecycleCondition & {
+  fixedRange: string[]
+  dynamicAmount: number
+  dynamicUnit: DynamicUnit
+  dynamicMode: DynamicMode
+  dynamicRange: string
+  dynamicDirection: DynamicDirection
+}
+
+const dynamicRangeOptions = [
+  { label: '今天', value: 'TODAY' },
+  { label: '昨天', value: 'YESTERDAY' },
+  { label: '明天', value: 'TOMORROW' },
+  { label: '本周', value: 'WEEK' },
+  { label: '上周', value: 'LAST_WEEK' },
+  { label: '本月', value: 'MONTH' },
+  { label: '上月', value: 'LAST_MONTH' },
+  { label: '过去 7 天', value: 'LAST_SEVEN' },
+  { label: '未来 7 天', value: 'SEVEN' },
+  { label: '过去 30 天', value: 'LAST_THIRTY' },
+  { label: '未来 30 天', value: 'THIRTY' },
 ]
+
+function parseDynamicValue(value: string): {
+  amount: number
+  unit: DynamicUnit
+  mode: DynamicMode
+  range: string
+  direction: DynamicDirection
+} {
+  const parts = value.split(',').map((part) => part.trim())
+  const supported: DynamicUnit[] = ['MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH']
+  if (parts.length === 3) {
+    const rawUnit = parts[2].toUpperCase()
+    const direction: DynamicDirection = rawUnit.startsWith('AFTER_') ? 'AFTER' : 'BEFORE'
+    const unit = rawUnit.replace(/^(BEFORE_|AFTER_)/, '')
+    const amount = Number(parts[1])
+    if (supported.includes(unit as DynamicUnit) && Number.isInteger(amount) && amount > 0) {
+      return {
+        amount,
+        unit: unit as DynamicUnit,
+        mode: 'THRESHOLD',
+        range: '',
+        direction,
+      }
+    }
+  }
+  if (parts.length === 2) {
+    const legacyUnit = parts[1].toUpperCase()
+    const unit =
+      legacyUnit === 'DAY'
+        ? 'DAY'
+        : legacyUnit === 'WEEK'
+          ? 'WEEK'
+          : legacyUnit === 'MONTH'
+            ? 'MONTH'
+            : null
+    const amount = Number(parts[0])
+    if (unit && Number.isInteger(amount) && amount > 0) {
+      return { amount, unit, mode: 'THRESHOLD', range: '', direction: 'BEFORE' }
+    }
+  }
+  return {
+    amount: 24,
+    unit: 'HOUR',
+    mode: 'RANGE',
+    range: value || 'LAST_SEVEN',
+    direction: 'BEFORE',
+  }
+}
+
+function quickSet(condition: RecycleConditionForm, hours: number) {
+  condition.dynamicMode = 'THRESHOLD'
+  condition.dynamicAmount = hours
+  condition.dynamicUnit = 'HOUR'
+  condition.dynamicDirection = 'BEFORE'
+}
 
 const form = reactive({
   name: '',
@@ -41,13 +114,19 @@ const form = reactive({
 
 const scopeOptions = computed(() => [
   ...refs.members.value.map((item) => ({ label: `成员：${item.name}`, value: `user:${item.id}` })),
-  ...[...refs.deptMap.value.entries()].map(([id, name]) => ({ label: `部门：${name}`, value: `dept:${id}` })),
+  ...[...refs.deptMap.value.entries()].map(([id, name]) => ({
+    label: `部门：${name}`,
+    value: `dept:${id}`,
+  })),
   ...refs.roles.value.map((item) => ({ label: `角色：${item.name}`, value: `role:${item.id}` })),
 ])
-const hiddenFields = computed(() => props.fields.filter((field) => !field.hidden && field.key !== 'name'))
+const hiddenFields = computed(() =>
+  props.fields.filter((field) => !field.hidden && field.key !== 'name'),
+)
 
 function canonical(token: string) {
-  if (token.startsWith('user:') || token.startsWith('dept:') || token.startsWith('role:')) return token
+  if (token.startsWith('user:') || token.startsWith('dept:') || token.startsWith('role:'))
+    return token
   if (refs.memberMap.value.has(token)) return `user:${token}`
   if (refs.deptMap.value.has(token)) return `dept:${token}`
   if (refs.roleMap.value.has(token)) return `role:${token}`
@@ -59,6 +138,11 @@ function addCondition() {
     column: 'storageTime',
     operator: 'DYNAMICS',
     value: 'CUSTOM,24,BEFORE_HOUR',
+    dynamicAmount: 24,
+    dynamicUnit: 'HOUR',
+    dynamicMode: 'THRESHOLD',
+    dynamicRange: '',
+    dynamicDirection: 'BEFORE',
     scope: ['Picked'],
     fixedRange: [],
   })
@@ -79,12 +163,20 @@ function reset() {
     newDataCooldownDays: pool?.pickRule?.newDataCooldownDays ?? 1,
     autoRecycle: pool?.autoRecycle ?? false,
     recycleMode: pool?.recycleRule?.operator ?? 'AND',
-    recycleConditions: (pool?.recycleRule?.conditions ?? []).map((condition) => ({
-      ...condition,
-      scope: [...(condition.scope ?? [])],
-      fixedRange:
-        condition.operator === 'FIXED' ? condition.value.split(',').filter(Boolean) : [],
-    })),
+    recycleConditions: (pool?.recycleRule?.conditions ?? []).map((condition) => {
+      const dynamic = parseDynamicValue(condition.value)
+      return {
+        ...condition,
+        dynamicAmount: dynamic.amount,
+        dynamicUnit: dynamic.unit,
+        dynamicMode: dynamic.mode,
+        dynamicRange: dynamic.range,
+        dynamicDirection: dynamic.direction,
+        scope: [...(condition.scope ?? [])],
+        fixedRange:
+          condition.operator === 'FIXED' ? condition.value.split(',').filter(Boolean) : [],
+      }
+    }),
   })
 }
 
@@ -95,7 +187,12 @@ async function save(continueCreate = false) {
   const conditions = form.recycleConditions.map((condition) => ({
     column: condition.column,
     operator: condition.operator,
-    value: condition.operator === 'FIXED' ? condition.fixedRange.join(',') : condition.value.trim(),
+    value:
+      condition.operator === 'FIXED'
+        ? condition.fixedRange.join(',')
+        : condition.dynamicMode === 'RANGE'
+          ? condition.dynamicRange
+          : `CUSTOM,${condition.dynamicAmount},${condition.dynamicDirection}_${condition.dynamicUnit}`,
     ...(condition.column === 'storageTime'
       ? { scope: condition.scope?.length ? condition.scope : ['Picked'] }
       : {}),
@@ -166,54 +263,176 @@ watch(visible, async (open) => {
     />
     <el-form label-position="left" label-width="120px">
       <el-divider content-position="left">基本信息</el-divider>
-      <el-form-item label="线索池名称" required><el-input v-model="form.name" maxlength="255" /></el-form-item>
+      <el-form-item label="线索池名称" required
+        ><el-input v-model="form.name" maxlength="255"
+      /></el-form-item>
       <el-form-item label="线索池管理员" required>
         <el-select v-model="form.managerIds" multiple filterable class="w-full">
-          <el-option v-for="item in scopeOptions" :key="`m-${item.value}`" :label="item.label" :value="item.value" />
+          <el-option
+            v-for="item in scopeOptions"
+            :key="`m-${item.value}`"
+            :label="item.label"
+            :value="item.value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="成员" required>
         <el-select v-model="form.scopeIds" multiple filterable class="w-full">
-          <el-option v-for="item in scopeOptions" :key="`s-${item.value}`" :label="item.label" :value="item.value" />
+          <el-option
+            v-for="item in scopeOptions"
+            :key="`s-${item.value}`"
+            :label="item.label"
+            :value="item.value"
+          />
         </el-select>
       </el-form-item>
 
       <el-divider content-position="left">线索领取规则</el-divider>
       <el-form-item label="每日领取">
-        <el-radio-group v-model="form.limitDailyPick"><el-radio :value="false">不限制</el-radio><el-radio :value="true">限制</el-radio></el-radio-group>
-        <el-input-number v-if="form.limitDailyPick" v-model="form.dailyPickLimit" :min="1" :max="10000" class="ml-4" />
+        <el-radio-group v-model="form.limitDailyPick"
+          ><el-radio :value="false">不限制</el-radio
+          ><el-radio :value="true">限制</el-radio></el-radio-group
+        >
+        <el-input-number
+          v-if="form.limitDailyPick"
+          v-model="form.dailyPickLimit"
+          :min="1"
+          :max="10000"
+          class="ml-4"
+        />
       </el-form-item>
       <el-form-item label="前负责人领取">
-        <el-radio-group v-model="form.limitPreviousOwner"><el-radio :value="false">不限制</el-radio><el-radio :value="true">限制</el-radio></el-radio-group>
-        <template v-if="form.limitPreviousOwner"><el-input-number v-model="form.previousOwnerCooldownDays" :min="1" :max="10000" class="ml-4" /><span class="ml-2">天内不能领取</span></template>
+        <el-radio-group v-model="form.limitPreviousOwner"
+          ><el-radio :value="false">不限制</el-radio
+          ><el-radio :value="true">限制</el-radio></el-radio-group
+        >
+        <template v-if="form.limitPreviousOwner"
+          ><el-input-number
+            v-model="form.previousOwnerCooldownDays"
+            :min="1"
+            :max="10000"
+            class="ml-4"
+          /><span class="ml-2">天内不能领取</span></template
+        >
       </el-form-item>
       <el-form-item label="新数据领取">
-        <el-radio-group v-model="form.limitNewData"><el-radio :value="false">不限制</el-radio><el-radio :value="true">限制</el-radio></el-radio-group>
-        <template v-if="form.limitNewData"><el-input-number v-model="form.newDataCooldownDays" :min="1" :max="10000" class="ml-4" /><span class="ml-2">天后可领取</span></template>
+        <el-radio-group v-model="form.limitNewData"
+          ><el-radio :value="false">不限制</el-radio
+          ><el-radio :value="true">限制</el-radio></el-radio-group
+        >
+        <template v-if="form.limitNewData"
+          ><el-input-number
+            v-model="form.newDataCooldownDays"
+            :min="1"
+            :max="10000"
+            class="ml-4"
+          /><span class="ml-2">天后可领取</span></template
+        >
       </el-form-item>
 
       <el-divider content-position="left">线索回收规则</el-divider>
       <el-form-item label="自动回收">
-        <el-radio-group v-model="form.autoRecycle"><el-radio :value="true">是</el-radio><el-radio :value="false">否</el-radio></el-radio-group>
+        <el-radio-group v-model="form.autoRecycle"
+          ><el-radio :value="true">是</el-radio
+          ><el-radio :value="false">否</el-radio></el-radio-group
+        >
       </el-form-item>
       <template v-if="form.autoRecycle">
         <div class="mb-3 flex items-center justify-between">
-          <el-radio-group v-model="form.recycleMode" size="small"><el-radio-button value="AND">全部满足</el-radio-button><el-radio-button value="OR">任一满足</el-radio-button></el-radio-group>
+          <el-radio-group v-model="form.recycleMode" size="small"
+            ><el-radio-button value="AND">全部满足</el-radio-button
+            ><el-radio-button value="OR">任一满足</el-radio-button></el-radio-group
+          >
           <el-button size="small" @click="addCondition">添加条件</el-button>
         </div>
-        <div v-for="(condition, index) in form.recycleConditions" :key="index" class="mb-3 rounded border border-[var(--el-border-color)] p-3">
+        <div
+          v-for="(condition, index) in form.recycleConditions"
+          :key="index"
+          class="mb-3 rounded border border-[var(--el-border-color)] p-3"
+        >
           <div class="grid grid-cols-[150px_130px_1fr_auto] items-center gap-3">
-            <el-select v-model="condition.column"><el-option label="入库时间" value="storageTime" /><el-option label="最后跟进时间" value="followUpTime" /></el-select>
-            <el-select v-model="condition.operator"><el-option label="动态时间" value="DYNAMICS" /><el-option label="固定时间" value="FIXED" /></el-select>
-            <el-select v-if="condition.operator === 'DYNAMICS'" v-model="condition.value" filterable allow-create default-first-option>
-              <el-option v-for="item in dynamicOptions" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
-            <el-date-picker v-else v-model="condition.fixedRange" type="datetimerange" value-format="x" class="!w-full" />
-            <el-button link type="danger" @click="form.recycleConditions.splice(index, 1)">删除</el-button>
+            <el-select v-model="condition.column"
+              ><el-option label="入库时间" value="storageTime" /><el-option
+                label="最后跟进时间"
+                value="followUpTime"
+            /></el-select>
+            <el-select v-model="condition.operator"
+              ><el-option label="动态时间" value="DYNAMICS" /><el-option
+                label="固定时间"
+                value="FIXED"
+            /></el-select>
+            <div v-if="condition.operator === 'DYNAMICS'" class="flex min-w-0 items-center gap-2">
+              <el-radio-group v-model="condition.dynamicMode" size="small">
+                <el-radio-button value="THRESHOLD">时长</el-radio-button>
+                <el-radio-button value="RANGE">时间区间</el-radio-button>
+              </el-radio-group>
+              <template v-if="condition.dynamicMode === 'THRESHOLD'">
+                <el-input-number
+                  v-model="condition.dynamicAmount"
+                  :min="1"
+                  :max="100000"
+                  :precision="0"
+                  controls-position="right"
+                  class="!w-28"
+                />
+                <el-select v-model="condition.dynamicUnit" class="!w-24">
+                  <el-option label="分钟" value="MINUTE" />
+                  <el-option label="小时" value="HOUR" />
+                  <el-option label="天" value="DAY" />
+                  <el-option label="周" value="WEEK" />
+                  <el-option label="月" value="MONTH" />
+                </el-select>
+              </template>
+              <el-select
+                v-else
+                v-model="condition.dynamicRange"
+                filterable
+                allow-create
+                class="min-w-0 flex-1"
+              >
+                <el-option
+                  v-for="item in dynamicRangeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+                <el-option
+                  v-if="
+                    condition.dynamicRange &&
+                    !dynamicRangeOptions.some((item) => item.value === condition.dynamicRange)
+                  "
+                  :label="condition.dynamicRange"
+                  :value="condition.dynamicRange"
+                />
+              </el-select>
+            </div>
+            <el-date-picker
+              v-else
+              v-model="condition.fixedRange"
+              type="datetimerange"
+              value-format="x"
+              class="!w-full"
+            />
+            <el-button link type="danger" @click="form.recycleConditions.splice(index, 1)"
+              >删除</el-button
+            >
+          </div>
+          <div
+            v-if="condition.operator === 'DYNAMICS'"
+            class="mt-2 flex flex-wrap items-center gap-2 text-xs"
+          >
+            <span class="text-[var(--el-text-color-secondary)]">快捷设置：</span>
+            <el-button link size="small" @click="quickSet(condition, 24)">24 小时</el-button>
+            <el-button link size="small" @click="quickSet(condition, 48)">48 小时</el-button>
+            <el-button link size="small" @click="quickSet(condition, 72)">72 小时</el-button>
+            <el-button link size="small" @click="quickSet(condition, 168)"
+              >168 小时（一周）</el-button
+            >
           </div>
           <template v-if="condition.column === 'storageTime'">
             <el-checkbox-group v-model="condition.scope" class="mt-2">
-              <el-checkbox value="Created">创建时间</el-checkbox><el-checkbox value="Picked">最近领取时间</el-checkbox>
+              <el-checkbox value="Created">创建时间</el-checkbox
+              ><el-checkbox value="Picked">最近领取时间</el-checkbox>
             </el-checkbox-group>
             <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
               多选时，所有选中时间都需早于阈值才满足。按领取后超期回收时，建议仅勾选「最近领取时间」。
@@ -224,14 +443,20 @@ watch(visible, async (open) => {
 
       <el-divider content-position="left">列设置</el-divider>
       <el-checkbox-group v-model="form.hiddenFieldIds" class="grid grid-cols-4 gap-2">
-        <el-checkbox v-for="field in hiddenFields" :key="field.id" :value="field.id">隐藏 {{ field.label }}</el-checkbox>
+        <el-checkbox v-for="field in hiddenFields" :key="field.id" :value="field.id"
+          >隐藏 {{ field.label }}</el-checkbox
+        >
       </el-checkbox-group>
-      <div class="mt-2 text-xs text-[var(--el-text-color-secondary)]">线索名称固定显示；这里仅控制当前线索池页面字段可见性。</div>
+      <div class="mt-2 text-xs text-[var(--el-text-color-secondary)]">
+        线索名称固定显示；这里仅控制当前线索池页面字段可见性。
+      </div>
     </el-form>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button v-if="!pool" :loading="saving" @click="save(true)">保存并继续</el-button>
-      <el-button type="primary" :loading="saving" @click="save(false)">{{ pool ? '更新' : '确定' }}</el-button>
+      <el-button type="primary" :loading="saving" @click="save(false)">{{
+        pool ? '更新' : '确定'
+      }}</el-button>
     </template>
   </el-drawer>
 </template>

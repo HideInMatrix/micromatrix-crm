@@ -52,3 +52,5 @@ Lead ──转化──> Customer
 - 共享类型与权限定义：`packages/shared/`。
 - PC：`apps/web/`；Mobile：`apps/mobile/`；共享浏览器能力：`packages/frontend-shared/`。
 - 生产部署和数据库变更遵循 [Docker 发布文档](../../docker-release.md) 与 [Prisma 迁移规范](../../prisma-migration-policy.md)。
+
+线索池与客户公海的自动回收调度、动态时间锚点、延迟任务和补偿机制统一见 [Pool Recycle 需求](../pool-recycle/requirements.md) 与 [Pool Recycle 设计](../pool-recycle/design.md)。

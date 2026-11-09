@@ -1,0 +1,158 @@
+[
+  {
+    "id": "table.pool_recycle_task",
+    "label": "Create table \"pool_recycle_task\"",
+    "summary": "Creates table \"pool_recycle_task\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "pool_recycle_task"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"pool_recycle_task\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"pool_recycle_task\"",
+        "sql": "CREATE TABLE \"public\".\"pool_recycle_task\" (\n  \"attempts\" int4 DEFAULT 0 NOT NULL,\n  \"create_time\" int8 NOT NULL,\n  \"due_at\" int8 NOT NULL,\n  \"expected_collection_time\" int8,\n  \"expected_create_time\" int8 NOT NULL,\n  \"expected_follow_time\" int8,\n  \"expected_owner_id\" text,\n  \"generation\" int4 DEFAULT 1 NOT NULL,\n  \"id\" text NOT NULL,\n  \"last_error\" text,\n  \"locked_until\" int8,\n  \"organization_id\" text NOT NULL,\n  \"pool_id\" text NOT NULL,\n  \"resource_id\" text NOT NULL,\n  \"resource_type\" text NOT NULL,\n  \"rule_fingerprint\" text NOT NULL,\n  \"status\" text DEFAULT 'PENDING' NOT NULL,\n  \"update_time\" int8 NOT NULL,\n  CONSTRAINT \"pool_recycle_task_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"text_len_pool_recycle_task_id_3d66fb56\" CHECK (char_length(\"id\") <= 32),\n  CONSTRAINT \"text_len_pool_recycle_task_org_0ac99d67\" CHECK (char_length(\"organization_id\") <= 32),\n  CONSTRAINT \"text_len_pool_recycle_task_owner_35358913\" CHECK (char_length(\"expected_owner_id\") <= 32),\n  CONSTRAINT \"text_len_pool_recycle_task_pool_1f2f1db5\" CHECK (char_length(\"pool_id\") <= 32),\n  CONSTRAINT \"text_len_pool_recycle_task_resource_a5ef2b02\" CHECK (char_length(\"resource_id\") <= 32),\n  CONSTRAINT \"text_len_pool_recycle_task_type_84f90d67\" CHECK (char_length(\"resource_type\") <= 16)\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"pool_recycle_task\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.pool_recycle_task.pool_recycle_task_org_status_due_at_idx",
+    "label": "Create index \"pool_recycle_task_org_status_due_at_idx\" on \"pool_recycle_task\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "pool_recycle_task_org_status_due_at_idx",
+        "table": "pool_recycle_task"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"pool_recycle_task_org_status_due_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task_org_status_due_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"pool_recycle_task_org_status_due_at_idx\"",
+        "sql": "CREATE INDEX \"pool_recycle_task_org_status_due_at_idx\" ON \"public\".\"pool_recycle_task\" (\"organization_id\", \"status\", \"due_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"pool_recycle_task_org_status_due_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task_org_status_due_at_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.pool_recycle_task.pool_recycle_task_resource_key",
+    "label": "Create index \"pool_recycle_task_resource_key\" on \"pool_recycle_task\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "pool_recycle_task_resource_key",
+        "table": "pool_recycle_task"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"pool_recycle_task_resource_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task_resource_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"pool_recycle_task_resource_key\"",
+        "sql": "CREATE UNIQUE INDEX \"pool_recycle_task_resource_key\" ON \"public\".\"pool_recycle_task\" (\"organization_id\", \"resource_type\", \"resource_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"pool_recycle_task_resource_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task_resource_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.pool_recycle_task.pool_recycle_task_status_due_at_idx",
+    "label": "Create index \"pool_recycle_task_status_due_at_idx\" on \"pool_recycle_task\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "pool_recycle_task_status_due_at_idx",
+        "table": "pool_recycle_task"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"pool_recycle_task_status_due_at_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task_status_due_at_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"pool_recycle_task_status_due_at_idx\"",
+        "sql": "CREATE INDEX \"pool_recycle_task_status_due_at_idx\" ON \"public\".\"pool_recycle_task\" (\"status\", \"due_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"pool_recycle_task_status_due_at_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"pool_recycle_task_status_due_at_idx\""
+        ]
+      }
+    ]
+  }
+]

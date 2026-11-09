@@ -4,10 +4,11 @@
 
 ## 产品主线
 
-| 主题                                                   | 需求                                                            | 设计                                                |
-| ------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------- |
-| 招生CRM：线索、客户、公海、转化及产品边界              | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) |
-| 线索/客户快捷搜索：PC 配置、PC/H5 查询语义与服务端校验 | —                                                               | [design](./module-quick-search.md)                  |
+| 主题                                                      | 需求                                                            | 设计                                                |
+| --------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- |
+| 招生CRM：线索、客户、公海、转化及产品边界                 | [requirements](./admissions-crm-transformation/requirements.md) | [design](./admissions-crm-transformation/design.md) |
+| Pool Recycle：线索池/客户公海动态过期、延迟任务与自动回收 | [requirements](./pool-recycle/requirements.md)                  | [design](./pool-recycle/design.md)                  |
+| 线索/客户快捷搜索：PC 配置、PC/H5 查询语义与服务端校验    | —                                                               | [design](./module-quick-search.md)                  |
 
 ## 平台领域
 

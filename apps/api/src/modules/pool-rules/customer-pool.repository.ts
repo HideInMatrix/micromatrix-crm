@@ -19,6 +19,7 @@ import {
   startOfLocalDay,
 } from './pool-repository.helpers'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
+import { PoolRecycleTaskService } from './pool-recycle-task.service'
 import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
@@ -43,6 +44,11 @@ interface CustomerMoveToPoolInput {
   operatorId: string
   reasonId?: string | null
   now?: bigint
+  expectedOwnerId?: string
+  expectedCreateTime?: bigint
+  expectedCollectionTime?: bigint
+  expectedFollowTime?: bigint | null
+  expectedTaskGeneration?: number
 }
 
 /** 只访问 customer_* 直接表，不根据 module 分派到通用模型。 */
@@ -51,6 +57,7 @@ export class CustomerPoolRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly calculator: PoolRuleCalculator,
+    private readonly recycleTasks: PoolRecycleTaskService,
   ) {}
 
   async listPools(organizationId: string) {
@@ -123,6 +130,7 @@ export class CustomerPoolRepository {
         updateUser: operatorId,
       })
       await this.replacePoolRelations(tx, pool.id, operatorId, input, now)
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'customer')
       return this.loadPoolView(tx, pool.id)
     })
   }
@@ -149,6 +157,7 @@ export class CustomerPoolRepository {
       })
       if (!updated) throw new NotFoundException('客户公海不存在')
       await this.replacePoolRelations(tx, id, operatorId, input, now)
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'customer')
       return this.loadPoolView(tx, id)
     })
   }
@@ -162,6 +171,7 @@ export class CustomerPoolRepository {
         updateUser: operatorId,
       })
       if (!updated) throw new NotFoundException('客户公海不存在')
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'customer')
       return updated
     })
   }
@@ -176,6 +186,7 @@ export class CustomerPoolRepository {
       }).aggregate((agg) => ({ count: agg.count() }))
       if (linked.count) throw new BadRequestException('客户公海中仍有未领取客户，不能删除')
       await tx.orm.public.CustomerPool.where({ id: pool.id }).delete()
+      await this.recycleTasks.refreshOrganizationInTransaction(tx, organizationId, 'customer')
       return pool
     })
   }
@@ -255,6 +266,7 @@ export class CustomerPoolRepository {
       updateTime: now,
     })
     if (!updated) throw new NotFoundException('客户不存在或已在公海中')
+    await this.recycleTasks.refreshCustomerInTransaction(tx, input.organizationId, customer.id)
     return updated
   }
 
@@ -345,6 +357,7 @@ export class CustomerPoolRepository {
     if (updated !== 1) throw new ConflictException(`客户「${customer.name}」已被其他成员领取`)
     const claimed = await tx.orm.public.Customer.where({ id: customer.id }).first()
     if (!claimed) throw new NotFoundException('客户不存在')
+    await this.recycleTasks.refreshCustomerInTransaction(tx, input.organizationId, customer.id)
     return claimed
   }
 
@@ -375,11 +388,32 @@ export class CustomerPoolRepository {
       ])
       if (!customer) throw new NotFoundException('客户不存在或已在公海中')
       if (!pool) throw new NotFoundException('目标客户公海不存在或已禁用')
+      if (automatic && !pool.auto)
+        throw new ConflictException('客户公海已关闭自动回收，本次任务已失效')
       if (!customer.owner || customer.collectionTime === null)
         throw new BadRequestException('客户当前没有可结束的负责人')
+      if (
+        (input.expectedOwnerId !== undefined && customer.owner !== input.expectedOwnerId) ||
+        (input.expectedCreateTime !== undefined &&
+          customer.createTime !== input.expectedCreateTime) ||
+        (input.expectedCollectionTime !== undefined &&
+          customer.collectionTime !== input.expectedCollectionTime) ||
+        (input.expectedFollowTime !== undefined && customer.followTime !== input.expectedFollowTime)
+      ) {
+        throw new ConflictException('客户已发生变化，自动回收任务已失效')
+      }
 
       await this.appendOwnerHistoryPrisma(tx, customer, input.operatorId, input.reasonId, now)
-      const updated = await tx.orm.public.Customer.where({ id: customer.id }).update({
+      const updated = await tx.orm.public.Customer.where({
+        id: customer.id,
+        organizationId: input.organizationId,
+        inSharedPool: false,
+        owner: input.expectedOwnerId ?? customer.owner,
+        createTime: input.expectedCreateTime ?? customer.createTime,
+        collectionTime: input.expectedCollectionTime ?? customer.collectionTime,
+        followTime:
+          input.expectedFollowTime === undefined ? customer.followTime : input.expectedFollowTime,
+      }).update({
         poolId: pool.id,
         inSharedPool: true,
         owner: null,
@@ -389,6 +423,22 @@ export class CustomerPoolRepository {
         updateTime: now,
       })
       if (!updated) throw new NotFoundException('客户不存在或已在公海中')
+      if (automatic) {
+        await this.recycleTasks.completeInTransaction(
+          tx,
+          input.organizationId,
+          'customer',
+          customer.id,
+          input.expectedTaskGeneration,
+        )
+      } else {
+        await this.recycleTasks.cancelInTransaction(
+          tx,
+          input.organizationId,
+          'customer',
+          customer.id,
+        )
+      }
       return updated
     })
   }

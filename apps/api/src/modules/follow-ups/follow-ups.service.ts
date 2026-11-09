@@ -35,18 +35,13 @@ import {
   ResourceFieldValueService,
 } from '../metadata/resource-field-value.service'
 import { ResourcePoolsService } from '../pool-rules/resource-pools.service'
+import { PoolRecycleTaskService } from '../pool-rules/pool-recycle-task.service'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
 import { CreateFollowUpDto, FollowUpRecordPageDto, UpdateFollowUpDto } from './dto/follow-up.dto'
 
 type FollowRecordSystemSort =
-  | 'targetType'
-  | 'targetId'
-  | 'ownerId'
-  | 'followedAt'
-  | 'type'
-  | 'createdAt'
-  | 'updatedAt'
+  'targetType' | 'targetId' | 'ownerId' | 'followedAt' | 'type' | 'createdAt' | 'updatedAt'
 
 type FollowRecordResolvedSort =
   | {
@@ -104,6 +99,7 @@ export class FollowUpsService {
     private readonly moduleForms: ModuleFormsService,
     private readonly fieldValues: ResourceFieldValueService,
     private readonly customerFollowUpCompletion: CustomerFollowUpCompletionService,
+    private readonly recycleTasks: PoolRecycleTaskService,
     private readonly userViews: UserViewsService,
     private readonly attachments: AttachmentsService,
   ) {}
@@ -333,7 +329,9 @@ export class FollowUpsService {
     }
     await this.assertTargetAccess(user, dto.targetType, dto.targetId, true)
     if (dto.targetType === 'customer') {
-      const { rule, completedIds } = await this.customerFollowUpCompletion.evaluate(user.tenantId, [dto.targetId])
+      const { rule, completedIds } = await this.customerFollowUpCompletion.evaluate(user.tenantId, [
+        dto.targetId,
+      ])
       if (rule.enabled && !rule.valid) {
         throw new BadRequestException('客户跟进完结规则引用的字段已失效，请先修复系统设置')
       }
@@ -746,14 +744,7 @@ export class FollowUpsService {
     condition: FilterCondition,
   ) {
     const key = field.key
-    const allowed = new Set([
-      'targetType',
-      'targetId',
-      'ownerId',
-      'followedAt',
-      'content',
-      'type',
-    ])
+    const allowed = new Set(['targetType', 'targetId', 'ownerId', 'followedAt', 'content', 'type'])
     if (!allowed.has(key)) throw new BadRequestException(`筛选字段不支持：${key}`)
     const impossible = () => collection.where((row) => row.id.eq(''))
 
@@ -803,9 +794,9 @@ export class FollowUpsService {
             ? row.targetId
             : key === 'ownerId'
               ? row.ownerId
-                : key === 'content'
-                  ? row.content
-                  : row._type
+              : key === 'content'
+                ? row.content
+                : row._type
       if (condition.op === 'eq') return column.eq(value)
       if (condition.op === 'ne') return column.neq(value)
       if (condition.op === 'in') return column.in(values)
@@ -886,6 +877,7 @@ export class FollowUpsService {
           follower: ownerId,
           updateTime: directNow,
         })
+        await this.recycleTasks.refreshLeadInTransaction(tx, tenantId, targetId)
         break
       case 'customer':
         await tx.orm.public.Customer.where({
@@ -896,6 +888,7 @@ export class FollowUpsService {
           follower: ownerId,
           updateTime: directNow,
         })
+        await this.recycleTasks.refreshCustomerInTransaction(tx, tenantId, targetId)
         break
       default:
         break
@@ -907,7 +900,7 @@ export class FollowUpsService {
     tenantId: string
     targetType: string
     targetId: string
-      _type: string | null
+    _type: string | null
     content: string
     followedAt: ReturnType<typeof nowInstant> | null
     ownerId: string
@@ -999,10 +992,7 @@ export class FollowUpsService {
         targetId: record.targetId,
         targetName:
           targetNameMap.get(`${record.targetType}:${record.targetId}`) ?? '已删除业务对象',
-        customerId:
-          record.targetType === 'customer'
-            ? record.targetId
-            : null,
+        customerId: record.targetType === 'customer' ? record.targetId : null,
         type: record.type,
         content: record.content,
         followedAt: record.followedAt ? instantToISOString(record.followedAt) : null,

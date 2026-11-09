@@ -58,6 +58,39 @@ namespace public {
 
 
 
+
+  model PoolRecycleTask {
+    id                      String  @id(map: "pool_recycle_task_pkey")
+    organizationId          String  @map("organization_id")
+    resourceType            String  @map("resource_type")
+    resourceId              String  @map("resource_id")
+    poolId                  String  @map("pool_id")
+    dueAt                   BigInt  @map("due_at")
+    generation              Int     @default(1)
+    status                  String  @default("PENDING")
+    expectedOwnerId         String? @map("expected_owner_id")
+    expectedCreateTime      BigInt  @map("expected_create_time")
+    expectedCollectionTime  BigInt? @map("expected_collection_time")
+    expectedFollowTime     BigInt? @map("expected_follow_time")
+    ruleFingerprint         String  @map("rule_fingerprint")
+    attempts                Int     @default(0)
+    lockedUntil             BigInt? @map("locked_until")
+    lastError               String? @map("last_error")
+    createTime              BigInt  @map("create_time")
+    updateTime              BigInt  @map("update_time")
+
+    @@index([organizationId, resourceType, resourceId], map: "pool_recycle_task_resource_key", unique: true)
+    @@index([status, dueAt], map: "pool_recycle_task_status_due_at_idx")
+    @@index([organizationId, status, dueAt], map: "pool_recycle_task_org_status_due_at_idx")
+    @@check(expression: "char_length(\"id\") <= 32", name: "text_len_pool_recycle_task_id")
+    @@check(expression: "char_length(\"organization_id\") <= 32", name: "text_len_pool_recycle_task_org")
+    @@check(expression: "char_length(\"resource_type\") <= 16", name: "text_len_pool_recycle_task_type")
+    @@check(expression: "char_length(\"resource_id\") <= 32", name: "text_len_pool_recycle_task_resource")
+    @@check(expression: "char_length(\"pool_id\") <= 32", name: "text_len_pool_recycle_task_pool")
+    @@check(expression: "char_length(\"expected_owner_id\") <= 32", name: "text_len_pool_recycle_task_owner")
+    @@map("pool_recycle_task")
+  }
+
   model CluePool {
     id                   String           @id(map: "clue_pool_pkey")
     name                 String

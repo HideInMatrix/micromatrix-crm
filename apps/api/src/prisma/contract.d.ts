@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'53f2de2363c0f079fbeffa0cec23330fe675854e5682a47eb88207af861418e1'>;
+  StorageHashBase<'d2d7af91a22e92b04dbaaedaf249b774fec861bcd37d27fede68afb44a2613c9'>;
 export type ExecutionHash =
   ExecutionHashBase<'4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a'>;
 export type ProfileHash =
@@ -1089,6 +1089,26 @@ export type FieldOutputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
+    readonly PoolRecycleTask: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly organizationId: CodecTypes['pg/text@1']['output'];
+      readonly resourceType: CodecTypes['pg/text@1']['output'];
+      readonly resourceId: CodecTypes['pg/text@1']['output'];
+      readonly poolId: CodecTypes['pg/text@1']['output'];
+      readonly dueAt: CodecTypes['pg/int8@1']['output'];
+      readonly generation: CodecTypes['pg/int4@1']['output'];
+      readonly status: CodecTypes['pg/text@1']['output'];
+      readonly expectedOwnerId: CodecTypes['pg/text@1']['output'] | null;
+      readonly expectedCreateTime: CodecTypes['pg/int8@1']['output'];
+      readonly expectedCollectionTime: CodecTypes['pg/int8@1']['output'] | null;
+      readonly expectedFollowTime: CodecTypes['pg/int8@1']['output'] | null;
+      readonly ruleFingerprint: CodecTypes['pg/text@1']['output'];
+      readonly attempts: CodecTypes['pg/int4@1']['output'];
+      readonly lockedUntil: CodecTypes['pg/int8@1']['output'] | null;
+      readonly lastError: CodecTypes['pg/text@1']['output'] | null;
+      readonly createTime: CodecTypes['pg/int8@1']['output'];
+      readonly updateTime: CodecTypes['pg/int8@1']['output'];
+    };
     readonly Roles: {
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly tenantId: CodecTypes['pg/text@1']['output'];
@@ -2111,6 +2131,26 @@ export type FieldInputTypes = {
       readonly features: CodecTypes['pg/jsonb@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
+    readonly PoolRecycleTask: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly organizationId: CodecTypes['pg/text@1']['input'];
+      readonly resourceType: CodecTypes['pg/text@1']['input'];
+      readonly resourceId: CodecTypes['pg/text@1']['input'];
+      readonly poolId: CodecTypes['pg/text@1']['input'];
+      readonly dueAt: CodecTypes['pg/int8@1']['input'];
+      readonly generation: CodecTypes['pg/int4@1']['input'];
+      readonly status: CodecTypes['pg/text@1']['input'];
+      readonly expectedOwnerId: CodecTypes['pg/text@1']['input'] | null;
+      readonly expectedCreateTime: CodecTypes['pg/int8@1']['input'];
+      readonly expectedCollectionTime: CodecTypes['pg/int8@1']['input'] | null;
+      readonly expectedFollowTime: CodecTypes['pg/int8@1']['input'] | null;
+      readonly ruleFingerprint: CodecTypes['pg/text@1']['input'];
+      readonly attempts: CodecTypes['pg/int4@1']['input'];
+      readonly lockedUntil: CodecTypes['pg/int8@1']['input'] | null;
+      readonly lastError: CodecTypes['pg/text@1']['input'] | null;
+      readonly createTime: CodecTypes['pg/int8@1']['input'];
+      readonly updateTime: CodecTypes['pg/int8@1']['input'];
     };
     readonly Roles: {
       readonly id: CodecTypes['pg/text@1']['input'];
@@ -3135,6 +3175,26 @@ export type StorageColumnTypes = {
       readonly price: Numeric<10, 2>;
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
+    readonly pool_recycle_task: {
+      readonly attempts: CodecTypes['pg/int4@1']['output'];
+      readonly create_time: CodecTypes['pg/int8@1']['output'];
+      readonly due_at: CodecTypes['pg/int8@1']['output'];
+      readonly expected_collection_time: CodecTypes['pg/int8@1']['output'] | null;
+      readonly expected_create_time: CodecTypes['pg/int8@1']['output'];
+      readonly expected_follow_time: CodecTypes['pg/int8@1']['output'] | null;
+      readonly expected_owner_id: CodecTypes['pg/text@1']['output'] | null;
+      readonly generation: CodecTypes['pg/int4@1']['output'];
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly last_error: CodecTypes['pg/text@1']['output'] | null;
+      readonly locked_until: CodecTypes['pg/int8@1']['output'] | null;
+      readonly organization_id: CodecTypes['pg/text@1']['output'];
+      readonly pool_id: CodecTypes['pg/text@1']['output'];
+      readonly resource_id: CodecTypes['pg/text@1']['output'];
+      readonly resource_type: CodecTypes['pg/text@1']['output'];
+      readonly rule_fingerprint: CodecTypes['pg/text@1']['output'];
+      readonly status: CodecTypes['pg/text@1']['output'];
+      readonly update_time: CodecTypes['pg/int8@1']['output'];
+    };
     readonly roles: {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly dataScope: 'ALL' | 'DEPT_AND_CHILD' | 'DEPT' | 'SELF' | 'CUSTOM';
@@ -4158,6 +4218,26 @@ export type StorageColumnInputTypes = {
       readonly price: CodecTypes['pg/numeric@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
     };
+    readonly pool_recycle_task: {
+      readonly attempts: CodecTypes['pg/int4@1']['input'];
+      readonly create_time: CodecTypes['pg/int8@1']['input'];
+      readonly due_at: CodecTypes['pg/int8@1']['input'];
+      readonly expected_collection_time: CodecTypes['pg/int8@1']['input'] | null;
+      readonly expected_create_time: CodecTypes['pg/int8@1']['input'];
+      readonly expected_follow_time: CodecTypes['pg/int8@1']['input'] | null;
+      readonly expected_owner_id: CodecTypes['pg/text@1']['input'] | null;
+      readonly generation: CodecTypes['pg/int4@1']['input'];
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly last_error: CodecTypes['pg/text@1']['input'] | null;
+      readonly locked_until: CodecTypes['pg/int8@1']['input'] | null;
+      readonly organization_id: CodecTypes['pg/text@1']['input'];
+      readonly pool_id: CodecTypes['pg/text@1']['input'];
+      readonly resource_id: CodecTypes['pg/text@1']['input'];
+      readonly resource_type: CodecTypes['pg/text@1']['input'];
+      readonly rule_fingerprint: CodecTypes['pg/text@1']['input'];
+      readonly status: CodecTypes['pg/text@1']['input'];
+      readonly update_time: CodecTypes['pg/int8@1']['input'];
+    };
     readonly roles: {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly dataScope: 'ALL' | 'DEPT_AND_CHILD' | 'DEPT' | 'SELF' | 'CUSTOM';
@@ -4364,6 +4444,27 @@ export namespace Models {
     targetType: CodecTypes['pg/text@1']['output'] | null;
     targetId: CodecTypes['pg/text@1']['output'] | null;
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
+  export type public_PoolRecycleTask = {
+    id: CodecTypes['pg/text@1']['output'];
+    organizationId: CodecTypes['pg/text@1']['output'];
+    resourceType: CodecTypes['pg/text@1']['output'];
+    resourceId: CodecTypes['pg/text@1']['output'];
+    poolId: CodecTypes['pg/text@1']['output'];
+    dueAt: CodecTypes['pg/int8@1']['output'];
+    generation: CodecTypes['pg/int4@1']['output'];
+    status: CodecTypes['pg/text@1']['output'];
+    expectedOwnerId: CodecTypes['pg/text@1']['output'] | null;
+    expectedCreateTime: CodecTypes['pg/int8@1']['output'];
+    expectedCollectionTime: CodecTypes['pg/int8@1']['output'] | null;
+    expectedFollowTime: CodecTypes['pg/int8@1']['output'] | null;
+    ruleFingerprint: CodecTypes['pg/text@1']['output'];
+    attempts: CodecTypes['pg/int4@1']['output'];
+    lockedUntil: CodecTypes['pg/int8@1']['output'] | null;
+    lastError: CodecTypes['pg/text@1']['output'] | null;
+    createTime: CodecTypes['pg/int8@1']['output'];
+    updateTime: CodecTypes['pg/int8@1']['output'];
     readonly [RelationKeys]?: never;
   };
   export type public_CluePool = {
@@ -5668,6 +5769,7 @@ export declare const models: {
   public: {
     Announcements: Models.public_Announcements;
     Attachments: Models.public_Attachments;
+    PoolRecycleTask: Models.public_PoolRecycleTask;
     CluePool: Models.public_CluePool;
     Clue: Models.public_Clue;
     ClueCapacity: Models.public_ClueCapacity;
@@ -12407,6 +12509,135 @@ type ContractBase = Omit<
               ];
               foreignKeys: readonly [];
             };
+            readonly pool_recycle_task: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly organization_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly resource_type: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly resource_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly pool_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly due_at: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: false;
+                };
+                readonly generation: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 1>;
+                  };
+                };
+                readonly status: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/text@1', 'PENDING'>;
+                  };
+                };
+                readonly expected_owner_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly expected_create_time: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: false;
+                };
+                readonly expected_collection_time: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: true;
+                };
+                readonly expected_follow_time: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: true;
+                };
+                readonly rule_fingerprint: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly attempts: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly locked_until: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: true;
+                };
+                readonly last_error: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly create_time: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: false;
+                };
+                readonly update_time: {
+                  readonly nativeType: 'int8';
+                  readonly codecId: 'pg/int8@1';
+                  readonly nullable: false;
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['id'];
+                readonly name: 'pool_recycle_task_pkey';
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'pool_recycle_task_resource_key';
+                  readonly columns: readonly ['organization_id', 'resource_type', 'resource_id'];
+                  readonly unique: true;
+                },
+                {
+                  readonly name: 'pool_recycle_task_status_due_at_idx';
+                  readonly columns: readonly ['status', 'due_at'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'pool_recycle_task_org_status_due_at_idx';
+                  readonly columns: readonly ['organization_id', 'status', 'due_at'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [];
+            };
             readonly roles: {
               columns: {
                 readonly id: {
@@ -13863,6 +14094,10 @@ type ContractBase = Omit<
     readonly attachments: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'Attachments';
+    };
+    readonly pool_recycle_task: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'PoolRecycleTask';
     };
     readonly clue_pool: { readonly namespace: 'public' & NamespaceId; readonly model: 'CluePool' };
     readonly clue: { readonly namespace: 'public' & NamespaceId; readonly model: 'Clue' };
@@ -20342,6 +20577,107 @@ type ContractBase = Omit<
                 readonly features: { readonly column: 'features' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
+              };
+            };
+          };
+          readonly PoolRecycleTask: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly organizationId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly resourceType: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly resourceId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly poolId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly dueAt: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+              readonly generation: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly status: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly expectedOwnerId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly expectedCreateTime: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+              readonly expectedCollectionTime: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+              readonly expectedFollowTime: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+              readonly ruleFingerprint: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly attempts: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly lockedUntil: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+              readonly lastError: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly createTime: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+              readonly updateTime: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int8@1' };
+              };
+            };
+            readonly relations: Record<string, never>;
+            readonly storage: {
+              readonly table: 'pool_recycle_task';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly organizationId: { readonly column: 'organization_id' };
+                readonly resourceType: { readonly column: 'resource_type' };
+                readonly resourceId: { readonly column: 'resource_id' };
+                readonly poolId: { readonly column: 'pool_id' };
+                readonly dueAt: { readonly column: 'due_at' };
+                readonly generation: { readonly column: 'generation' };
+                readonly status: { readonly column: 'status' };
+                readonly expectedOwnerId: { readonly column: 'expected_owner_id' };
+                readonly expectedCreateTime: { readonly column: 'expected_create_time' };
+                readonly expectedCollectionTime: { readonly column: 'expected_collection_time' };
+                readonly expectedFollowTime: { readonly column: 'expected_follow_time' };
+                readonly ruleFingerprint: { readonly column: 'rule_fingerprint' };
+                readonly attempts: { readonly column: 'attempts' };
+                readonly lockedUntil: { readonly column: 'locked_until' };
+                readonly lastError: { readonly column: 'last_error' };
+                readonly createTime: { readonly column: 'create_time' };
+                readonly updateTime: { readonly column: 'update_time' };
               };
             };
           };

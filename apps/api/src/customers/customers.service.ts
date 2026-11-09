@@ -48,6 +48,7 @@ import { HomeFilterService } from '../modules/home/home-filter.service'
 import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
+import { PoolRecycleTaskService } from '../modules/pool-rules/pool-recycle-task.service'
 import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
 import { USER_VIEW_RESOURCE_TYPES } from '../modules/user-views/user-views.constants'
 import { UserViewsService } from '../modules/user-views/user-views.service'
@@ -112,6 +113,7 @@ export class CustomersService {
     private readonly notifications: BusinessNotificationsService,
     private readonly pools: ResourcePoolsService,
     private readonly customerPools: CustomerPoolRepository,
+    private readonly recycleTasks: PoolRecycleTaskService,
     private readonly changeLog: BusinessChangeLogService,
     private readonly userViews: UserViewsService,
     private readonly customerAccess: CustomerAccessService,
@@ -766,9 +768,10 @@ export class CustomersService {
     const values = this.customerFieldInput(dto)
     await this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' })
     await this.assertCustomerUniqueRules(user.tenantId, dto)
-    const owner = options.allowUnassignedOwner && dto.ownerId === null
-      ? null
-      : await this.resolveOwner(user, dto.ownerId ?? undefined)
+    const owner =
+      options.allowUnassignedOwner && dto.ownerId === null
+        ? null
+        : await this.resolveOwner(user, dto.ownerId ?? undefined)
     if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
     return { values, owner }
   }
@@ -805,6 +808,7 @@ export class CustomersService {
       tx,
       user.id,
     )
+    await this.recycleTasks.refreshCustomerInTransaction(tx, user.tenantId, created.id)
     return created
   }
 
@@ -1068,6 +1072,7 @@ export class CustomersService {
         tx,
         user.id,
       )
+      await this.recycleTasks.refreshCustomerInTransaction(tx, user.tenantId, existing.id)
       return updated
     })
     if (owner) {
@@ -1358,16 +1363,19 @@ export class CustomersService {
     }
 
     if (field.key.startsWith('cf_')) {
-      await this.prisma.client.transaction((tx) =>
-        this.fieldValues.saveBatch(
+      await this.prisma.client.transaction(async (tx) => {
+        await this.fieldValues.saveBatch(
           user.tenantId,
           'customer',
           customers.map((customer) => customer.id),
           field.key,
           dto.fieldValue,
           tx,
-        ),
-      )
+        )
+        for (const customer of customers) {
+          await this.recycleTasks.refreshCustomerInTransaction(tx, user.tenantId, customer.id)
+        }
+      })
     } else {
       const updateDto = { [field.key]: dto.fieldValue } as UpdateCustomerDto
       for (const customer of customers) await this.update(user, customer.id, updateDto)
@@ -2788,6 +2796,9 @@ export class CustomersService {
     const ids = customers.map((customer) => customer.id)
     const customerIds = ids
     await this.prisma.client.transaction(async (tx) => {
+      for (const customerId of customerIds) {
+        await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'customer', customerId)
+      }
       await tx.orm.public.CustomerField.where((row) => row.resourceId.in(customerIds)).deleteAll()
       await tx.orm.public.CustomerFieldBlob.where((row) =>
         row.resourceId.in(customerIds),
