@@ -826,6 +826,26 @@ export class CustomersService {
     })
   }
 
+  /** Notify the current owner after an external event changes customer fields. */
+  async notifyExternalEventCustomerUpdated(
+    user: AuthUser,
+    customerId: string,
+    customerName: string,
+    ownerId: string | null,
+  ) {
+    if (!ownerId) return
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'EXTERNAL_EVENT_CUSTOMER_UPDATED',
+      operatorId: user.id,
+      recipientIds: [ownerId],
+      excludeSelf: true,
+      type: 'system',
+      templateContext: { name: customerName },
+      link: `/customers?id=${customerId}`,
+    })
+  }
+
   async update(user: AuthUser, id: string, dto: UpdateCustomerDto): Promise<CustomerVO> {
     const existing = await this.ensureInScope(user, id, 'customer:update')
     return this.updateExisting(user, existing, dto)
@@ -865,11 +885,13 @@ export class CustomersService {
   async prepareDynamicFieldUpdate(user: AuthUser, id: string, input: Record<string, unknown>) {
     const existing = await this.ensureInScope(user, id, 'customer:update')
     const values = await this.normalizeWritableDynamicFields(user, input)
-    await this.fieldValues.validate(user.tenantId, 'customer', values, {
-      mode: 'update',
-      resourceId: existing.id,
-    })
-    return { existing, values }
+    const hasChanges = await this.fieldValues.hasChanges(
+      user.tenantId,
+      'customer',
+      existing.id,
+      values,
+    )
+    return { existing, values, hasChanges }
   }
 
   /**
@@ -906,21 +928,19 @@ export class CustomersService {
     }
 
     const values = await this.normalizeWritableDynamicFields(user, input)
-    await this.fieldValues.validate(user.tenantId, 'customer', values, {
-      mode: 'update',
-      resourceId: existing.id,
-    })
-    const [currentValues, completionRule] = await Promise.all([
+    const [hasChanges, currentValues, completionRule] = await Promise.all([
+      this.fieldValues.hasChanges(user.tenantId, 'customer', existing.id, values),
       this.fieldValues.load(user.tenantId, 'customer', [existing.id]),
       this.followUpCompletion.getRule(user.tenantId),
     ])
+    const currentFieldValues = currentValues.get(existing.id) ?? {}
     if (completionRule.enabled && !completionRule.valid) {
       throw new BadRequestException('客户跟进完结规则引用的字段已失效，请先修复系统设置')
     }
-    const nextValues = { ...(currentValues.get(existing.id) ?? {}), ...values }
+    const nextValues = { ...currentFieldValues, ...values }
     const releaseFromPool =
       existing.inSharedPool && this.followUpCompletion.isCompleted(completionRule, nextValues)
-    return { existing, values, releaseFromPool }
+    return { existing, values, releaseFromPool, hasChanges }
   }
 
   async applyPreparedExternalEventDynamicFieldUpdateInTransaction(

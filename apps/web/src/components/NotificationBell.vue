@@ -4,65 +4,207 @@ import { Bell } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { notificationApi } from '@/api/system'
+import { dispatchNotificationsChanged } from '@/utils/notification-events'
 import { getAccessToken } from '@/utils/token-storage'
 
 const router = useRouter()
 const unread = ref(0)
 const recent = ref<NotificationVO[]>([])
-let eventSource: EventSource | null = null
 
-async function refresh() {
-  const [{ data: count }, { data: list }] = await Promise.all([
-    notificationApi.unreadCount(),
-    notificationApi.list({ page: 1, pageSize: 5, unreadOnly: true }),
-  ])
-  unread.value = count.count
-  recent.value = list.items
+const RECONNECT_DELAYS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
+const MAX_SEEN_NOTIFICATION_IDS = 100
+
+let eventSource: EventSource | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectAttempts = 0
+let refreshPromise: Promise<void> | null = null
+let disposed = false
+
+const seenNotificationIds = new Set<string>()
+
+function rememberNotification(id: string): void {
+  seenNotificationIds.add(id)
+  if (seenNotificationIds.size <= MAX_SEEN_NOTIFICATION_IDS) return
+
+  const oldest = seenNotificationIds.values().next().value
+  if (oldest) seenNotificationIds.delete(oldest)
 }
 
-function connectStream() {
-  const token = getAccessToken()
-  if (!token) return
-  eventSource = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`)
-  eventSource.onmessage = (event) => {
-    const notification = JSON.parse(event.data) as NotificationVO
-    unread.value += 1
-    recent.value = [notification, ...recent.value].slice(0, 5)
-    ElNotification({
-      title: notification.title,
-      message: notification.content ?? '',
-      type: 'info',
-      duration: 4000,
-    })
+/**
+ * The shared HTTP client refreshes an expired access token before retrying
+ * failed API requests. Keep this request ahead of every SSE connection so
+ * EventSource never starts with a token that is being refreshed concurrently.
+ */
+async function refresh(): Promise<void> {
+  if (refreshPromise) return refreshPromise
+
+  const current = (async () => {
+    const [{ data: count }, { data: list }] = await Promise.all([
+      notificationApi.unreadCount(),
+      notificationApi.list({ page: 1, pageSize: 5, unreadOnly: true }),
+    ])
+
+    unread.value = count.count
+    recent.value = list.items
+    for (const item of list.items) rememberNotification(item.id)
+  })()
+
+  refreshPromise = current
+  try {
+    await current
+  } finally {
+    if (refreshPromise === current) refreshPromise = null
   }
-  eventSource.addEventListener('refresh', () => {
-    refresh().catch(() => undefined)
+}
+
+function handleCreated(event: MessageEvent<string>): void {
+  let notification: NotificationVO
+
+  try {
+    notification = JSON.parse(event.data) as NotificationVO
+  } catch {
+    void refresh().catch(() => undefined)
+    return
+  }
+
+  if (!notification?.id || seenNotificationIds.has(notification.id)) return
+
+  rememberNotification(notification.id)
+  unread.value += 1
+  recent.value = [notification, ...recent.value.filter((item) => item.id !== notification.id)].slice(
+    0,
+    5,
+  )
+  dispatchNotificationsChanged()
+
+  ElNotification({
+    title: notification.title,
+    message: notification.content ?? '',
+    type: 'info',
+    duration: 4000,
   })
 }
 
-async function openItem(item: NotificationVO) {
+function handleRefresh(): void {
+  void refresh()
+    .then(() => dispatchNotificationsChanged())
+    .catch(() => undefined)
+}
+
+function connectStream(): void {
+  if (disposed || eventSource) return
+
+  const token = getAccessToken()
+  if (!token) return
+
+  const source = new EventSource(
+    `/api/notifications/stream?token=${encodeURIComponent(token)}`,
+  )
+  eventSource = source
+
+  source.onopen = () => {
+    if (eventSource !== source) return
+    reconnectAttempts = 0
+  }
+
+  source.onmessage = handleCreated
+  source.addEventListener('refresh', handleRefresh)
+
+  source.onerror = () => {
+    if (eventSource !== source) return
+
+    // EventSource otherwise retries forever with the same URL (and token).
+    // Close it and create a fresh connection after the HTTP client has had
+    // an opportunity to refresh the access token.
+    source.close()
+    eventSource = null
+    scheduleReconnect()
+  }
+}
+
+function scheduleReconnect(): void {
+  if (disposed || reconnectTimer) return
+
+  const delay =
+    RECONNECT_DELAYS[Math.min(reconnectAttempts, RECONNECT_DELAYS.length - 1)]
+  reconnectAttempts += 1
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    void reconnectStream()
+  }, delay)
+}
+
+async function reconnectStream(): Promise<void> {
+  if (disposed || eventSource) return
+
+  try {
+    // This authenticated request goes through the shared Axios refresh flow.
+    // The subsequent EventSource therefore uses the latest access token.
+    await refresh()
+  } catch {
+    if (!disposed && getAccessToken()) scheduleReconnect()
+    return
+  }
+
+  if (disposed || !getAccessToken()) return
+  connectStream()
+}
+
+async function initialize(): Promise<void> {
+  try {
+    // Do not race the initial API token refresh against EventSource creation.
+    await refresh()
+  } catch {
+    // Still try the current token; a failed network request is recovered by
+    // the SSE error/reconnect path below.
+  }
+
+  if (!disposed && getAccessToken()) connectStream()
+}
+
+function handlePopoverShow(): void {
+  void refresh().catch(() => undefined)
+}
+
+async function openItem(item: NotificationVO): Promise<void> {
   await notificationApi.markRead(item.id)
   await refresh()
+  dispatchNotificationsChanged()
   if (item.link) router.push(item.link)
 }
 
-async function markAll() {
+async function markAll(): Promise<void> {
   await notificationApi.markAllRead()
   await refresh()
+  dispatchNotificationsChanged()
 }
 
 onMounted(() => {
-  refresh().catch(() => undefined)
-  connectStream()
+  disposed = false
+  void initialize()
 })
 
 onBeforeUnmount(() => {
+  disposed = true
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
   eventSource?.close()
+  eventSource = null
 })
 </script>
 
 <template>
-  <el-popover placement="bottom-end" width="340" trigger="click">
+  <el-popover
+    placement="bottom-end"
+    width="340"
+    trigger="click"
+    @after-enter="handlePopoverShow"
+  >
     <template #reference>
       <button
         type="button"

@@ -14,13 +14,13 @@ Business event
   -> SSE clients refresh
 ```
 
-站内 Notification 是用户消息事实；外部 channel 是独立 delivery。
+站内 Notification 是用户消息事实；外部 channel 是独立 delivery。外部事件通知必须在业务事务提交后触发；更新类通知先比较字段的规范化存储值，未发生实际变化不通知。外部事件 Inbox 的幂等重放不重新触发通知。
 
 ## 2. Event registry
 
 `MESSAGE_TASK_DEFINITIONS` 同时给 API/Web 提供 module、event、显示名称和默认 channel 行为。事件集合只包含当前 Customer/Clue 业务；新增或删除业务模块时应同步维护事件注册表、模板和触发点。
 
-MessageSettings 以 event 为稳定键存 channel 开关；共享类型保证前后端不各自维护事件字符串。
+MessageSettings 以 event 为稳定键存 channel 开关；共享类型保证前后端不各自维护事件字符串。外部事件新建线索复用 `CLUE_ADD`；外部事件更新线索和客户分别使用 `EXTERNAL_EVENT_LEAD_UPDATED` / `EXTERNAL_EVENT_CUSTOMER_UPDATED`，两者默认关闭。
 
 ## 3. Template renderer
 

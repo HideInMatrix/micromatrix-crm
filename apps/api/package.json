@@ -8,6 +8,7 @@
     "start": "node dist/main.js",
     "typecheck": "prisma contract emit && tsc --noEmit",
     "test:pool-recycle": "tsx tests/pool-recycle-evaluator.test.ts",
+    "test:external-event-notifications": "tsx tests/external-event-notifications.test.ts",
     "prisma:generate": "prisma contract emit",
     "prisma:migrate": "prisma contract emit && prisma migration plan",
     "prisma:deploy": "prisma db migrate --advance-ref db --yes",

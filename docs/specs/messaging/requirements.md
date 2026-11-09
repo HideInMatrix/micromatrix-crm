@@ -32,6 +32,8 @@ Messaging 负责站内 Notification、业务事件模板、多语言渲染、实
 - 外部 channel 是否可启用还要经过对应 Provider configured/verified/enabled gate。
 - 更新消息设置必须按 tenant 隔离并要求现有消息设置写权限。
 - 业务代码触发通知时只提交 event、接收人、operator/template context，不在各模块重复硬编码同语义中文正文。
+- 外部事件新建线索复用 `CLUE_ADD`；外部事件更新线索、更新客户分别使用独立消息事件，默认关闭并由管理员在消息设置中控制。
+- 外部事件更新通知只在字段实际存储值发生变化后发送，接收人为当前负责人；无负责人或负责人为调用账号本人时不通知。幂等重放不得重复发送。
 
 ## 6. 公告
 

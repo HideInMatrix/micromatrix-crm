@@ -128,6 +128,18 @@ export class ExternalEventsService {
           })
           return { inbox }
         })
+        if (prepared.hasChanges) {
+          await this.customers
+            .notifyExternalEventCustomerUpdated(
+              user,
+              prepared.existing.id,
+              prepared.existing.name,
+              prepared.existing.owner,
+            )
+            .catch((error: unknown) =>
+              this.logger.warn(`外部事件更新客户通知失败 inbox=${claim.row.id}: ${String(error)}`),
+            )
+        }
         return this.successResponse(result.inbox, false)
       }
 
@@ -228,6 +240,18 @@ export class ExternalEventsService {
             audit: { ...audit, businessAction: prepared ? 'updateCustomer' : 'skip' },
           })
         })
+        if (prepared?.hasChanges) {
+          await this.customers
+            .notifyExternalEventCustomerUpdated(
+              user,
+              prepared.existing.id,
+              prepared.existing.name,
+              prepared.existing.owner,
+            )
+            .catch((error: unknown) =>
+              this.logger.warn(`外部事件更新客户通知失败 inbox=${claim.row.id}: ${String(error)}`),
+            )
+        }
         return this.successResponse(inbox, false)
       }
 
@@ -325,6 +349,18 @@ export class ExternalEventsService {
           await this.customers.applyPreparedDynamicFieldUpdateInTransaction(user, prepared, tx)
           return commit(tx, 'CUSTOMER', resolved.customerId, resolved.customerId)
         })
+        if (prepared.hasChanges) {
+          await this.customers
+            .notifyExternalEventCustomerUpdated(
+              user,
+              prepared.existing.id,
+              prepared.existing.name,
+              prepared.existing.owner,
+            )
+            .catch((error: unknown) =>
+              this.logger.warn(`外部事件更新客户通知失败 inbox=${inboxId}: ${String(error)}`),
+            )
+        }
         return this.successResponse(inbox, false)
       }
       const prepared = await this.leads.prepareExternalDynamicFieldUpdate(
@@ -336,6 +372,18 @@ export class ExternalEventsService {
         await this.leads.applyPreparedExternalDynamicFieldUpdateInTransaction(user, prepared, tx)
         return commit(tx, 'LEAD', resolved.leadId, null)
       })
+      if (prepared.hasChanges) {
+        await this.leads
+          .notifyExternalEventLeadUpdated(
+            user,
+            prepared.existing.id,
+            prepared.existing.name,
+            prepared.existing.owner,
+          )
+          .catch((error: unknown) =>
+            this.logger.warn(`外部事件更新线索通知失败 inbox=${inboxId}: ${String(error)}`),
+          )
+      }
       return this.successResponse(inbox, false)
     }
 
@@ -391,11 +439,22 @@ export class ExternalEventsService {
         customData: set,
         ...(poolId ? { toPool: true, poolId } : {}),
       })
-      const inbox = await this.prisma.client.transaction(async (tx) => {
+      const result = await this.prisma.client.transaction(async (tx) => {
         const lead = await this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx)
-        return commit(tx, 'LEAD', String(lead.id), null)
+        const inbox = await commit(tx, 'LEAD', String(lead.id), null)
+        return { lead, inbox }
       })
-      return this.successResponse(inbox, false)
+      await this.leads
+        .notifyExternalEventLeadCreated(
+          user,
+          result.lead.id,
+          result.lead.name,
+          prepared.owner?.id ?? null,
+        )
+        .catch((error: unknown) =>
+          this.logger.warn(`外部事件新建线索通知失败 inbox=${inboxId}: ${String(error)}`),
+        )
+      return this.successResponse(result.inbox, false)
     }
 
     throw new BadRequestException('不支持的外部事件业务动作')
@@ -460,7 +519,7 @@ export class ExternalEventsService {
             releasedFromCustomerPool: updated.releasedFromPool,
           },
         })
-        return { kind: 'update' as const, inbox }
+        return { kind: 'update' as const, inbox, prepared }
       }
 
       if (plan.resolved?.kind === 'LEAD') {
@@ -502,6 +561,17 @@ export class ExternalEventsService {
         .notifyResolvedLeadConversion(user, outcome.prepared, outcome.converted)
         .catch((error: unknown) =>
           this.logger.warn(`外部事件线索转客户通知失败 inbox=${inboxId}: ${String(error)}`),
+        )
+    } else if (outcome.kind === 'update' && outcome.prepared.hasChanges) {
+      await this.customers
+        .notifyExternalEventCustomerUpdated(
+          user,
+          outcome.prepared.existing.id,
+          outcome.prepared.existing.name,
+          outcome.prepared.existing.owner,
+        )
+        .catch((error: unknown) =>
+          this.logger.warn(`外部缴费事件更新客户通知失败 inbox=${inboxId}: ${String(error)}`),
         )
     }
     return this.successResponse(outcome.inbox, false)

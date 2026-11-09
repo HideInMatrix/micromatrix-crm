@@ -4,6 +4,7 @@ export type MessageLanguage = 'zh-CN' | 'en-US'
 
 export type MessageTaskEvent =
   | 'CUSTOMER_ADD'
+  | 'EXTERNAL_EVENT_CUSTOMER_UPDATED'
   | 'CUSTOMER_COLLABORATION_ADD'
   | 'CUSTOMER_TRANSFERRED_CUSTOMER'
   | 'CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS'
@@ -16,6 +17,7 @@ export type MessageTaskEvent =
   | 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED'
   | 'CUSTOMER_FOLLOW_UP_RECORD_COMMENT_MENTIONED'
   | 'CLUE_ADD'
+  | 'EXTERNAL_EVENT_LEAD_UPDATED'
   | 'CLUE_FOLLOW_UP_OVERDUE'
   | 'CLUE_AUTOMATIC_MOVE_POOL'
   | 'CLUE_MOVED_POOL'
@@ -133,26 +135,10 @@ const EVENT_GROUPS: Array<{
   events: Array<[MessageTaskEvent, string]>
 }> = [
   {
-    module: 'CUSTOMER',
-    events: [
-      ['CUSTOMER_ADD', '新建客户'],
-      ['CUSTOMER_COLLABORATION_ADD', '新建协作人'],
-      ['CUSTOMER_TRANSFERRED_CUSTOMER', '被转移客户'],
-      ['CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS', '客户自动移入公海（到时间）'],
-      ['CUSTOMER_MOVED_HIGH_SEAS', '客户被动移入公海'],
-      ['CUSTOMER_DELETED', '客户被删除'],
-      ['HIGH_SEAS_CUSTOMER_DISTRIBUTED', '公海客户被分配'],
-      ['CUSTOMER_FOLLOW_UP_PLAN_DUE', '跟进计划到期'],
-      ['CUSTOMER_FOLLOW_UP_PLAN_COMMENT_ADDED', '跟进计划评论提醒'],
-      ['CUSTOMER_FOLLOW_UP_PLAN_COMMENT_MENTIONED', '跟进计划评论@提醒'],
-      ['CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED', '跟进记录评论提醒'],
-      ['CUSTOMER_FOLLOW_UP_RECORD_COMMENT_MENTIONED', '跟进记录评论@提醒'],
-    ],
-  },
-  {
     module: 'CLUE',
     events: [
       ['CLUE_ADD', '新建线索'],
+      ['EXTERNAL_EVENT_LEAD_UPDATED', '外部事件更新线索'],
       ['CLUE_FOLLOW_UP_OVERDUE', '线索跟进超时'],
       ['CLUE_AUTOMATIC_MOVE_POOL', '自动移入线索池'],
       ['CLUE_MOVED_POOL', '被动移入线索池'],
@@ -164,7 +150,25 @@ const EVENT_GROUPS: Array<{
       ['CLUE_FOLLOW_UP_PLAN_COMMENT_ADDED', '跟进计划评论提醒'],
       ['CLUE_FOLLOW_UP_PLAN_COMMENT_MENTIONED', '跟进计划评论@提醒'],
       ['CLUE_FOLLOW_UP_RECORD_COMMENT_ADDED', '跟进记录评论提醒'],
-      ['CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED', '跟进记录评论@提醒'],
+      ['CLUE_FOLLOW_UP_RECORD_COMMENT_MENTIONED', '跟进记录评论提及'],
+    ],
+  },
+  {
+    module: 'CUSTOMER',
+    events: [
+      ['CUSTOMER_ADD', '新建客户'],
+      ['EXTERNAL_EVENT_CUSTOMER_UPDATED', '外部事件更新客户'],
+      ['CUSTOMER_COLLABORATION_ADD', '新建协作人'],
+      ['CUSTOMER_TRANSFERRED_CUSTOMER', '被转移客户'],
+      ['CUSTOMER_AUTOMATIC_MOVE_HIGH_SEAS', '客户自动移入公海（到时间）'],
+      ['CUSTOMER_MOVED_HIGH_SEAS', '客户被动移入公海'],
+      ['CUSTOMER_DELETED', '客户被删除'],
+      ['HIGH_SEAS_CUSTOMER_DISTRIBUTED', '公海客户被分配'],
+      ['CUSTOMER_FOLLOW_UP_PLAN_DUE', '跟进计划到期'],
+      ['CUSTOMER_FOLLOW_UP_PLAN_COMMENT_ADDED', '跟进计划评论提醒'],
+      ['CUSTOMER_FOLLOW_UP_PLAN_COMMENT_MENTIONED', '跟进计划评论@提醒'],
+      ['CUSTOMER_FOLLOW_UP_RECORD_COMMENT_ADDED', '跟进记录评论提醒'],
+      ['CUSTOMER_FOLLOW_UP_RECORD_COMMENT_MENTIONED', '跟进记录评论提及'],
     ],
   },
 ]
@@ -173,7 +177,12 @@ const CONFIGURABLE_EVENTS = new Set<MessageTaskEvent>()
 
 const TIME_CONFIGURABLE_EVENTS = new Set<MessageTaskEvent>()
 
-/** 与 Cordys `task/message_task.json` 的模块和事件顺序一致。 */
+const DEFAULT_DISABLED_EVENTS = new Set<MessageTaskEvent>([
+  'EXTERNAL_EVENT_LEAD_UPDATED',
+  'EXTERNAL_EVENT_CUSTOMER_UPDATED',
+])
+
+/** 线索消息优先展示，其次为客户消息；模块内事件保持既有顺序。 */
 export const MESSAGE_TASK_DEFINITIONS: MessageTaskDefinition[] = EVENT_GROUPS.flatMap(
   ({ module, events }) =>
     events.map(([event, eventName]) => ({
@@ -183,7 +192,7 @@ export const MESSAGE_TASK_DEFINITIONS: MessageTaskDefinition[] = EVENT_GROUPS.fl
       eventName,
       configurable: CONFIGURABLE_EVENTS.has(event),
       timeConfigurable: TIME_CONFIGURABLE_EVENTS.has(event),
-      defaultSystemEnabled: true,
+      defaultSystemEnabled: !DEFAULT_DISABLED_EVENTS.has(event),
       defaultEmailEnabled: false,
     })),
 )

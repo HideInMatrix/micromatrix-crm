@@ -25,6 +25,10 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     eventName: '新建客户',
     template: '请注意！${OPERATOR}新建${name}客户给您，请知悉！',
   },
+  EXTERNAL_EVENT_CUSTOMER_UPDATED: {
+    eventName: '外部事件更新客户',
+    template: '请注意！${OPERATOR}通过外部系统更新了您负责的${name}客户，请及时查看。',
+  },
   CUSTOMER_COLLABORATION_ADD: {
     eventName: '新建协作人',
     template: '请注意！${operator} 将 ${uName} 添加为您负责客户 ${name} 的协作人！请知悉！',
@@ -70,6 +74,10 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
     template: COMMENT_RECORD_MENTIONED_ZH,
   },
   CLUE_ADD: { eventName: '新建线索', template: '请注意！${OPERATOR}新建${name}线索给您，请知悉！' },
+  EXTERNAL_EVENT_LEAD_UPDATED: {
+    eventName: '外部事件更新线索',
+    template: '请注意！${OPERATOR}通过外部系统更新了您负责的${name}线索，请及时查看。',
+  },
   CLUE_FOLLOW_UP_OVERDUE: {
     eventName: '线索跟进超时',
     template: '【跟进提醒】您负责的线索 ${name} 已超过当前线索池配置的跟进时限，请及时跟进。',
@@ -125,6 +133,11 @@ const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
     eventName: 'New Account',
     template: 'Attention! ${OPERATOR} created a new account ${name} for you, please be informed!',
   },
+  EXTERNAL_EVENT_CUSTOMER_UPDATED: {
+    eventName: 'External event updated customer',
+    template:
+      '${OPERATOR} updated your customer ${name} through an external system. Please review it.',
+  },
   CUSTOMER_COLLABORATION_ADD: {
     eventName: 'New Collaboration',
     template:
@@ -177,6 +190,10 @@ const EN_US: Record<MessageTaskEvent, MessageTemplateResource> = {
   CLUE_ADD: {
     eventName: 'Create new lead',
     template: 'Attention! ${OPERATOR} created a new lead ${name} for you, please be informed!',
+  },
+  EXTERNAL_EVENT_LEAD_UPDATED: {
+    eventName: 'External event updated lead',
+    template: '${OPERATOR} updated your lead ${name} through an external system. Please review it.',
   },
   CLUE_FOLLOW_UP_OVERDUE: {
     eventName: 'Lead follow-up overdue',

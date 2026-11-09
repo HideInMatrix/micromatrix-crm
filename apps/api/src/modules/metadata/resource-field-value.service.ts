@@ -13,6 +13,7 @@ import {
 } from '@micromatrix/shared'
 import type { PrismaClient } from '../../prisma/db.js'
 import { instantToISOString } from '../../prisma/temporal.js'
+import { hasSerializedFieldValueChanges } from '../../common/field-value-changes'
 import { createLegacyId32 } from '../../common/legacy-id'
 import { PrismaService } from '../../prisma.service.js'
 import { ModuleFormsService } from './module-forms.service'
@@ -21,11 +22,7 @@ type PrismaRawExpression = ReturnType<ReturnType<PrismaService['client']['raw'][
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 type PrismaDatabase = { orm: PrismaService['client']['orm'] }
 
-export type ResourceFieldType =
-  | 'clue'
-  | 'customer'
-  | 'followRecord'
-  | 'followPlan'
+export type ResourceFieldType = 'clue' | 'customer' | 'followRecord' | 'followPlan'
 export type ResourceFieldSaveMode = 'create' | 'update'
 
 export interface ResourceFieldUniqueScope {
@@ -47,21 +44,9 @@ export const RESOURCE_FIELD_TYPES: ResourceFieldType[] = [
 ]
 
 interface ResourceConfig {
-  formKey:
-    | 'lead'
-    | 'customer'
-    | 'followRecord'
-    | 'followPlan'
-  resourceTable:
-    | 'clue'
-    | 'customer'
-    | 'follow_up_records'
-    | 'follow_up_plans'
-  normalTable:
-    | 'clue_field'
-    | 'customer_field'
-    | 'follow_up_record_field'
-    | 'follow_up_plan_field'
+  formKey: 'lead' | 'customer' | 'followRecord' | 'followPlan'
+  resourceTable: 'clue' | 'customer' | 'follow_up_records' | 'follow_up_plans'
+  normalTable: 'clue_field' | 'customer_field' | 'follow_up_record_field' | 'follow_up_plan_field'
   blobTable:
     | 'clue_field_blob'
     | 'customer_field_blob'
@@ -199,6 +184,35 @@ export class ResourceFieldValueService {
       validated
         .filter((item) => item.serialized !== null)
         .map((item) => [item.field.key, item.value]),
+    )
+  }
+
+  async hasChanges(
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    resourceId: string,
+    values: Record<string, unknown>,
+    uniqueScope?: ResourceFieldUniqueScope,
+  ): Promise<boolean> {
+    const fields = await this.moduleForms.listFields(
+      organizationId,
+      RESOURCE_CONFIG[resourceType].formKey,
+    )
+    const validated = await this.validateWithFields(
+      this.prisma.client,
+      organizationId,
+      resourceType,
+      fields,
+      values,
+      { mode: 'update', resourceId, uniqueScope },
+    )
+    const [normal, blob] = await this.findValues(this.prisma.client, organizationId, resourceType, [
+      resourceId,
+    ])
+    const current = new Map([...normal, ...blob].map((row) => [row.fieldId, row.fieldValue]))
+    return hasSerializedFieldValueChanges(
+      current,
+      validated.map((item) => ({ fieldId: item.field.id, serialized: item.serialized })),
     )
   }
 

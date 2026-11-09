@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { NotificationVO } from '@micromatrix/shared'
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
 import { notificationApi } from '@/api/system'
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/utils/notification-events'
 
 const router = useRouter()
 const loading = ref(false)
@@ -49,7 +50,18 @@ async function markAll() {
   loadData()
 }
 
-onMounted(loadData)
+function handleNotificationsChanged(): void {
+  void loadData()
+}
+
+onMounted(() => {
+  void loadData()
+  window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged)
+})
 </script>
 
 <template>

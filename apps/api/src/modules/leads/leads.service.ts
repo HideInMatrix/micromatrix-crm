@@ -777,12 +777,14 @@ export class LeadsService {
       values[field.key] = value
     }
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, existing.poolId)
-    await this.fieldValues.validate(user.tenantId, 'clue', values, {
-      mode: 'update',
-      resourceId: existing.id,
+    const hasChanges = await this.fieldValues.hasChanges(
+      user.tenantId,
+      'clue',
+      existing.id,
+      values,
       uniqueScope,
-    })
-    return { existing, values, uniqueScope }
+    )
+    return { existing, values, uniqueScope, hasChanges }
   }
 
   async applyPreparedExternalDynamicFieldUpdateInTransaction(
@@ -2603,6 +2605,37 @@ export class LeadsService {
         link: '/leads',
       })
     }
+  }
+
+  /** Notify the assigned owner after an external event creates a lead. */
+  async notifyExternalEventLeadCreated(
+    user: AuthUser,
+    leadId: string,
+    leadName: string,
+    ownerId: string | null,
+  ) {
+    if (!ownerId) return
+    await this.notifyAssign(user, leadId, leadName, ownerId, 'CLUE_ADD')
+  }
+
+  /** Notify the current owner only when an external event actually changes lead fields. */
+  async notifyExternalEventLeadUpdated(
+    user: AuthUser,
+    leadId: string,
+    leadName: string,
+    ownerId: string | null,
+  ) {
+    if (!ownerId) return
+    await this.notifications.send({
+      tenantId: user.tenantId,
+      event: 'EXTERNAL_EVENT_LEAD_UPDATED',
+      operatorId: user.id,
+      recipientIds: [ownerId],
+      excludeSelf: true,
+      type: 'system',
+      templateContext: { name: leadName },
+      link: `/leads?id=${leadId}`,
+    })
   }
 
   private async notifyAssign(
