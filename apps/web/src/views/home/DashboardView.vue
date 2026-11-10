@@ -29,11 +29,9 @@ import {
   MessageCircleMore,
   MessageSquareText,
 } from 'lucide-vue-next'
-import { ElButton } from 'element-plus'
 import type { Component } from 'vue'
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { changePassword } from '@/api/auth'
 import { listCustomerOptions } from '@/api/customers'
 import { homeApi } from '@/api/home'
 import { extractErrorMessage } from '@/api/http'
@@ -43,7 +41,6 @@ import { notificationApi } from '@/api/system'
 import FollowUpDrawer from '@/components/FollowUpDrawer.vue'
 import LeadEmptyState from '@/components/leads/LeadEmptyState.vue'
 import FollowUpPlanDialog from '@/components/follow-plans/FollowUpPlanDialog.vue'
-import PasswordFormFields from '@/components/personal/PasswordFormFields.vue'
 import EChart from '@/components/EChart.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useModuleConfigStore } from '@/stores/module-config'
@@ -487,69 +484,6 @@ async function openNotification(item: NotificationVO) {
   else await router.push('/notifications')
 }
 
-// ===== 默认密码 =====
-
-const passwordDialogVisible = ref(false)
-const passwordSaving = ref(false)
-const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
-let defaultPasswordMessage: { close: () => void } | null = null
-
-function showDefaultPasswordMessage() {
-  if (!auth.user?.defaultPwd || defaultPasswordMessage) return
-  defaultPasswordMessage = ElMessage({
-    type: 'warning',
-    showClose: true,
-    duration: 0,
-    message: h('span', { class: 'flex items-center' }, [
-      '当前账号仍在使用默认密码，建议尽快修改以保护账号安全。',
-      h(
-        ElButton,
-        {
-          link: true,
-          type: 'primary',
-          class: '!ml-2',
-          onClick: () => {
-            passwordDialogVisible.value = true
-          },
-        },
-        () => '修改密码',
-      ),
-    ]),
-    onClose: () => {
-      defaultPasswordMessage = null
-    },
-  })
-}
-
-async function savePassword() {
-  if (passwordForm.newPassword.length < 6) {
-    ElMessage.warning('新密码至少 6 位')
-    return
-  }
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    ElMessage.warning('两次输入的新密码不一致')
-    return
-  }
-  passwordSaving.value = true
-  try {
-    await changePassword({
-      oldPassword: passwordForm.oldPassword,
-      newPassword: passwordForm.newPassword,
-    })
-    await auth.fetchMe(true)
-    passwordDialogVisible.value = false
-    passwordForm.oldPassword = ''
-    passwordForm.newPassword = ''
-    passwordForm.confirmPassword = ''
-    defaultPasswordMessage?.close()
-    ElMessage.success('密码修改成功')
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    passwordSaving.value = false
-  }
-}
-
 // ===== 跟进记录快捷创建 =====
 
 type FollowTargetType = 'lead' | 'customer'
@@ -608,7 +542,6 @@ const pageLoading = ref(true)
 
 onMounted(async () => {
   window.addEventListener('crm:home-refresh', handleHomeRefresh)
-  showDefaultPasswordMessage()
   try {
     await Promise.all([moduleConfig.load(), loadMyLeads(), loadPendingPools(), loadNotifications()])
     await loadStatistics()
@@ -619,7 +552,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('crm:home-refresh', handleHomeRefresh)
-  defaultPasswordMessage?.close()
 })
 </script>
 
@@ -1064,18 +996,6 @@ onBeforeUnmount(() => {
         <el-empty description="暂无统计组件" :image-size="65" />
       </section>
     </div>
-
-    <CrmDialog v-model="passwordDialogVisible" title="修改密码" width="352px">
-      <PasswordFormFields
-        v-model:current-password="passwordForm.oldPassword"
-        v-model:new-password="passwordForm.newPassword"
-        v-model:confirm-password="passwordForm.confirmPassword"
-      />
-      <template #footer>
-        <el-button @click="passwordDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="passwordSaving" @click="savePassword">保存</el-button>
-      </template>
-    </CrmDialog>
 
     <CrmDialog v-model="followTargetDialogVisible" title="选择跟进对象" width="520px">
       <el-form label-width="86px">
