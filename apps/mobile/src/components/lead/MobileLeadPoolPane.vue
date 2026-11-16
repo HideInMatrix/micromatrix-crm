@@ -67,6 +67,13 @@ const listFields = computed(() => {
   const hiddenIds = new Set(currentPool.value?.hiddenFieldIds ?? [])
   return fields.value.filter((field) => !hiddenIds.has(field.id))
 })
+// 与 PC 端 LeadsView.vue 的 contextFields 保持一致：线索池隐藏字段不参与搜索，名称字段始终保留。
+const searchFields = computed(() => {
+  const hiddenIds = new Set(currentPool.value?.hiddenFieldIds ?? [])
+  return fields.value.filter(
+    (field) => !field.hidden && (field.key === 'name' || !hiddenIds.has(field.id)),
+  )
+})
 
 async function init() {
   try {
@@ -219,7 +226,7 @@ onActivated(() => {
       v-model:filters="filters"
       v-model:quick-groups="quickGroups"
       v-model:keyword="poolKeyword"
-      :fields="fields"
+      :fields="searchFields"
       :config="quickSearch"
       @search="reload"
     >

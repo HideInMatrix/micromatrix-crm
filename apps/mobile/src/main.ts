@@ -10,10 +10,8 @@ import 'vant/es/dialog/style'
 import 'vant/es/image-preview/style'
 import 'virtual:uno.css'
 import './styles/index.css'
-import VConsole from "vconsole";
 
 if (import.meta.env.DEV) void import('@vant/touch-emulator')
-new VConsole({ theme: "dark" });
 
 const bootUrl = new URL(window.location.href)
 const bootCode = bootUrl.searchParams.get('code') ?? ''

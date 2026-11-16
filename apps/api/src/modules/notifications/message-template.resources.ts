@@ -84,7 +84,7 @@ const ZH_CN: Record<MessageTaskEvent, MessageTemplateResource> = {
   },
   CLUE_AUTOMATIC_MOVE_POOL: {
     eventName: '自动移入线索池',
-    template: '请注意！根据系统规则，您负责的${name}的销售线索，已被移入线索池！',
+    template: '请注意！根据系统规则，您负责的${name}的线索，已被移入线索池！',
   },
   CLUE_MOVED_POOL: {
     eventName: '被动移入线索池',
