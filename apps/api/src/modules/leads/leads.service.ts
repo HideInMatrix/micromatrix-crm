@@ -16,6 +16,7 @@ import {
   hasPermission,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
+import type { ExternalEventPerformance } from '../../common/external-event-performance'
 import { toCsv } from '../../common/csv'
 import type {
   BatchAffectResult,
@@ -1465,17 +1466,20 @@ export class LeadsService {
     user: AuthUser,
     prepared: Awaited<ReturnType<LeadsService['prepareResolvedLeadConversion']>>,
     tx: PrismaTransaction,
+    perf?: ExternalEventPerformance,
   ) {
     const ownerId = prepared.lead.inSharedPool
       ? (prepared.customerPrepared.owner?.id ?? null)
       : (prepared.lead.owner ?? null)
     if (!ownerId && !prepared.allowUnassignedOwner)
       throw new BadRequestException('线索暂无负责人，无法转换')
-    await acquirePoolTransactionLocksPrisma(
-      this.prisma.client,
-      tx,
-      poolTransactionLockKeys('clue', user.tenantId, prepared.lead.id, ownerId ?? ''),
-    )
+    const acquireLocks = () =>
+      acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
+        tx,
+        poolTransactionLockKeys('clue', user.tenantId, prepared.lead.id, ownerId ?? ''),
+      )
+    await (perf ? perf.measure('conversion_lock', acquireLocks) : acquireLocks())
     const current = await tx.orm.public.Clue.where({
       id: prepared.lead.id,
       organizationId: user.tenantId,

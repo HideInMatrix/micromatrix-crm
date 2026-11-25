@@ -27,6 +27,7 @@ import { LarkClient } from '../enterprise-integrations/lark.client'
 import { WeComClient } from '../enterprise-integrations/wecom.client'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { QueryMessageDeliveriesDto } from './dto/message-delivery.dto'
+import { DeliveryExecutor } from './delivery-executor'
 
 export interface EnqueueMessageInput {
   tenantId: string
@@ -81,10 +82,17 @@ const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000]
 const STALE_SENDING_MS = 5 * 60_000
 const MAX_BATCH_SIZE = 50
 const WORKER_CONCURRENCY = 5
+const MAX_OUTSTANDING_DELIVERIES = 1_000
 
 @Injectable()
 export class MessageDeliveryService {
   private readonly logger = new Logger(MessageDeliveryService.name)
+  private readonly executor = new DeliveryExecutor(
+    (id) => this.processOne(id),
+    WORKER_CONCURRENCY,
+    MAX_OUTSTANDING_DELIVERIES,
+  )
+  private lastOverflowWarningAt = 0
 
   constructor(
     private readonly prisma: PrismaService,
@@ -301,19 +309,16 @@ export class MessageDeliveryService {
       .orderBy((delivery) => delivery.createdAt.asc())
       .limit(MAX_BATCH_SIZE)
       .all()
-    await this.processIds(due.map((item) => item.id))
-    return due.length
+    return this.processIds(due.map((item) => item.id))
   }
 
-  async processIds(ids: string[]): Promise<void> {
-    let cursor = 0
-    const workers = Array.from({ length: Math.min(WORKER_CONCURRENCY, ids.length) }, async () => {
-      while (cursor < ids.length) {
-        const id = ids[cursor++]
-        if (id) await this.processOne(id)
-      }
-    })
-    await Promise.all(workers)
+  async processIds(ids: string[]): Promise<number> {
+    const { accepted, deferred } = await this.executor.run(ids)
+    if (deferred && Date.now() - this.lastOverflowWarningAt >= 30_000) {
+      this.lastOverflowWarningAt = Date.now()
+      this.logger.warn(`消息投递进程队列已满，本批 ${deferred} 条留在数据库等待定时恢复`)
+    }
+    return accepted
   }
 
   private async processOne(id: string): Promise<void> {

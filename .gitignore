@@ -47,3 +47,6 @@ bugs/
 /.claude/
 /.cursor/
 /.devin/
+
+# 本地性能压测平台及全部测试产物，不纳入 Git
+/tools/load-test/

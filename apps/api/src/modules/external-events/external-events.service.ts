@@ -10,6 +10,7 @@ import {
   Optional,
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
+import { ExternalEventPerformance } from '../../common/external-event-performance'
 import {
   hasPermission,
   type ExternalEventExecuteInput,
@@ -189,8 +190,12 @@ export class ExternalEventsService {
     dto: ExternalEventExecuteInput,
     requestMeta?: ExternalEventRequestMeta,
   ) {
-    if (!this.templates) throw new BadRequestException('外部事件配置服务不可用')
-    const template = await this.templates.findEnabled(user, dto.eventType)
+    const templates = this.templates
+    if (!templates) throw new BadRequestException('外部事件配置服务不可用')
+    const perf = new ExternalEventPerformance()
+    const template = await perf.measure('template', () =>
+      templates.findEnabled(user, dto.eventType),
+    )
     // Stable internal source comes from the saved template, not the request.
     // Existing template namespaces and their idempotency history stay intact.
     const source = template.source
@@ -213,15 +218,36 @@ export class ExternalEventsService {
       }),
       requestMeta,
     }
-    const claim = await this.claimInbox(user, source, externalEventId, requestHash, dto.eventType)
+    const claim = await perf.measure('inbox_claim', () =>
+      this.claimInbox(user, source, externalEventId, requestHash, dto.eventType),
+    )
     if (claim.replayed) {
       await this.recordReplayed(audit, claim.row)
       return this.successResponse(claim.row, true)
     }
 
     try {
-      if (template.config.flow)
-        return await this.executeFlow(user, template, dto.data, claim.row.id, requestHash, audit)
+      if (template.config.flow) {
+        const action = template.config.flow.action
+        let ok = false
+        try {
+          const result = await this.executeFlow(
+            user,
+            template,
+            dto.data,
+            claim.row.id,
+            requestHash,
+            audit,
+            perf,
+          )
+          ok = true
+          return result
+        } finally {
+          if (action === 'create' || action === 'convert') {
+            perf.finish(action, ok, (line) => this.logger.log(line))
+          }
+        }
+      }
       const { resolved, set, ownerId } = await this.templates.prepare(user, template, dto.data)
       if (resolved.kind === 'CUSTOMER') {
         const prepared =
@@ -315,12 +341,16 @@ export class ExternalEventsService {
     inboxId: string,
     requestHash: string,
     audit: ExternalEventAudit,
+    perf: ExternalEventPerformance,
   ) {
-    if (!this.templates) throw new BadRequestException('配置服务不可用')
+    const templates = this.templates
+    if (!templates) throw new BadRequestException('配置服务不可用')
     if (template.config.flow?.action === 'upsertCustomer') {
       return this.executePaymentSync(user, template, data, inboxId, requestHash, audit)
     }
-    const plan = await this.templates.prepareFlow(user, template, data)
+    const plan = await perf.measure('flow_prepare', () =>
+      templates.prepareFlow(user, template, data),
+    )
     const { flow, resolved, set, systemFieldUpdates, ownerId, poolId } = plan
     const commit = (
       tx: PrismaTransaction,
@@ -391,25 +421,37 @@ export class ExternalEventsService {
       if (!resolved || resolved.kind !== 'LEAD') throw new BadRequestException('转换目标必须是线索')
       if (!hasPermission(user.permissions, 'lead:convert'))
         throw new ForbiddenException('外部事件调用账号缺少线索转化权限')
-      const values = Object.keys(set).length
-        ? await this.customers.normalizeWritableDynamicFields(user, set)
-        : {}
-      const prepared = await this.leads.prepareResolvedLeadConversion(
-        user,
-        resolved.leadId,
-        values,
-        ownerId ?? undefined,
-      )
-      const result = await this.prisma.client.transaction(async (tx) => {
-        const converted = await this.leads.convertResolvedLeadInTransaction(user, prepared, tx)
-        const inbox = await commit(tx, 'LEAD', resolved.leadId, converted.customerId)
-        return { converted, inbox }
-      })
-      await this.leads
-        .notifyResolvedLeadConversion(user, prepared, result.converted)
-        .catch((error: unknown) =>
-          this.logger.warn(`外部事件转换通知失败 inbox=${inboxId}: ${String(error)}`),
+      const prepared = await perf.measure('business_prepare', async () => {
+        const values = Object.keys(set).length
+          ? await this.customers.normalizeWritableDynamicFields(user, set)
+          : {}
+        return this.leads.prepareResolvedLeadConversion(
+          user,
+          resolved.leadId,
+          values,
+          ownerId ?? undefined,
         )
+      })
+      const entered = perf.begin('transaction_enter')
+      const result = await perf.measure('transaction', () =>
+        this.prisma.client.transaction(async (tx) => {
+          entered()
+          const converted = await perf.measure('business_write', () =>
+            this.leads.convertResolvedLeadInTransaction(user, prepared, tx, perf),
+          )
+          const inbox = await perf.measure('inbox_commit', () =>
+            commit(tx, 'LEAD', resolved.leadId, converted.customerId),
+          )
+          return { converted, inbox }
+        }),
+      )
+      await perf.measure('notification', () =>
+        this.leads
+          .notifyResolvedLeadConversion(user, prepared, result.converted)
+          .catch((error: unknown) =>
+            this.logger.warn(`外部事件转换通知失败 inbox=${inboxId}: ${String(error)}`),
+          ),
+      )
       return this.successResponse(result.inbox, false)
     }
 
@@ -431,29 +473,41 @@ export class ExternalEventsService {
           )
         return this.successResponse(result.inbox, false)
       }
-      const prepared = await this.leads.prepareExternalLeadCreation(user, {
-        name: plan.name!,
-        contactName: systemFieldUpdates.contact,
-        phone: systemFieldUpdates.phone,
-        ownerId: ownerId ?? undefined,
-        customData: set,
-        ...(poolId ? { toPool: true, poolId } : {}),
-      })
-      const result = await this.prisma.client.transaction(async (tx) => {
-        const lead = await this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx)
-        const inbox = await commit(tx, 'LEAD', String(lead.id), null)
-        return { lead, inbox }
-      })
-      await this.leads
-        .notifyExternalEventLeadCreated(
-          user,
-          result.lead.id,
-          result.lead.name,
-          prepared.owner?.id ?? null,
-        )
-        .catch((error: unknown) =>
-          this.logger.warn(`外部事件新建线索通知失败 inbox=${inboxId}: ${String(error)}`),
-        )
+      const prepared = await perf.measure('business_prepare', () =>
+        this.leads.prepareExternalLeadCreation(user, {
+          name: plan.name!,
+          contactName: systemFieldUpdates.contact,
+          phone: systemFieldUpdates.phone,
+          ownerId: ownerId ?? undefined,
+          customData: set,
+          ...(poolId ? { toPool: true, poolId } : {}),
+        }),
+      )
+      const entered = perf.begin('transaction_enter')
+      const result = await perf.measure('transaction', () =>
+        this.prisma.client.transaction(async (tx) => {
+          entered()
+          const lead = await perf.measure('business_write', () =>
+            this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx),
+          )
+          const inbox = await perf.measure('inbox_commit', () =>
+            commit(tx, 'LEAD', String(lead.id), null),
+          )
+          return { lead, inbox }
+        }),
+      )
+      await perf.measure('notification', () =>
+        this.leads
+          .notifyExternalEventLeadCreated(
+            user,
+            result.lead.id,
+            result.lead.name,
+            prepared.owner?.id ?? null,
+          )
+          .catch((error: unknown) =>
+            this.logger.warn(`外部事件新建线索通知失败 inbox=${inboxId}: ${String(error)}`),
+          ),
+      )
       return this.successResponse(result.inbox, false)
     }
 
