@@ -17,6 +17,7 @@ import {
   hasPermission,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
+import type { ExternalEventPerformance } from '../common/external-event-performance'
 import { toCsv } from '../common/csv'
 import type {
   BatchAffectResult,
@@ -47,6 +48,13 @@ import { SpreadsheetService } from '../modules/import-export/spreadsheet.service
 import { HomeFilterService } from '../modules/home/home-filter.service'
 import { BusinessNotificationsService } from '../modules/notifications/business-notifications.service'
 import { ResourcePoolsService } from '../modules/pool-rules/resource-pools.service'
+import { assertCreateCapacityInTransaction } from '../modules/pool-rules/transactional-capacity'
+import {
+  acquirePoolCapacityConfigReadLock,
+  acquirePoolTransactionLocksPrisma,
+  poolOwnerLockKey,
+  poolResourceLockKey,
+} from '../modules/pool-rules/pool-transaction-lock'
 import { CustomerPoolRepository } from '../modules/pool-rules/customer-pool.repository'
 import { PoolRecycleTaskService } from '../modules/pool-rules/pool-recycle-task.service'
 import { parseStringArray } from '../modules/pool-rules/pool-repository.helpers'
@@ -788,7 +796,17 @@ export class CustomersService {
     dto: CreateCustomerDto,
     prepared: Awaited<ReturnType<CustomersService['prepareCreateForTransaction']>>,
     tx: PrismaTransaction,
+    perf?: ExternalEventPerformance,
   ) {
+    if (prepared.owner)
+      await assertCreateCapacityInTransaction(
+        this.prisma.client,
+        tx,
+        'customer',
+        user.tenantId,
+        prepared.owner.id,
+        perf,
+      )
     const now = BigInt(Date.now())
     const created = await tx.orm.public.Customer.create({
       id: createLegacyId32(),
@@ -1973,6 +1991,41 @@ export class CustomersService {
 
     const now = BigInt(Date.now())
     const result = await this.prisma.client.transaction(async (tx) => {
+      // Merge can increase the final owner's holdings by one. Lock that owner and
+      // every participant before trusting the capacity delta calculated from snapshots.
+      await acquirePoolCapacityConfigReadLock(this.prisma.client, tx, 'customer', user.tenantId)
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
+        poolOwnerLockKey('customer', user.tenantId, newOwner.id),
+        ...[target, ...sources].map((row) =>
+          poolResourceLockKey('customer', user.tenantId, row.id),
+        ),
+      ])
+      const current = await tx.orm.public.Customer.where({ organizationId: user.tenantId })
+        .where((row) => row.id.in([target.id, ...sourceIds]))
+        .all()
+      const byId = new Map(current.map((row) => [row.id, row]))
+      for (const before of [target, ...sources]) {
+        const row = byId.get(before.id)
+        if (
+          !row ||
+          row.owner !== before.owner ||
+          row.inSharedPool !== before.inSharedPool ||
+          row.updateTime !== before.updateTime ||
+          row.poolId !== before.poolId
+        ) {
+          throw new ConflictException('客户合并前状态已变化，请重新选择后重试')
+        }
+      }
+      const addsCapacity = target.owner !== newOwner.id || target.inSharedPool
+      const removesCapacity = sources.some((row) => row.owner === newOwner.id && !row.inSharedPool)
+      if (addsCapacity && !removesCapacity)
+        await assertCreateCapacityInTransaction(
+          this.prisma.client,
+          tx,
+          'customer',
+          user.tenantId,
+          newOwner.id,
+        )
       await tx.orm.public.FollowUpRecords.where({
         tenantId: user.tenantId,
         targetType: 'customer',

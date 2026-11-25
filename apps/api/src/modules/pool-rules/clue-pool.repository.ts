@@ -18,9 +18,15 @@ import {
   scopeMatches,
   startOfLocalDay,
 } from './pool-repository.helpers'
+import { activeOwnedLeadQuery } from './transactional-capacity'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
 import { PoolRecycleTaskService } from './pool-recycle-task.service'
-import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
+import {
+  acquirePoolTransactionLocksPrisma,
+  poolTransactionLockKeys,
+  acquirePoolCapacityConfigReadLock,
+  poolCapacityConfigLockKey,
+} from './pool-transaction-lock'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
@@ -232,12 +238,17 @@ export class CluePoolRepository {
   }
 
   async deleteCapacity(organizationId: string, capacityId: string) {
-    const deleted = await this.prisma.client.orm.public.ClueCapacity.where({
-      id: capacityId,
-      organizationId: organizationId,
-    }).deleteAndCount()
-    if (!deleted) throw new NotFoundException('线索库容规则不存在')
-    return { id: capacityId }
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
+        poolCapacityConfigLockKey('clue', organizationId),
+      ])
+      const deleted = await tx.orm.public.ClueCapacity.where({
+        id: capacityId,
+        organizationId,
+      }).deleteAndCount()
+      if (!deleted) throw new NotFoundException('线索库容规则不存在')
+      return { id: capacityId }
+    })
   }
 
   pick(input: ClueOwnershipInput) {
@@ -251,6 +262,7 @@ export class CluePoolRepository {
   async transfer(input: ClueTransferInput) {
     const now = input.now ?? BigInt(Date.now())
     return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolCapacityConfigReadLock(this.prisma.client, tx, 'clue', input.organizationId)
       await acquirePoolTransactionLocksPrisma(
         this.prisma.client,
         tx,
@@ -267,13 +279,9 @@ export class CluePoolRepository {
       if (clue.owner === input.ownerId) return clue
 
       const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
-      const owned = await tx.orm.public.Clue.where({
-        organizationId: input.organizationId,
-        owner: input.ownerId,
-        inSharedPool: false,
-      })
-        .where((row) => row.transitionType.neq('CUSTOMER'))
-        .aggregate((agg) => ({ count: agg.count() }))
+      const owned = await activeOwnedLeadQuery(tx, input.organizationId, input.ownerId).aggregate(
+        (agg) => ({ count: agg.count() }),
+      )
       this.calculator.assertCapacity(capacity, owned.count, 0, 1)
       await this.appendOwnerHistory(tx, clue, input.operatorId, input.reasonId, now)
       const updated = await tx.orm.public.Clue.where({ id: clue.id }).update({
@@ -294,6 +302,7 @@ export class CluePoolRepository {
     if (clueIds.length === 0) throw new BadRequestException('请选择线索')
     const now = input.now ?? BigInt(Date.now())
     return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolCapacityConfigReadLock(this.prisma.client, tx, 'clue', input.organizationId)
       await acquirePoolTransactionLocksPrisma(
         this.prisma.client,
         tx,
@@ -318,12 +327,9 @@ export class CluePoolRepository {
       }
 
       const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
-      const owned = await tx.orm.public.Clue.where({
-        organizationId: input.organizationId,
-        owner: input.ownerId,
-        inSharedPool: false,
-        transitionId: null,
-      }).aggregate((agg) => ({ count: agg.count() }))
+      const owned = await activeOwnedLeadQuery(tx, input.organizationId, input.ownerId).aggregate(
+        (agg) => ({ count: agg.count() }),
+      )
       this.calculator.assertCapacity(capacity, owned.count, 0, changed.length)
 
       for (const clue of changed) {
@@ -358,6 +364,7 @@ export class CluePoolRepository {
   private async takeFromPool(input: ClueOwnershipInput, enforcePickRule: boolean) {
     const now = input.now ?? BigInt(Date.now())
     return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolCapacityConfigReadLock(this.prisma.client, tx, 'clue', input.organizationId)
       await acquirePoolTransactionLocksPrisma(
         this.prisma.client,
         tx,
@@ -381,13 +388,9 @@ export class CluePoolRepository {
 
       const capacity = await this.findCapacity(tx, input.organizationId, input.ownerId)
       const [owned, todayPicked, previousOwner] = await Promise.all([
-        tx.orm.public.Clue.where({
-          organizationId: input.organizationId,
-          owner: input.ownerId,
-          inSharedPool: false,
-        })
-          .where((row) => row.transitionType.neq('CUSTOMER'))
-          .aggregate((agg) => ({ count: agg.count() })),
+        activeOwnedLeadQuery(tx, input.organizationId, input.ownerId).aggregate((agg) => ({
+          count: agg.count(),
+        })),
         tx.orm.public.Clue.where({
           organizationId: input.organizationId,
           owner: input.ownerId,
@@ -540,7 +543,7 @@ export class CluePoolRepository {
     const now = BigInt(Date.now())
     return this.prisma.client.transaction(async (tx) => {
       await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
-        `pool:clue:${organizationId}:capacity-config`,
+        poolCapacityConfigLockKey('clue', organizationId),
       ])
       const incoming = await resolveScopeUserIdsPrisma(tx, organizationId, input.scopeIds)
       let existingQuery = tx.orm.public.ClueCapacity.where({

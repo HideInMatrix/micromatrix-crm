@@ -12,6 +12,7 @@ import { CluePoolRepository } from './clue-pool.repository'
 import { CustomerPoolRepository } from './customer-pool.repository'
 import type { PoolModule } from './pool-domain.types'
 import { scopeMatches } from './pool-repository.helpers'
+import { readOwnedCapacity } from './transactional-capacity'
 
 /** 业务访问编排器：数据读写始终委托 Clue/Customer 分域 Repository。 */
 @Injectable()
@@ -102,26 +103,16 @@ export class ResourcePoolsService {
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities =
       module === 'lead'
-        ? await this.cluePools.listCapacities(organizationId)
+        ? [...(await this.cluePools.listCapacities(organizationId))].reverse()
         : await this.customerPools.listCapacities(organizationId)
     const capacity = capacities.find((item) => scopeMatches(item.scopeId, tokens))?.capacity
     if (capacity === null || capacity === undefined) return
-    const owned =
-      module === 'lead'
-        ? (
-            await this.prisma.client.orm.public.Clue.where({
-              organizationId: organizationId,
-              owner: ownerId,
-              inSharedPool: false,
-            }).aggregate((agg) => ({ count: agg.count() }))
-          ).count
-        : (
-            await this.prisma.client.orm.public.Customer.where({
-              organizationId: organizationId,
-              owner: ownerId,
-              inSharedPool: false,
-            }).aggregate((agg) => ({ count: agg.count() }))
-          ).count
+    const owned = await readOwnedCapacity(
+      this.prisma.client,
+      module === 'lead' ? 'clue' : 'customer',
+      organizationId,
+      ownerId,
+    )
     if (owned + processCount > capacity)
       throw new BadRequestException('负责人持有数量将超过库容上限')
   }

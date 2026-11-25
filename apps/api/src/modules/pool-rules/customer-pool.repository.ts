@@ -20,7 +20,12 @@ import {
 } from './pool-repository.helpers'
 import { PoolRuleCalculator } from './pool-rule-calculator.service'
 import { PoolRecycleTaskService } from './pool-recycle-task.service'
-import { acquirePoolTransactionLocksPrisma, poolTransactionLockKeys } from './pool-transaction-lock'
+import {
+  acquirePoolTransactionLocksPrisma,
+  poolTransactionLockKeys,
+  acquirePoolCapacityConfigReadLock,
+  poolCapacityConfigLockKey,
+} from './pool-transaction-lock'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 
@@ -209,12 +214,17 @@ export class CustomerPoolRepository {
   }
 
   async deleteCapacity(organizationId: string, capacityId: string) {
-    const deleted = await this.prisma.client.orm.public.CustomerCapacity.where({
-      id: capacityId,
-      organizationId: organizationId,
-    }).deleteAndCount()
-    if (!deleted) throw new NotFoundException('客户库容规则不存在')
-    return { id: capacityId }
+    return this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
+        poolCapacityConfigLockKey('customer', organizationId),
+      ])
+      const deleted = await tx.orm.public.CustomerCapacity.where({
+        id: capacityId,
+        organizationId,
+      }).deleteAndCount()
+      if (!deleted) throw new NotFoundException('客户库容规则不存在')
+      return { id: capacityId }
+    })
   }
 
   pick(input: CustomerOwnershipInput) {
@@ -235,6 +245,12 @@ export class CustomerPoolRepository {
 
   async transferInTransaction(tx: PrismaTransaction, input: CustomerTransferInput) {
     const now = input.now ?? BigInt(Date.now())
+    await acquirePoolCapacityConfigReadLock(
+      this.prisma.client,
+      tx,
+      'customer',
+      input.organizationId,
+    )
     await acquirePoolTransactionLocksPrisma(
       this.prisma.client,
       tx,
@@ -290,6 +306,12 @@ export class CustomerPoolRepository {
     enforcePickRule: boolean,
   ) {
     const now = input.now ?? BigInt(Date.now())
+    await acquirePoolCapacityConfigReadLock(
+      this.prisma.client,
+      tx,
+      'customer',
+      input.organizationId,
+    )
     await acquirePoolTransactionLocksPrisma(
       this.prisma.client,
       tx,
@@ -466,7 +488,7 @@ export class CustomerPoolRepository {
     const now = BigInt(Date.now())
     return this.prisma.client.transaction(async (tx) => {
       await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
-        `pool:customer:${organizationId}:capacity-config`,
+        poolCapacityConfigLockKey('customer', organizationId),
       ])
       const incoming = await resolveScopeUserIdsPrisma(tx, organizationId, input.scopeIds)
       let existingQuery = tx.orm.public.CustomerCapacity.where({

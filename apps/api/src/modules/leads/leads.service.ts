@@ -58,8 +58,10 @@ import { PoolRecycleTaskService } from '../pool-rules/pool-recycle-task.service'
 import { CustomerPoolRepository } from '../pool-rules/customer-pool.repository'
 import {
   acquirePoolTransactionLocksPrisma,
-  poolTransactionLockKeys,
+  poolResourceLockKey,
+  poolOwnerLockKey,
 } from '../pool-rules/pool-transaction-lock'
+import { assertCreateCapacityInTransaction } from '../pool-rules/transactional-capacity'
 import { USER_VIEW_RESOURCE_TYPES } from '../user-views/user-views.constants'
 import { UserViewsService } from '../user-views/user-views.service'
 import {
@@ -720,6 +722,14 @@ export class LeadsService {
     if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
 
     const lead = await this.prisma.client.transaction(async (tx) => {
+      if (owner)
+        await assertCreateCapacityInTransaction(
+          this.prisma.client,
+          tx,
+          'clue',
+          user.tenantId,
+          owner.id,
+        )
       const created = await tx.orm.public.Clue.create({
         id: createLegacyId32(),
         name: dto.name,
@@ -880,8 +890,18 @@ export class LeadsService {
     user: AuthUser,
     prepared: Awaited<ReturnType<LeadsService['prepareExternalLeadCreation']>>,
     tx: PrismaTransaction,
+    perf?: ExternalEventPerformance,
   ) {
     const { dto, owner, targetPool, uniqueScope } = prepared
+    if (owner)
+      await assertCreateCapacityInTransaction(
+        this.prisma.client,
+        tx,
+        'clue',
+        user.tenantId,
+        owner.id,
+        perf,
+      )
     const now = BigInt(Date.now())
     const lead = await tx.orm.public.Clue.create({
       id: createLegacyId32(),
@@ -1493,12 +1513,19 @@ export class LeadsService {
       : (prepared.lead.owner ?? null)
     if (!ownerId && !prepared.allowUnassignedOwner)
       throw new BadRequestException('线索暂无负责人，无法转换')
-    const acquireLocks = () =>
-      acquirePoolTransactionLocksPrisma(
-        this.prisma.client,
-        tx,
-        poolTransactionLockKeys('clue', user.tenantId, prepared.lead.id, ownerId ?? ''),
-      )
+    // Ordinary conversion only removes an active lead from capacity. Its resource
+    // lock and state CAS are sufficient; the customer creation path guards customer capacity.
+    // Pooled conversion retains the original owner lock for pool assignment semantics.
+    const acquireLocks = async () => {
+      const acquire = (key: string) =>
+        acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [key])
+      if (prepared.lead.inSharedPool && ownerId) {
+        const task = () => acquire(poolOwnerLockKey('clue', user.tenantId, ownerId))
+        await (perf ? perf.measure('conversion_lead_owner_lock', task) : task())
+      }
+      const task = () => acquire(poolResourceLockKey('clue', user.tenantId, prepared.lead.id))
+      await (perf ? perf.measure('conversion_resource_lock', task) : task())
+    }
     await (perf ? perf.measure('conversion_lock', acquireLocks) : acquireLocks())
     const current = await tx.orm.public.Clue.where({
       id: prepared.lead.id,
@@ -1563,6 +1590,7 @@ export class LeadsService {
       prepared.customerCreateDto,
       prepared.customerPrepared,
       tx,
+      perf,
     )
     await this.associateLeadsToCustomerInTransaction(
       tx,
@@ -1616,11 +1644,9 @@ export class LeadsService {
     const associationPrepared = await this.prepareLeadAssociation(user, [lead])
 
     const transactionResult = await this.prisma.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma(
-        this.prisma.client,
-        tx,
-        poolTransactionLockKeys('clue', user.tenantId, lead.id, lead.owner!),
-      )
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
+        poolResourceLockKey('clue', user.tenantId, lead.id),
+      ])
       const current = await tx.orm.public.Clue.where({
         id: lead.id,
         organizationId: user.tenantId,
@@ -1683,11 +1709,9 @@ export class LeadsService {
     const { clueId: _, ...customerPayload } = dto
     const prepared = await this.customers.prepareCreateForTransaction(user, customerPayload)
     const result = await this.prisma.client.transaction(async (tx) => {
-      await acquirePoolTransactionLocksPrisma(
-        this.prisma.client,
-        tx,
-        poolTransactionLockKeys('clue', user.tenantId, lead.id, lead.owner!),
-      )
+      await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
+        poolResourceLockKey('clue', user.tenantId, lead.id),
+      ])
       const current = await tx.orm.public.Clue.where({
         id: lead.id,
         organizationId: user.tenantId,
@@ -1780,6 +1804,12 @@ export class LeadsService {
       .map((lead) => String(lead.id))
     const associationPrepared = await this.prepareLeadAssociation(user, validLeads)
     await this.prisma.client.transaction(async (tx) => {
+      // Cross-domain lock order: clue resources before customer capacity/resource locks.
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
+        tx,
+        validLeads.map((lead) => poolResourceLockKey('clue', user.tenantId, lead.id)),
+      )
       if (customer.inSharedPool) {
         if (!customer.poolId) throw new BadRequestException('客户不属于有效公海')
         await this.customerPools.pickInTransaction(tx, {

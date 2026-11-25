@@ -35,7 +35,9 @@ export async function loadUserScopeTokensPrisma(
 
   const id = String(user.id)
   const tokens = new Set([id, `user:${id}`])
-  const userRoles = await tx.orm.public.UserRoles.where({ userId: id }).select('roleId').all()
+  const userRoles = await tx.orm.public.UserRoles.where({ tenantId: organizationId, userId: id })
+    .select('roleId')
+    .all()
   for (const { roleId } of userRoles) {
     const role = String(roleId)
     tokens.add(role)

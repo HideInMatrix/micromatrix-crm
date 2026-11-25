@@ -474,7 +474,13 @@ export class ExternalEventsService {
         const dto = { name: plan.name!, ownerId: ownerId ?? undefined, customData: set }
         const prepared = await this.customers.prepareCreateForTransaction(user, dto)
         const result = await this.prisma.client.transaction(async (tx) => {
-          const customer = await this.customers.createPreparedInTransaction(user, dto, prepared, tx)
+          const customer = await this.customers.createPreparedInTransaction(
+            user,
+            dto,
+            prepared,
+            tx,
+            perf,
+          )
           await perf.measure('notification_enqueue', () =>
             this.notificationOutbox.enqueue(
               tx,
@@ -507,7 +513,7 @@ export class ExternalEventsService {
         this.prisma.client.transaction(async (tx) => {
           entered()
           const lead = await perf.measure('business_write', () =>
-            this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx),
+            this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx, perf),
           )
           await perf.measure('notification_enqueue', () =>
             this.notificationOutbox.enqueue(
