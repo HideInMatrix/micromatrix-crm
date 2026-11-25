@@ -131,6 +131,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       sourceType: data.sourceType ?? null,
       sourceId: data.sourceId ?? null,
     })
+    await this.publishCreated(tenantId, userId, notification)
+  }
+
+  /** Publish only after the transaction that created the notification has committed. */
+  async publishCreated(
+    tenantId: string,
+    userId: string,
+    notification: Parameters<NotificationsService['toVO']>[0],
+  ): Promise<void> {
     await this.bumpCacheVersion(tenantId, userId)
     const event: NotificationRealtimeEvent = {
       version: NOTIFICATION_REALTIME_VERSION,

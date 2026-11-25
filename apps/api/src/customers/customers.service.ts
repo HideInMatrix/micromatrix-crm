@@ -772,7 +772,14 @@ export class CustomersService {
       options.allowUnassignedOwner && dto.ownerId === null
         ? null
         : await this.resolveOwner(user, dto.ownerId ?? undefined)
-    if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'customer', owner.id)
+    if (owner)
+      await this.pools.assertCapacityForOwner(
+        user.tenantId,
+        'customer',
+        owner.id,
+        1,
+        owner.id === user.id ? undefined : owner,
+      )
     return { values, owner }
   }
 

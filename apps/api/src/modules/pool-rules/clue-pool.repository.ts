@@ -461,6 +461,8 @@ export class CluePoolRepository {
       if (!pool) throw new NotFoundException('目标线索池不存在或已禁用')
       if (automatic && !pool.auto)
         throw new ConflictException('线索池已关闭自动回收，本次任务已失效')
+      if (automatic && (clue.transitionId || clue.transitionType === 'CUSTOMER'))
+        throw new ConflictException('线索已转客户，自动回收任务已失效')
       if (!clue.owner || clue.collectionTime === null)
         throw new BadRequestException('线索当前没有可结束的负责人')
       if (
@@ -478,6 +480,9 @@ export class CluePoolRepository {
         id: clue.id,
         organizationId: input.organizationId,
         inSharedPool: false,
+        ...(automatic
+          ? { transitionId: clue.transitionId, transitionType: clue.transitionType }
+          : {}),
         owner: input.expectedOwnerId ?? clue.owner,
         createTime: input.expectedCreateTime ?? clue.createTime,
         collectionTime: input.expectedCollectionTime ?? clue.collectionTime,

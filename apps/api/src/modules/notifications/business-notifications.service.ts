@@ -48,54 +48,9 @@ export class BusinessNotificationsService {
 
   async send(input: BusinessNotificationInput): Promise<number> {
     try {
-      const candidateIds = [
-        ...new Set(
-          input.recipientIds.filter(
-            (id): id is string => Boolean(id) && !(input.excludeSelf && id === input.operatorId),
-          ),
-        ),
-      ]
-      if (candidateIds.length === 0) return 0
-      const [users, operator] = await Promise.all([
-        this.prisma.client.orm.public.Users.where({
-          tenantId: input.tenantId,
-          status: 'ACTIVE',
-        })
-          .where((user) => user.id.in(candidateIds))
-          .select('id')
-          .all(),
-        input.operatorId
-          ? this.prisma.client.orm.public.Users.where({
-              id: input.operatorId,
-              tenantId: input.tenantId,
-            })
-              .select('name', 'language')
-              .first()
-          : null,
-      ])
-      const userIds = users.map((user) => user.id)
-      if (userIds.length === 0) return 0
-      const templateContext = {
-        ...(operator?.name && !('OPERATOR' in (input.templateContext ?? {}))
-          ? { OPERATOR: operator.name }
-          : {}),
-        ...(input.templateContext ?? {}),
-      }
-      const rendered = this.templates
-        ? await this.templates.render(
-            input.tenantId,
-            input.event,
-            templateContext,
-            input.language ?? operator?.language ?? 'zh-CN',
-          )
-        : null
-      const title = input.title ?? rendered?.title
-      const baseContent = input.content ?? rendered?.content
-      const supplement = input.appendContent?.trim()
-      const content = supplement
-        ? [baseContent, supplement].filter(Boolean).join('\n')
-        : baseContent
-      if (!title) throw new Error(`消息事件 ${input.event} 缺少标题模板`)
+      const prepared = await this.prepare(input)
+      if (!prepared) return 0
+      const { userIds, title, content } = prepared
       await this.notifications.notifyMany(input.tenantId, userIds, {
         event: input.event,
         type: input.type,
@@ -128,6 +83,57 @@ export class BusinessNotificationsService {
       )
       return 0
     }
+  }
+
+  /** Resolve active recipients and render once; callers may persist inside a transaction. */
+  async prepare(input: BusinessNotificationInput) {
+    const candidateIds = [
+      ...new Set(
+        input.recipientIds.filter(
+          (id): id is string => Boolean(id) && !(input.excludeSelf && id === input.operatorId),
+        ),
+      ),
+    ]
+    if (candidateIds.length === 0) return null
+    const [users, operator] = await Promise.all([
+      this.prisma.client.orm.public.Users.where({
+        tenantId: input.tenantId,
+        status: 'ACTIVE',
+      })
+        .where((user) => user.id.in(candidateIds))
+        .select('id')
+        .all(),
+      input.operatorId
+        ? this.prisma.client.orm.public.Users.where({
+            id: input.operatorId,
+            tenantId: input.tenantId,
+          })
+            .select('name', 'language')
+            .first()
+        : null,
+    ])
+    const userIds = users.map((user) => user.id)
+    if (userIds.length === 0) return null
+    const templateContext = {
+      ...(operator?.name && !('OPERATOR' in (input.templateContext ?? {}))
+        ? { OPERATOR: operator.name }
+        : {}),
+      ...(input.templateContext ?? {}),
+    }
+    const rendered = this.templates
+      ? await this.templates.render(
+          input.tenantId,
+          input.event,
+          templateContext,
+          input.language ?? operator?.language ?? 'zh-CN',
+        )
+      : null
+    const title = input.title ?? rendered?.title
+    const baseContent = input.content ?? rendered?.content
+    const supplement = input.appendContent?.trim()
+    const content = supplement ? [baseContent, supplement].filter(Boolean).join('\n') : baseContent
+    if (!title) throw new Error(`消息事件 ${input.event} 缺少标题模板`)
+    return { userIds, title, content }
   }
 
   async sendConfigured(input: ConfiguredBusinessNotificationInput): Promise<number> {

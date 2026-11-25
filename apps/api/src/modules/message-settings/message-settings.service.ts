@@ -288,93 +288,47 @@ export class MessageSettingsService {
   }
 
   async getWeComChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
-    const [integration, tenant] = await Promise.all([
-      this.prisma.client.orm.public.EnterpriseIntegrations.where({
-        tenantId,
-        provider: 'WECOM',
-      }).first(),
-      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
-        .select('enterpriseSyncResource')
-        .first(),
-    ])
-    const active = tenant?.enterpriseSyncResource === 'WECOM'
-    const reason = !active
-      ? '当前企业协同平台不是企业微信'
-      : !integration
-        ? '请先配置企业微信'
-        : integration.lastTestSucceeded !== true
-          ? '请先完成企业微信连接测试'
-          : !integration.syncEnabled
-            ? '请先开启企业微信组织同步'
-            : null
-    return {
-      channel: 'WECOM',
-      configured: Boolean(integration),
-      verified: integration?.lastTestSucceeded === true,
-      enabled: active && integration?.syncEnabled === true,
-      available: reason === null,
-      reason,
-    }
+    return (await this.getDeliveryChannelGate(tenantId, 'WECOM')).gate
   }
 
   async getDingTalkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
-    const [integration, tenant] = await Promise.all([
-      this.prisma.client.orm.public.EnterpriseIntegrations.where({
-        tenantId,
-        provider: 'DINGTALK',
-      }).first(),
-      this.prisma.client.orm.public.Tenants.where({ id: tenantId })
-        .select('enterpriseSyncResource')
-        .first(),
-    ])
-    const active = tenant?.enterpriseSyncResource === 'DINGTALK'
-    const reason = !active
-      ? '当前企业协同平台不是钉钉'
-      : !integration
-        ? '请先配置钉钉'
-        : integration.lastTestSucceeded !== true
-          ? '请先完成钉钉连接测试'
-          : !integration.syncEnabled
-            ? '请先开启钉钉组织同步'
-            : null
-    return {
-      channel: 'DINGTALK',
-      configured: Boolean(integration),
-      verified: integration?.lastTestSucceeded === true,
-      enabled: active && integration?.syncEnabled === true,
-      available: reason === null,
-      reason,
-    }
+    return (await this.getDeliveryChannelGate(tenantId, 'DINGTALK')).gate
   }
 
   async getLarkChannelGate(tenantId: string): Promise<MessageChannelGateVO> {
+    return (await this.getDeliveryChannelGate(tenantId, 'LARK')).gate
+  }
+
+  /** Reuse the integration ID from the gate lookup; do not fetch credentials. */
+  async getDeliveryChannelGate(tenantId: string, channel: 'WECOM' | 'DINGTALK' | 'LARK') {
+    const name = { WECOM: '企业微信', DINGTALK: '钉钉', LARK: '飞书' }[channel]
     const [integration, tenant] = await Promise.all([
-      this.prisma.client.orm.public.EnterpriseIntegrations.where({
-        tenantId,
-        provider: 'LARK',
-      }).first(),
+      this.prisma.client.orm.public.EnterpriseIntegrations.where({ tenantId, provider: channel })
+        .select('id', 'lastTestSucceeded', 'syncEnabled')
+        .first(),
       this.prisma.client.orm.public.Tenants.where({ id: tenantId })
         .select('enterpriseSyncResource')
         .first(),
     ])
-    const active = tenant?.enterpriseSyncResource === 'LARK'
+    const active = tenant?.enterpriseSyncResource === channel
     const reason = !active
-      ? '当前企业协同平台不是飞书'
+      ? `当前企业协同平台不是${name}`
       : !integration
-        ? '请先配置飞书'
+        ? `请先配置${name}`
         : integration.lastTestSucceeded !== true
-          ? '请先完成飞书连接测试'
+          ? `请先完成${name}连接测试`
           : !integration.syncEnabled
-            ? '请先开启飞书组织同步'
+            ? `请先开启${name}组织同步`
             : null
-    return {
-      channel: 'LARK',
+    const gate: MessageChannelGateVO = {
+      channel,
       configured: Boolean(integration),
       verified: integration?.lastTestSucceeded === true,
       enabled: active && integration?.syncEnabled === true,
       available: reason === null,
       reason,
     }
+    return { gate, integrationId: integration?.id ?? null }
   }
 
   private definition(event: string): MessageTaskDefinition {

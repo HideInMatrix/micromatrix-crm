@@ -7,6 +7,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PrismaModule } from './prisma.module.js'
 import { RedisModule } from './redis/redis.module'
 import { ExportWorkerModule } from './workers/export-worker.module'
+import { ExternalEventNotificationWorkerService } from './workers/external-event-notification-worker.service'
 import { PoolRecycleWorkerModule } from './workers/pool-recycle-worker.module'
 
 @Module({
@@ -21,5 +22,6 @@ import { PoolRecycleWorkerModule } from './workers/pool-recycle-worker.module'
     ExportWorkerModule,
     PoolRecycleWorkerModule,
   ],
+  providers: [ExternalEventNotificationWorkerService],
 })
 export class WorkerAppModule {}

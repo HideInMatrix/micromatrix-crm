@@ -31,6 +31,7 @@ import { createLegacyId32 } from '../../common/legacy-id'
 import { PrismaService } from '../../prisma.service.js'
 import { CreateFieldDto, type SaveFormFieldDto, UpdateFieldDto } from './dto/field.dto'
 import { MODULE_SYSTEM_FIELDS, type SystemFieldTemplate } from './system-fields'
+import { memoFormConfigRead } from './form-config-read-memo'
 
 const SYSTEM_ACTOR = 'SYSTEM'
 const CACHE_TTL_SECONDS = 10 * 60
@@ -112,6 +113,12 @@ export class ModuleFormsService {
 
   async getConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
     if (formKey === 'contact') throw new BadRequestException('联系人模块已移除')
+    return memoFormConfigRead(organizationId, formKey, () =>
+      this.readConfig(organizationId, formKey),
+    )
+  }
+
+  private async readConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
     if (this.cache) {
       return this.cache.remember({
         tenantId: organizationId,
@@ -621,8 +628,7 @@ export class ModuleFormsService {
           .first()
         const formProp = this.parseObject(formBlob?.prop)
         const completion = formProp['customerFollowUpCompletion'] as
-          | { enabled?: boolean; fieldKey?: string }
-          | undefined
+          { enabled?: boolean; fieldKey?: string } | undefined
         if (completion?.enabled && completion.fieldKey === key) {
           throw new BadRequestException('该字段正在用于客户跟进完结判断，请先修改或关闭完结规则')
         }

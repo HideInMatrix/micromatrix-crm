@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common'
+import { ExternalEventNotificationOutboxService } from './external-event-notification-outbox.service'
 import { PrismaModule } from '../../prisma.module.js'
 import { MessageSettingsModule } from '../message-settings/message-settings.module'
 import { EnterpriseIntegrationsModule } from '../enterprise-integrations/enterprise-integrations.module'
@@ -19,11 +20,13 @@ import { MessageDeliveryService } from './message-delivery.service'
     BusinessNotificationsService,
     MessageTemplateService,
     MessageDeliveryService,
+    ExternalEventNotificationOutboxService,
   ],
   exports: [
     NotificationsService,
     BusinessNotificationsService,
     MessageDeliveryService,
+    ExternalEventNotificationOutboxService,
     MessageTemplateService,
   ],
 })

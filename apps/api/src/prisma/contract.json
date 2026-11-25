@@ -188,6 +188,10 @@
       "model": "ExternalEventInbox",
       "namespace": "public"
     },
+    "external_event_notification": {
+      "model": "ExternalEventNotification",
+      "namespace": "public"
+    },
     "external_event_templates": {
       "model": "ExternalEventTemplates",
       "namespace": "public"
@@ -6693,6 +6697,133 @@
               },
               "namespaceId": "public",
               "table": "external_event_inbox"
+            }
+          },
+          "ExternalEventNotification": {
+            "fields": {
+              "attempts": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "event": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "inboxId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "link": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "nextAttemptAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "operatorId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "recipientId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "resourceName": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "tenantId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "attempts": {
+                  "column": "attempts"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "event": {
+                  "column": "event"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "inboxId": {
+                  "column": "inbox_id"
+                },
+                "link": {
+                  "column": "link"
+                },
+                "nextAttemptAt": {
+                  "column": "next_attempt_at"
+                },
+                "operatorId": {
+                  "column": "operator_id"
+                },
+                "recipientId": {
+                  "column": "recipient_id"
+                },
+                "resourceName": {
+                  "column": "resource_name"
+                },
+                "tenantId": {
+                  "column": "tenant_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "external_event_notification"
             }
           },
           "ExternalEventTemplates": {
@@ -19061,6 +19192,109 @@
               },
               "uniques": []
             },
+            "external_event_notification": {
+              "columns": {
+                "attempts": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
+                  "nullable": false
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "event": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "inbox_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "link": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "next_attempt_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "operator_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "recipient_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "resource_name": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "next_attempt_at",
+                    "created_at"
+                  ],
+                  "name": "external_event_notification_due_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "inbox_id",
+                    "event"
+                  ],
+                  "name": "external_event_notification_inbox_event_key",
+                  "unique": true
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "external_event_notification_pkey"
+              },
+              "uniques": []
+            },
             "external_event_templates": {
               "columns": {
                 "api_key_user_id": {
@@ -24609,10 +24843,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "d2d7af91a22e92b04dbaaedaf249b774fec861bcd37d27fede68afb44a2613c9"
+    "storageHash": "b98e2e0095b5b2eda78eb91d8c1ae761c47e917e169f38c9f66f583bd250d100"
   },
   "execution": {
-    "executionHash": "4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a",
+    "executionHash": "5a74bf6bac8818fcc57dbd4ec51b02f8ad24368740778de4bab1eea7d6c4850c",
     "mutations": {
       "defaults": [
         {
@@ -24789,6 +25023,17 @@
             "column": "id",
             "namespace": "public",
             "table": "external_event_inbox"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "cuid2",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "external_event_notification"
           }
         },
         {

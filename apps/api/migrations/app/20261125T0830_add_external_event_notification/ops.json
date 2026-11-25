@@ -1,0 +1,119 @@
+[
+  {
+    "id": "table.external_event_notification",
+    "label": "Create table \"external_event_notification\"",
+    "summary": "Creates table \"external_event_notification\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "external_event_notification"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"external_event_notification\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_notification\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"external_event_notification\"",
+        "sql": "CREATE TABLE \"public\".\"external_event_notification\" (\n  \"attempts\" int4 DEFAULT 0 NOT NULL,\n  \"created_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"event\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"inbox_id\" text NOT NULL,\n  \"link\" text NOT NULL,\n  \"next_attempt_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"operator_id\" text NOT NULL,\n  \"recipient_id\" text NOT NULL,\n  \"resource_name\" text NOT NULL,\n  \"tenant_id\" text NOT NULL,\n  CONSTRAINT \"external_event_notification_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"external_event_notification\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_notification\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_notification.external_event_notification_due_idx",
+    "label": "Create index \"external_event_notification_due_idx\" on \"external_event_notification\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_notification_due_idx",
+        "table": "external_event_notification"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_notification_due_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_notification_due_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_notification_due_idx\"",
+        "sql": "CREATE INDEX \"external_event_notification_due_idx\" ON \"public\".\"external_event_notification\" (\"next_attempt_at\", \"created_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_notification_due_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_notification_due_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.external_event_notification.external_event_notification_inbox_event_key",
+    "label": "Create index \"external_event_notification_inbox_event_key\" on \"external_event_notification\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "external_event_notification_inbox_event_key",
+        "table": "external_event_notification"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"external_event_notification_inbox_event_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_notification_inbox_event_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"external_event_notification_inbox_event_key\"",
+        "sql": "CREATE UNIQUE INDEX \"external_event_notification_inbox_event_key\" ON \"public\".\"external_event_notification\" (\"inbox_id\", \"event\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"external_event_notification_inbox_event_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"external_event_notification_inbox_event_key\""
+        ]
+      }
+    ]
+  }
+]

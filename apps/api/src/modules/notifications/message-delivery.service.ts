@@ -125,30 +125,65 @@ export class MessageDeliveryService {
     channel: SupportedDeliveryChannel,
     input: EnqueueMessageInput,
   ): Promise<number> {
+    const rows = await this.prepareChannelRecords(channel, input)
+    if (!rows.length) return 0
+    const created = await this.prisma.client.transaction((tx) =>
+      tx.orm.public.MessageDeliveries.createAll(rows),
+    )
+    const pendingIds = created.filter((item) => item.status === 'PENDING').map((item) => item.id)
+    if (pendingIds.length > 0) {
+      void this.processIds(pendingIds).catch((error) =>
+        this.logger.warn(
+          `${this.channelName(channel)}投递即时处理失败: ${this.errorMessage(error)}`,
+        ),
+      )
+    }
+    return created.length
+  }
+
+  /** Resolve channel settings once per intent; errors propagate to the durable retry worker. */
+  async prepareOutboxRecords(
+    input: EnqueueMessageInput,
+    setting: {
+      weComEnabled: boolean
+      dingTalkEnabled: boolean
+      larkEnabled: boolean
+    },
+  ) {
+    const enabled = {
+      WECOM: setting.weComEnabled,
+      DINGTALK: setting.dingTalkEnabled,
+      LARK: setting.larkEnabled,
+    }
+    const rows = await Promise.all(
+      SUPPORTED_CHANNELS.map((channel) =>
+        this.prepareChannelRecords(channel, input, enabled[channel]),
+      ),
+    )
+    return rows.flat()
+  }
+
+  private async prepareChannelRecords(
+    channel: SupportedDeliveryChannel,
+    input: EnqueueMessageInput,
+    enabledOverride?: boolean,
+  ) {
     const enabled =
-      channel === 'DINGTALK'
+      enabledOverride ??
+      (channel === 'DINGTALK'
         ? await this.messageSettings.isDingTalkEnabled(input.tenantId, input.event)
         : channel === 'LARK'
           ? await this.messageSettings.isLarkEnabled(input.tenantId, input.event)
-          : await this.messageSettings.isWeComEnabled(input.tenantId, input.event)
-    if (!enabled) return 0
-    const gate =
-      channel === 'DINGTALK'
-        ? await this.messageSettings.getDingTalkChannelGate(input.tenantId)
-        : channel === 'LARK'
-          ? await this.messageSettings.getLarkChannelGate(input.tenantId)
-          : await this.messageSettings.getWeComChannelGate(input.tenantId)
-    if (!gate.available) return 0
-    const integration = await this.prisma.client.orm.public.EnterpriseIntegrations.where({
-      tenantId: input.tenantId,
-      provider: channel,
-    })
-      .select('id')
-      .first()
-    if (!integration) return 0
+          : await this.messageSettings.isWeComEnabled(input.tenantId, input.event))
+    if (!enabled) return []
+    const { gate, integrationId } = await this.messageSettings.getDeliveryChannelGate(
+      input.tenantId,
+      channel,
+    )
+    if (!gate.available || !integrationId) return []
 
     const userIds = [...new Set(input.recipientIds)]
-    if (userIds.length === 0) return 0
+    if (userIds.length === 0) return []
     const mappings = await this.prisma.client.orm.public.ExternalUserMappings.where({
       tenantId: input.tenantId,
       provider: channel,
@@ -159,37 +194,24 @@ export class MessageDeliveryService {
       .all()
     const mappingByUser = new Map(mappings.map((mapping) => [mapping.userId, mapping]))
     const updatedAt = nowInstant()
-    const created = await this.prisma.client.transaction(async (tx) => {
-      return tx.orm.public.MessageDeliveries.createAll(
-        userIds.map((userId) => {
-          const mapping = mappingByUser.get(userId)
-          return {
-            tenantId: input.tenantId,
-            integrationId: integration.id,
-            channel,
-            event: input.event,
-            userId,
-            externalSubject: mapping?.externalId ?? null,
-            title: input.title.slice(0, 500),
-            content: input.content?.slice(0, 4_000) ?? null,
-            link: input.link?.slice(0, 1_000) ?? null,
-            status: mapping ? ('PENDING' as const) : ('DEAD' as const),
-            errorCode: mapping ? null : 'EXTERNAL_USER_NOT_MAPPED',
-            errorMessage: mapping ? null : `接收人没有有效的${this.channelName(channel)}成员映射`,
-            updatedAt,
-          }
-        }),
-      )
+    return userIds.map((userId) => {
+      const mapping = mappingByUser.get(userId)
+      return {
+        tenantId: input.tenantId,
+        integrationId,
+        channel,
+        event: input.event,
+        userId,
+        externalSubject: mapping?.externalId ?? null,
+        title: input.title.slice(0, 500),
+        content: input.content?.slice(0, 4_000) ?? null,
+        link: input.link?.slice(0, 1_000) ?? null,
+        status: mapping ? ('PENDING' as const) : ('DEAD' as const),
+        errorCode: mapping ? null : 'EXTERNAL_USER_NOT_MAPPED',
+        errorMessage: mapping ? null : `接收人没有有效的${this.channelName(channel)}成员映射`,
+        updatedAt,
+      }
     })
-    const pendingIds = created.filter((item) => item.status === 'PENDING').map((item) => item.id)
-    if (pendingIds.length > 0) {
-      void this.processIds(pendingIds).catch((error) =>
-        this.logger.warn(
-          `${this.channelName(channel)}投递即时处理失败: ${this.errorMessage(error)}`,
-        ),
-      )
-    }
-    return created.length
   }
 
   async list(tenantId: string, query: QueryMessageDeliveriesDto) {

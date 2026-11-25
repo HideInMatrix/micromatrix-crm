@@ -23,6 +23,9 @@ import { PrismaService } from '../../prisma.service'
 import { nowInstant } from '../../prisma/temporal'
 import { jsonValue } from '../../prisma/json-value'
 import { LeadsService } from '../leads/leads.service'
+import { ExternalEventNotificationOutboxService } from '../notifications/external-event-notification-outbox.service'
+import { withFormConfigReadMemo } from '../metadata/form-config-read-memo'
+import { externalEventNotificationIntent } from '../notifications/external-event-notification-intent'
 import type { ApplyExternalCustomerEventDto } from './dto/external-event.dto'
 import { ExternalResourceResolverService } from './external-resource-resolver.service'
 import { auditExternalEventRequest } from './external-event-audit-payload'
@@ -69,6 +72,7 @@ export class ExternalEventsService {
     private readonly resolver: ExternalResourceResolverService,
     private readonly customers: CustomersService,
     private readonly leads: LeadsService,
+    private readonly notificationOutbox: ExternalEventNotificationOutboxService,
     @Optional() private readonly templates?: ExternalEventTemplatesService,
   ) {}
 
@@ -231,15 +235,11 @@ export class ExternalEventsService {
         const action = template.config.flow.action
         let ok = false
         try {
-          const result = await this.executeFlow(
-            user,
-            template,
-            dto.data,
-            claim.row.id,
-            requestHash,
-            audit,
-            perf,
-          )
+          const execute = () =>
+            this.executeFlow(user, template, dto.data, claim.row.id, requestHash, audit, perf)
+          const result = await (action === 'create' || action === 'convert'
+            ? withFormConfigReadMemo(execute)
+            : execute())
           ok = true
           return result
         } finally {
@@ -352,6 +352,7 @@ export class ExternalEventsService {
       templates.prepareFlow(user, template, data),
     )
     const { flow, resolved, set, systemFieldUpdates, ownerId, poolId } = plan
+    const notificationContext = { inboxId, tenantId: user.tenantId, operatorId: user.id }
     const commit = (
       tx: PrismaTransaction,
       type: 'LEAD' | 'CUSTOMER',
@@ -439,18 +440,29 @@ export class ExternalEventsService {
           const converted = await perf.measure('business_write', () =>
             this.leads.convertResolvedLeadInTransaction(user, prepared, tx, perf),
           )
+          await perf.measure('notification_enqueue', () =>
+            this.notificationOutbox.enqueue(tx, [
+              ...externalEventNotificationIntent(
+                notificationContext,
+                'CUSTOMER_ADD',
+                prepared.customerPrepared.owner?.id,
+                converted.createdCustomer.name,
+                converted.customerId,
+              ),
+              ...externalEventNotificationIntent(
+                notificationContext,
+                'CLUE_CONVERT_CUSTOMER',
+                prepared.lead.owner,
+                prepared.lead.name,
+                converted.customerId,
+              ),
+            ]),
+          )
           const inbox = await perf.measure('inbox_commit', () =>
             commit(tx, 'LEAD', resolved.leadId, converted.customerId),
           )
-          return { converted, inbox }
+          return { inbox }
         }),
-      )
-      await perf.measure('notification', () =>
-        this.leads
-          .notifyResolvedLeadConversion(user, prepared, result.converted)
-          .catch((error: unknown) =>
-            this.logger.warn(`外部事件转换通知失败 inbox=${inboxId}: ${String(error)}`),
-          ),
       )
       return this.successResponse(result.inbox, false)
     }
@@ -463,14 +475,21 @@ export class ExternalEventsService {
         const prepared = await this.customers.prepareCreateForTransaction(user, dto)
         const result = await this.prisma.client.transaction(async (tx) => {
           const customer = await this.customers.createPreparedInTransaction(user, dto, prepared, tx)
-          const inbox = await commit(tx, 'CUSTOMER', String(customer.id), String(customer.id))
-          return { inbox, customer }
-        })
-        await this.customers
-          .notifyCreatedCustomer(user, result.customer, prepared.owner?.id ?? null)
-          .catch((error: unknown) =>
-            this.logger.warn(`外部事件客户通知失败 inbox=${inboxId}: ${String(error)}`),
+          await perf.measure('notification_enqueue', () =>
+            this.notificationOutbox.enqueue(
+              tx,
+              externalEventNotificationIntent(
+                notificationContext,
+                'CUSTOMER_ADD',
+                prepared.owner?.id,
+                customer.name,
+                String(customer.id),
+              ),
+            ),
           )
+          const inbox = await commit(tx, 'CUSTOMER', String(customer.id), String(customer.id))
+          return { inbox }
+        })
         return this.successResponse(result.inbox, false)
       }
       const prepared = await perf.measure('business_prepare', () =>
@@ -490,23 +509,23 @@ export class ExternalEventsService {
           const lead = await perf.measure('business_write', () =>
             this.leads.createPreparedExternalLeadInTransaction(user, prepared, tx),
           )
+          await perf.measure('notification_enqueue', () =>
+            this.notificationOutbox.enqueue(
+              tx,
+              externalEventNotificationIntent(
+                notificationContext,
+                'CLUE_ADD',
+                prepared.owner?.id,
+                lead.name,
+                String(lead.id),
+              ),
+            ),
+          )
           const inbox = await perf.measure('inbox_commit', () =>
             commit(tx, 'LEAD', String(lead.id), null),
           )
-          return { lead, inbox }
+          return { inbox }
         }),
-      )
-      await perf.measure('notification', () =>
-        this.leads
-          .notifyExternalEventLeadCreated(
-            user,
-            result.lead.id,
-            result.lead.name,
-            prepared.owner?.id ?? null,
-          )
-          .catch((error: unknown) =>
-            this.logger.warn(`外部事件新建线索通知失败 inbox=${inboxId}: ${String(error)}`),
-          ),
       )
       return this.successResponse(result.inbox, false)
     }

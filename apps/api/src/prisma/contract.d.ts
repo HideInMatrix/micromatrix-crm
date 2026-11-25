@@ -34,9 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'d2d7af91a22e92b04dbaaedaf249b774fec861bcd37d27fede68afb44a2613c9'>;
+  StorageHashBase<'b98e2e0095b5b2eda78eb91d8c1ae761c47e917e169f38c9f66f583bd250d100'>;
 export type ExecutionHash =
-  ExecutionHashBase<'4254f2921a79ed34c6dd6cacd3b9994bb5fbe27c84625ce96f66d5d869b7793a'>;
+  ExecutionHashBase<'5a74bf6bac8818fcc57dbd4ec51b02f8ad24368740778de4bab1eea7d6c4850c'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -782,6 +782,19 @@ export type FieldOutputTypes = {
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly errorCode: CodecTypes['pg/text@1']['output'] | null;
       readonly errorMessage: CodecTypes['pg/text@1']['output'] | null;
+    };
+    readonly ExternalEventNotification: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly inboxId: CodecTypes['pg/text@1']['output'];
+      readonly tenantId: CodecTypes['pg/text@1']['output'];
+      readonly operatorId: CodecTypes['pg/text@1']['output'];
+      readonly recipientId: CodecTypes['pg/text@1']['output'];
+      readonly event: CodecTypes['pg/text@1']['output'];
+      readonly resourceName: CodecTypes['pg/text@1']['output'];
+      readonly link: CodecTypes['pg/text@1']['output'];
+      readonly attempts: CodecTypes['pg/int4@1']['output'];
+      readonly nextAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
     readonly ExternalEventTemplates: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -1826,6 +1839,19 @@ export type FieldInputTypes = {
       readonly errorCode: CodecTypes['pg/text@1']['input'] | null;
       readonly errorMessage: CodecTypes['pg/text@1']['input'] | null;
     };
+    readonly ExternalEventNotification: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly inboxId: CodecTypes['pg/text@1']['input'];
+      readonly tenantId: CodecTypes['pg/text@1']['input'];
+      readonly operatorId: CodecTypes['pg/text@1']['input'];
+      readonly recipientId: CodecTypes['pg/text@1']['input'];
+      readonly event: CodecTypes['pg/text@1']['input'];
+      readonly resourceName: CodecTypes['pg/text@1']['input'];
+      readonly link: CodecTypes['pg/text@1']['input'];
+      readonly attempts: CodecTypes['pg/int4@1']['input'];
+      readonly nextAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
     readonly ExternalEventTemplates: {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly tenantId: CodecTypes['pg/text@1']['input'];
@@ -2869,6 +2895,19 @@ export type StorageColumnTypes = {
       readonly status: CodecTypes['pg/text@1']['output'];
       readonly updated_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
+    readonly external_event_notification: {
+      readonly attempts: CodecTypes['pg/int4@1']['output'];
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly event: CodecTypes['pg/text@1']['output'];
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly inbox_id: CodecTypes['pg/text@1']['output'];
+      readonly link: CodecTypes['pg/text@1']['output'];
+      readonly next_attempt_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly operator_id: CodecTypes['pg/text@1']['output'];
+      readonly recipient_id: CodecTypes['pg/text@1']['output'];
+      readonly resource_name: CodecTypes['pg/text@1']['output'];
+      readonly tenant_id: CodecTypes['pg/text@1']['output'];
+    };
     readonly external_event_templates: {
       readonly api_key_user_id: CodecTypes['pg/text@1']['output'];
       readonly config: CodecTypes['pg/jsonb@1']['output'];
@@ -3911,6 +3950,19 @@ export type StorageColumnInputTypes = {
       readonly started_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly status: CodecTypes['pg/text@1']['input'];
       readonly updated_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
+    readonly external_event_notification: {
+      readonly attempts: CodecTypes['pg/int4@1']['input'];
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly event: CodecTypes['pg/text@1']['input'];
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly inbox_id: CodecTypes['pg/text@1']['input'];
+      readonly link: CodecTypes['pg/text@1']['input'];
+      readonly next_attempt_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly operator_id: CodecTypes['pg/text@1']['input'];
+      readonly recipient_id: CodecTypes['pg/text@1']['input'];
+      readonly resource_name: CodecTypes['pg/text@1']['input'];
+      readonly tenant_id: CodecTypes['pg/text@1']['input'];
     };
     readonly external_event_templates: {
       readonly api_key_user_id: CodecTypes['pg/text@1']['input'];
@@ -5730,6 +5782,20 @@ export namespace Models {
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     readonly [RelationKeys]?: never;
   };
+  export type public_ExternalEventNotification = {
+    id: CodecTypes['pg/text@1']['output'];
+    inboxId: CodecTypes['pg/text@1']['output'];
+    tenantId: CodecTypes['pg/text@1']['output'];
+    operatorId: CodecTypes['pg/text@1']['output'];
+    recipientId: CodecTypes['pg/text@1']['output'];
+    event: CodecTypes['pg/text@1']['output'];
+    resourceName: CodecTypes['pg/text@1']['output'];
+    link: CodecTypes['pg/text@1']['output'];
+    attempts: CodecTypes['pg/int4@1']['output'];
+    nextAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
   export type public_ExternalEventInbox = {
     id: CodecTypes['pg/text@1']['output'];
     organizationId: CodecTypes['pg/text@1']['output'];
@@ -5854,6 +5920,7 @@ export declare const models: {
     UserExtensions: Models.public_UserExtensions;
     UserKey: Models.public_UserKey;
     ExternalEventTemplates: Models.public_ExternalEventTemplates;
+    ExternalEventNotification: Models.public_ExternalEventNotification;
     ExternalEventInbox: Models.public_ExternalEventInbox;
     UserRoles: Models.public_UserRoles;
   };
@@ -10060,6 +10127,91 @@ type ContractBase = Omit<
                 {
                   readonly name: 'external_event_inbox_org_customer_completed_at_idx';
                   readonly columns: readonly ['organization_id', 'customer_id', 'completed_at'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [];
+            };
+            readonly external_event_notification: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly inbox_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly tenant_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly operator_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly recipient_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly event: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly resource_name: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly link: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly attempts: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly next_attempt_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly created_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['id'];
+                readonly name: 'external_event_notification_pkey';
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'external_event_notification_inbox_event_key';
+                  readonly columns: readonly ['inbox_id', 'event'];
+                  readonly unique: true;
+                },
+                {
+                  readonly name: 'external_event_notification_due_idx';
+                  readonly columns: readonly ['next_attempt_at', 'created_at'];
                   readonly unique: false;
                 },
               ];
@@ -14405,6 +14557,10 @@ type ContractBase = Omit<
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'ExternalEventTemplates';
     };
+    readonly external_event_notification: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'ExternalEventNotification';
+    };
     readonly external_event_inbox: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'ExternalEventInbox';
@@ -18240,6 +18396,80 @@ type ContractBase = Omit<
                 readonly updatedAt: { readonly column: 'updated_at' };
                 readonly errorCode: { readonly column: 'error_code' };
                 readonly errorMessage: { readonly column: 'error_message' };
+              };
+            };
+          };
+          readonly ExternalEventNotification: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly inboxId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly tenantId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly operatorId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly recipientId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly event: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly resourceName: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly link: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly attempts: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly nextAttemptAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+            };
+            readonly relations: Record<string, never>;
+            readonly storage: {
+              readonly table: 'external_event_notification';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly inboxId: { readonly column: 'inbox_id' };
+                readonly tenantId: { readonly column: 'tenant_id' };
+                readonly operatorId: { readonly column: 'operator_id' };
+                readonly recipientId: { readonly column: 'recipient_id' };
+                readonly event: { readonly column: 'event' };
+                readonly resourceName: { readonly column: 'resource_name' };
+                readonly link: { readonly column: 'link' };
+                readonly attempts: { readonly column: 'attempts' };
+                readonly nextAttemptAt: { readonly column: 'next_attempt_at' };
+                readonly createdAt: { readonly column: 'created_at' };
               };
             };
           };
@@ -22370,6 +22600,14 @@ type ContractBase = Omit<
           readonly ref: {
             readonly namespace: 'public';
             readonly table: 'external_event_inbox';
+            readonly column: 'id';
+          };
+          readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };
+        },
+        {
+          readonly ref: {
+            readonly namespace: 'public';
+            readonly table: 'external_event_notification';
             readonly column: 'id';
           };
           readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };

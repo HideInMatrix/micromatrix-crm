@@ -865,7 +865,14 @@ export class LeadsService {
       uniqueScope,
     })
     const owner = targetPool ? null : await this.resolveOwner(user, normalizedDto.ownerId)
-    if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
+    if (owner)
+      await this.pools.assertCapacityForOwner(
+        user.tenantId,
+        'lead',
+        owner.id,
+        1,
+        owner.id === user.id ? undefined : owner,
+      )
     return { dto: normalizedDto, uniqueScope, owner, targetPool }
   }
 
@@ -1428,7 +1435,18 @@ export class LeadsService {
         throw new BadRequestException('线索池转化必须指定负责人或明确允许无负责人')
       lead = candidate as Lead
     } else {
-      lead = await this.ensureInScope(user, leadId, 'lead:update')
+      // The candidate already belongs to this tenant. Apply exactly the same owner filter
+      // as ensureInScope without reading it again; conversion rechecks the snapshot in the lock.
+      const scope = await this.dataScope.directOwnerFilter(user, 'lead:update')
+      const ownerScope = scope.owner
+      if (
+        typeof ownerScope === 'string'
+          ? candidate.owner !== ownerScope
+          : ownerScope?.in && (!candidate.owner || !ownerScope.in.includes(candidate.owner))
+      ) {
+        throw new NotFoundException('线索不存在或不在你的数据范围内')
+      }
+      lead = candidate as Lead
     }
     if (lead.transitionId || lead.transitionType === 'CUSTOMER') {
       throw new ConflictException({
@@ -1452,9 +1470,11 @@ export class LeadsService {
       customerCreateDto,
       { allowUnassignedOwner },
     )
-    const associationPrepared = await this.prepareLeadAssociation(user, [
-      lead.inSharedPool ? { ...lead, owner: conversionOwnerId } : lead,
-    ])
+    const associationPrepared = await this.prepareLeadAssociation(
+      user,
+      [lead.inSharedPool ? { ...lead, owner: conversionOwnerId } : lead],
+      customerPrepared.owner?.id !== user.id ? customerPrepared.owner : null,
+    )
     return { lead, customerCreateDto, customerPrepared, associationPrepared, allowUnassignedOwner }
   }
 
@@ -1487,7 +1507,7 @@ export class LeadsService {
     }).first()
     if (!current) throw new NotFoundException('线索不存在或已不在可转换范围')
 
-    if (current.transitionId) {
+    if (current.transitionId || current.transitionType === 'CUSTOMER') {
       if (current.transitionType === 'CUSTOMER') {
         throw new ConflictException({
           code: 'LEAD_ALREADY_TRANSITIONED_RETRY',
@@ -1549,7 +1569,7 @@ export class LeadsService {
       user,
       [associationLead],
       createdCustomer.id,
-      { copyFollowArtifacts: true },
+      { copyFollowArtifacts: true, createdCustomer },
       prepared.associationPrepared,
     )
     return {
@@ -1658,22 +1678,51 @@ export class LeadsService {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
     const lead = await this.ensureInScope(user, dto.clueId, 'lead:update')
     if (!lead.owner) throw new BadRequestException('线索暂无负责人，无法关联客户')
+    if (lead.transitionId || lead.transitionType === 'CUSTOMER')
+      throw new ConflictException('线索已转客户，请使用重新关联操作')
     const { clueId: _, ...customerPayload } = dto
     const prepared = await this.customers.prepareCreateForTransaction(user, customerPayload)
     const result = await this.prisma.client.transaction(async (tx) => {
+      await acquirePoolTransactionLocksPrisma(
+        this.prisma.client,
+        tx,
+        poolTransactionLockKeys('clue', user.tenantId, lead.id, lead.owner!),
+      )
+      const current = await tx.orm.public.Clue.where({
+        id: lead.id,
+        organizationId: user.tenantId,
+        inSharedPool: false,
+      }).first()
+      if (
+        !current ||
+        current.owner !== lead.owner ||
+        current.updateTime !== lead.updateTime ||
+        current.transitionId ||
+        current.transitionType === 'CUSTOMER'
+      ) {
+        throw new ConflictException('线索状态已变化，请重新加载后重试')
+      }
       const customer = await this.customers.createPreparedInTransaction(
         user,
         customerPayload,
         prepared,
         tx,
       )
-      const updatedLead = await tx.orm.public.Clue.where({ id: lead.id }).update({
+      const updatedLead = await tx.orm.public.Clue.where({
+        id: lead.id,
+        organizationId: user.tenantId,
+        owner: current.owner,
+        updateTime: current.updateTime,
+        inSharedPool: false,
+        transitionId: current.transitionId,
+        transitionType: current.transitionType,
+      }).update({
         transitionType: 'CUSTOMER',
         transitionId: String(customer.id),
         updateTime: BigInt(Date.now()),
         updateUser: user.id,
       })
-      if (!updatedLead) throw new NotFoundException('线索不存在')
+      if (!updatedLead) throw new ConflictException('线索状态已变化，请重新加载后重试')
       await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', lead.id)
       return { customer }
     })
@@ -1807,20 +1856,26 @@ export class LeadsService {
   private async prepareLeadAssociation(
     user: AuthUser,
     leads: Lead[],
+    validatedOwner?: { id: string; deptId: string | null } | null,
   ): Promise<LeadAssociationPrepared> {
     const ownerIds = [
       ...new Set(leads.map((lead) => lead.owner).filter((id): id is string => !!id)),
     ]
-    const owners = ownerIds.length
+    const reusableOwner =
+      validatedOwner && ownerIds.includes(validatedOwner.id) ? validatedOwner : null
+    const missingOwnerIds = ownerIds.filter((id) => id !== reusableOwner?.id)
+    const owners = missingOwnerIds.length
       ? await this.prisma.client.orm.public.Users.where({
           tenantId: user.tenantId,
           status: 'ACTIVE',
         })
-          .where((row) => row.id.in(ownerIds))
+          .where((row) => row.id.in(missingOwnerIds))
           .select('id', 'deptId')
           .all()
       : []
-    const ownerMap = new Map(owners.map((owner) => [owner.id, owner]))
+    const ownerMap = new Map(
+      (reusableOwner ? [...owners, reusableOwner] : owners).map((owner) => [owner.id, owner]),
+    )
     if (ownerMap.size !== ownerIds.length) {
       throw new BadRequestException('线索负责人不存在或已禁用')
     }
@@ -1832,15 +1887,27 @@ export class LeadsService {
     user: AuthUser,
     leads: Lead[],
     customerId: string,
-    options: { copyFollowArtifacts?: boolean } = {},
+    options: {
+      copyFollowArtifacts?: boolean
+      createdCustomer?: {
+        id: string
+        organizationId: string
+        owner: string | null
+        followTime: bigint | null
+        follower: string | null
+      }
+    } = {},
     prepared: LeadAssociationPrepared,
   ) {
     if (leads.length === 0) return
-    const customer = await tx.orm.public.Customer.where({
-      id: customerId,
-      organizationId: user.tenantId,
-    }).first()
-    if (!customer) throw new NotFoundException('客户不存在')
+    const customer =
+      options.createdCustomer ??
+      (await tx.orm.public.Customer.where({
+        id: customerId,
+        organizationId: user.tenantId,
+      }).first())
+    if (!customer || customer.id !== customerId || customer.organizationId !== user.tenantId)
+      throw new NotFoundException('客户不存在')
 
     let newestFollowedAt = customer.followTime
     let newestFollower: string | null = customer.follower ? String(customer.follower) : null
@@ -1884,7 +1951,18 @@ export class LeadsService {
       }
 
       const now = BigInt(Date.now())
-      const transitioned = await tx.orm.public.Clue.where({ id: lead.id }).update({
+      const transitioned = await tx.orm.public.Clue.where({
+        id: lead.id,
+        organizationId: user.tenantId,
+        owner: lead.owner,
+        updateTime: lead.updateTime,
+        inSharedPool: lead.inSharedPool,
+        poolId: lead.poolId,
+        transitionId: lead.transitionId,
+        transitionType: lead.transitionType,
+        followTime: lead.followTime,
+        follower: lead.follower,
+      }).update({
         transitionType: 'CUSTOMER',
         transitionId: customerId,
         inSharedPool: false,
@@ -1892,7 +1970,7 @@ export class LeadsService {
         updateTime: now,
         updateUser: user.id,
       })
-      if (!transitioned) throw new NotFoundException('线索不存在')
+      if (!transitioned) throw new ConflictException('线索在关联过程中发生变化，请重新定位后重试')
       await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', lead.id)
     }
 

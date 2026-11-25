@@ -1897,6 +1897,25 @@ namespace public {
     @@map("external_event_templates")
   }
 
+  // Durable notification intents are written in the same transaction as the external event.
+  model ExternalEventNotification {
+    id          String          @id(map: "external_event_notification_pkey") @default(cuid(2))
+    inboxId     String          @map("inbox_id")
+    tenantId    String          @map("tenant_id")
+    operatorId  String          @map("operator_id")
+    recipientId String          @map("recipient_id")
+    event       String
+    resourceName String         @map("resource_name")
+    link        String
+    attempts    Int             @default(0)
+    nextAttemptAt Timestamptz(3) @default(now()) @map("next_attempt_at")
+    createdAt   Timestamptz(3)  @default(now()) @map("created_at")
+
+    @@index([inboxId, event], map: "external_event_notification_inbox_event_key", unique: true)
+    @@index([nextAttemptAt, createdAt], map: "external_event_notification_due_idx")
+    @@map("external_event_notification")
+  }
+
   model ExternalEventInbox {
     id              String          @id(map: "external_event_inbox_pkey") @default(cuid(2))
     organizationId  String          @map("organization_id")

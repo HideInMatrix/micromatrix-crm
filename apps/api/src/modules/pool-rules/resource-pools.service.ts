@@ -96,8 +96,9 @@ export class ResourcePoolsService {
     module: PoolModule,
     ownerId: string,
     processCount = 1,
+    validatedOwner?: { id: string; deptId: string | null },
   ) {
-    const tokens = await this.loadUserScopeTokens(organizationId, ownerId)
+    const tokens = await this.loadUserScopeTokens(organizationId, ownerId, validatedOwner)
     if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities =
       module === 'lead'
@@ -188,14 +189,22 @@ export class ResourcePoolsService {
     if (module !== 'lead' && module !== 'customer') throw new BadRequestException('池模块不合法')
   }
 
-  private async loadUserScopeTokens(tenantId: string, userId: string): Promise<Set<string>> {
-    const user = await this.prisma.client.orm.public.Users.where({
-      id: userId,
-      tenantId,
-      status: 'ACTIVE',
-    })
-      .select('id', 'deptId')
-      .first()
+  private async loadUserScopeTokens(
+    tenantId: string,
+    userId: string,
+    validatedOwner?: { id: string; deptId: string | null },
+  ): Promise<Set<string>> {
+    // Only reuse a same-request active owner obtained through the tenant-scoped lookup.
+    const user =
+      validatedOwner?.id === userId
+        ? validatedOwner
+        : await this.prisma.client.orm.public.Users.where({
+            id: userId,
+            tenantId,
+            status: 'ACTIVE',
+          })
+            .select('id', 'deptId')
+            .first()
     if (!user) return new Set()
 
     const tokens = new Set([user.id, `user:${user.id}`])
