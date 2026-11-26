@@ -1,5 +1,7 @@
 import { Injectable, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { createHash } from 'node:crypto'
+import type { DeliveryPerformance } from '../notifications/delivery-performance'
 import {
   OrganizationSnapshotError,
   type OrganizationDepartmentSnapshot,
@@ -58,6 +60,7 @@ interface WeComResponse {
   errcode: number | null
   errmsg: string | null
   accessToken: string | null
+  expiresIn: number | null
 }
 
 export class WeComSnapshotError extends OrganizationSnapshotError {
@@ -70,9 +73,16 @@ export class WeComSnapshotError extends OrganizationSnapshotError {
 const REQUEST_TIMEOUT_MS = 8_000
 const MAX_RETRIES = 2
 const USER_CONCURRENCY = 5
+const MAX_MESSAGE_TOKEN_ENTRIES = 128
+const TOKEN_REJECTED_CODES = new Set([40014, 42001])
+type TokenResponse = Awaited<ReturnType<WeComClient['request']>>
 
 @Injectable()
 export class WeComClient {
+  // Process-local, bounded, credential-scoped cache for message delivery only.
+  // Never persist or log tokens, secrets or cache keys.
+  private readonly messageTokens = new Map<string, { data: WeComResponse; expiresAt: number }>()
+  private readonly tokenRequests = new Map<string, Promise<TokenResponse>>()
   constructor(@Optional() private readonly config?: ConfigService) {}
 
   async testConnection(input: WeComConnectionInput): Promise<WeComConnectionResult> {
@@ -207,8 +217,66 @@ export class WeComClient {
     }
   }
 
-  async sendTextMessage(input: WeComMessageInput): Promise<WeComMessageResult> {
-    const tokenResponse = await this.request(this.tokenUrl(input))
+  private async messageToken(
+    input: WeComConnectionInput,
+    perf?: DeliveryPerformance,
+  ): Promise<{
+    key: string
+    response: TokenResponse
+  }> {
+    const url = this.tokenUrl(input)
+    const key = createHash('sha256')
+      .update(JSON.stringify([url.toString(), input.agentId]))
+      .digest('hex')
+    const cached = this.messageTokens.get(key)
+    if (cached && cached.expiresAt > Date.now()) {
+      if (perf) perf.tokenSource = 'cache'
+      return { key, response: { ok: true, data: cached.data } }
+    }
+    this.messageTokens.delete(key)
+    const pending = this.tokenRequests.get(key)
+    if (pending) {
+      if (perf) perf.tokenSource = 'shared'
+      return { key, response: await pending }
+    }
+    if (perf) perf.tokenSource = 'fetch'
+    const startedAt = Date.now()
+    const load = async () => {
+      const response = await this.request(url)
+      if (response.ok && response.data.accessToken && response.data.expiresIn !== null) {
+        const lifetimeMs = Math.min(response.data.expiresIn, 7200) * 1000
+        const expiresAt = startedAt + lifetimeMs - Math.min(60_000, lifetimeMs / 10)
+        if (expiresAt > Date.now()) {
+          if (this.messageTokens.size >= MAX_MESSAGE_TOKEN_ENTRIES) {
+            const oldest = this.messageTokens.keys().next().value
+            if (oldest !== undefined) this.messageTokens.delete(oldest)
+          }
+          this.messageTokens.set(key, { data: response.data, expiresAt })
+        }
+      }
+      return response
+    }
+    // The normal delivery executor has five slots; guard cardinality as well.
+    if (this.tokenRequests.size >= MAX_MESSAGE_TOKEN_ENTRIES) {
+      return { key, response: await this.request(url) }
+    }
+    const request = load()
+    this.tokenRequests.set(key, request)
+    try {
+      return { key, response: await request }
+    } finally {
+      if (this.tokenRequests.get(key) === request) this.tokenRequests.delete(key)
+    }
+  }
+
+  async sendTextMessage(
+    input: WeComMessageInput,
+    perf?: DeliveryPerformance,
+  ): Promise<WeComMessageResult> {
+    const getToken = () => this.messageToken(input, perf)
+    const { key, response: tokenResponse } = await (perf
+      ? perf.measure('token', getToken)
+      : getToken())
     if (!tokenResponse.ok) {
       return this.messageFailure(
         tokenResponse.result.providerCode,
@@ -249,52 +317,61 @@ export class WeComClient {
             ).slice(0, 2_048),
           },
         }
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify(message),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      })
-      if (!response.ok) {
+    const send = async (): Promise<WeComMessageResult> => {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(message),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        })
+        if (!response.ok) {
+          return this.messageFailure(
+            null,
+            `企业微信服务响应异常（HTTP ${response.status}）`,
+            response.status === 429 || response.status >= 500,
+          )
+        }
+        const raw: unknown = await response.json()
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          return this.messageFailure(null, '企业微信返回了无效数据', false)
+        }
+        const data = raw as Record<string, unknown>
+        const providerCode = typeof data['errcode'] === 'number' ? data['errcode'] : null
+        const providerMessageId = this.stringValue(data['msgid'], 256)
+        if (providerCode === 0) {
+          return {
+            success: true,
+            transient: false,
+            providerCode,
+            providerMessageId,
+            message: '企业微信消息发送成功',
+          }
+        }
+        const rejectedToken = providerCode !== null && TOKEN_REJECTED_CODES.has(providerCode)
+        // An older request must not invalidate a newer cached token. No inline
+        // POST replay: use the existing durable retry path after explicit rejection.
+        if (rejectedToken && this.messageTokens.get(key)?.data === tokenResponse.data) {
+          this.messageTokens.delete(key)
+        }
+        const detail = this.stringValue(data['errmsg'], 160)
+        return this.messageFailure(
+          providerCode,
+          `企业微信消息发送失败（${providerCode ?? '未知错误'}）${detail ? `：${detail}` : ''}`,
+          rejectedToken || providerCode === -1 || providerCode === 45009,
+        )
+      } catch (error) {
+        const name = error instanceof Error ? error.name : ''
         return this.messageFailure(
           null,
-          `企业微信服务响应异常（HTTP ${response.status}）`,
-          response.status === 429 || response.status >= 500,
+          name === 'TimeoutError' || name === 'AbortError'
+            ? '企业微信消息发送超时'
+            : '企业微信消息服务暂时不可用',
+          true,
         )
       }
-      const raw: unknown = await response.json()
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        return this.messageFailure(null, '企业微信返回了无效数据', false)
-      }
-      const data = raw as Record<string, unknown>
-      const providerCode = typeof data['errcode'] === 'number' ? data['errcode'] : null
-      const providerMessageId = this.stringValue(data['msgid'], 256)
-      if (providerCode === 0) {
-        return {
-          success: true,
-          transient: false,
-          providerCode,
-          providerMessageId,
-          message: '企业微信消息发送成功',
-        }
-      }
-      const detail = this.stringValue(data['errmsg'], 160)
-      return this.messageFailure(
-        providerCode,
-        `企业微信消息发送失败（${providerCode ?? '未知错误'}）${detail ? `：${detail}` : ''}`,
-        providerCode === -1 || providerCode === 45009,
-      )
-    } catch (error) {
-      const name = error instanceof Error ? error.name : ''
-      return this.messageFailure(
-        null,
-        name === 'TimeoutError' || name === 'AbortError'
-          ? '企业微信消息发送超时'
-          : '企业微信消息服务暂时不可用',
-        true,
-      )
     }
+    return perf ? perf.measure('provider', send) : send()
   }
 
   /**
@@ -612,13 +689,19 @@ export class WeComClient {
 
   private parseResponse(value: unknown): WeComResponse {
     if (!value || typeof value !== 'object') {
-      return { errcode: null, errmsg: null, accessToken: null }
+      return { errcode: null, errmsg: null, accessToken: null, expiresIn: null }
     }
     const data = value as Record<string, unknown>
     return {
       errcode: typeof data['errcode'] === 'number' ? data['errcode'] : null,
       errmsg: typeof data['errmsg'] === 'string' ? data['errmsg'] : null,
       accessToken: typeof data['access_token'] === 'string' ? data['access_token'] : null,
+      expiresIn:
+        typeof data['expires_in'] === 'number' &&
+        Number.isFinite(data['expires_in']) &&
+        data['expires_in'] > 0
+          ? data['expires_in']
+          : null,
     }
   }
 

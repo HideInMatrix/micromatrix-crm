@@ -9,6 +9,7 @@
     "typecheck": "prisma contract emit && tsc --noEmit",
     "test:pool-recycle": "tsx tests/pool-recycle-evaluator.test.ts",
     "test:external-event-notifications": "tsx tests/external-event-notifications.test.ts",
+    "test:wecom-message-token": "tsx tests/wecom-message-token.test.ts",
     "test:delivery-executor": "tsx tests/delivery-executor.test.ts",
     "test:external-event-performance": "tsx tests/external-event-performance.test.ts",
     "test:form-config-read-memo": "tsx tests/form-config-read-memo.test.ts",

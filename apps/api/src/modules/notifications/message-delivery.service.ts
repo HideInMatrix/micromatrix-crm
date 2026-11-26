@@ -28,6 +28,7 @@ import { WeComClient } from '../enterprise-integrations/wecom.client'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { QueryMessageDeliveriesDto } from './dto/message-delivery.dto'
 import { DeliveryExecutor } from './delivery-executor'
+import { DeliveryPerformance, measureDelivery } from './delivery-performance'
 import type { NotificationPreparationReads } from './notification-preparation-reads'
 
 export interface EnqueueMessageInput {
@@ -355,38 +356,72 @@ export class MessageDeliveryService {
   }
 
   private async processOne(id: string): Promise<void> {
-    const delivery = await this.claimDelivery(id)
+    const perf = process.env.CRM_EXTERNAL_EVENT_PERF === '1' ? new DeliveryPerformance() : undefined
+    try {
+      await this.processOneMeasured(id, perf)
+    } catch (error) {
+      if (perf) perf.outcome = 'exception'
+      throw error
+    } finally {
+      if (perf) perf.finish((line) => this.logger.log(line))
+    }
+  }
+
+  private async processOneMeasured(id: string, perf?: DeliveryPerformance): Promise<void> {
+    const delivery = await measureDelivery(perf, 'claim', () => this.claimDelivery(id))
     if (!delivery) return
+    if (perf)
+      perf.channel = this.isSupportedChannel(delivery.channel) ? delivery.channel : 'UNKNOWN'
     if (!this.isSupportedChannel(delivery.channel)) {
-      await this.fail(delivery, 'UNSUPPORTED_CHANNEL', '当前投递渠道暂未实现', false)
+      await measureDelivery(perf, 'persist_failure', () =>
+        this.fail(delivery, 'UNSUPPORTED_CHANNEL', '当前投递渠道暂未实现', false),
+      )
+      if (perf) perf.outcome = 'dead'
       return
     }
     const channel = delivery.channel
     if (!delivery.externalSubject) {
-      await this.fail(
-        delivery,
-        'EXTERNAL_USER_NOT_MAPPED',
-        `接收人没有有效的${this.channelName(channel)}成员映射`,
-        false,
+      await measureDelivery(perf, 'persist_failure', () =>
+        this.fail(
+          delivery,
+          'EXTERNAL_USER_NOT_MAPPED',
+          `接收人没有有效的${this.channelName(channel)}成员映射`,
+          false,
+        ),
       )
+      if (perf) perf.outcome = 'dead'
       return
     }
     try {
-      const result = await this.sendByChannel(channel, delivery)
+      const result = await measureDelivery(perf, 'send', () =>
+        this.sendByChannel(channel, delivery, perf),
+      )
+      if (perf) perf.providerCode = result.providerCode
       if (result.success) {
-        await this.completeDelivery(id, result.providerMessageId)
+        await measureDelivery(perf, 'persist_success', () =>
+          this.completeDelivery(id, result.providerMessageId),
+        )
+        if (perf) perf.outcome = 'succeeded'
         return
       }
-      await this.fail(
-        delivery,
-        result.providerCode === null
-          ? `${channel}_UNAVAILABLE`
-          : `${channel}_${result.providerCode}`,
-        result.message,
-        Boolean(result.transient),
+      await measureDelivery(perf, 'persist_failure', () =>
+        this.fail(
+          delivery,
+          result.providerCode === null
+            ? `${channel}_UNAVAILABLE`
+            : `${channel}_${result.providerCode}`,
+          result.message,
+          Boolean(result.transient),
+        ),
       )
+      if (perf)
+        perf.outcome =
+          result.transient && delivery.attempts < delivery.maxAttempts ? 'retry' : 'dead'
     } catch (error) {
-      await this.fail(delivery, 'CHANNEL_UNAVAILABLE', this.errorMessage(error), true)
+      await measureDelivery(perf, 'persist_failure', () =>
+        this.fail(delivery, 'CHANNEL_UNAVAILABLE', this.errorMessage(error), true),
+      )
+      if (perf) perf.outcome = delivery.attempts < delivery.maxAttempts ? 'retry' : 'dead'
     }
   }
 
@@ -436,7 +471,11 @@ export class MessageDeliveryService {
     return null
   }
 
-  private async sendByChannel(channel: SupportedDeliveryChannel, delivery: WorkerDelivery) {
+  private async sendByChannel(
+    channel: SupportedDeliveryChannel,
+    delivery: WorkerDelivery,
+    perf?: DeliveryPerformance,
+  ) {
     if (channel === 'DINGTALK') {
       if (!this.dingTalkClient) {
         return {
@@ -491,7 +530,9 @@ export class MessageDeliveryService {
       })
     }
 
-    const runtime = await this.integrations.getWeComRuntimeContext(delivery.tenantId)
+    const runtime = await measureDelivery(perf, 'runtime', () =>
+      this.integrations.getWeComRuntimeContext(delivery.tenantId),
+    )
     if (delivery.integrationId && delivery.integrationId !== runtime.integration.id) {
       return {
         success: false,
@@ -503,18 +544,23 @@ export class MessageDeliveryService {
     }
     // 企业微信仅使用卡片跳转支持的移动端页面；其他渠道仍保留原有正文格式。
     const tenant = delivery.link
-      ? await this.prisma.client.orm.public.Tenants.where({ id: delivery.tenantId })
-          .select('slug')
-          .first()
+      ? await measureDelivery(perf, 'tenant', () =>
+          this.prisma.client.orm.public.Tenants.where({ id: delivery.tenantId })
+            .select('slug')
+            .first(),
+        )
       : null
-    return this.weComClient.sendTextMessage({
-      ...runtime.credentials,
-      toUser: delivery.externalSubject!,
-      title: delivery.title,
-      content: delivery.content ?? '',
-      link: delivery.link,
-      tenantSlug: tenant?.slug,
-    })
+    return this.weComClient.sendTextMessage(
+      {
+        ...runtime.credentials,
+        toUser: delivery.externalSubject!,
+        title: delivery.title,
+        content: delivery.content ?? '',
+        link: delivery.link,
+        tenantSlug: tenant?.slug,
+      },
+      perf,
+    )
   }
 
   private async fail(
