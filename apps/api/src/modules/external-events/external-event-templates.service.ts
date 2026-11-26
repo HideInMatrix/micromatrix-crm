@@ -17,6 +17,14 @@ import type {
 } from '@micromatrix/shared'
 import { or } from '@prisma/orm-postgres/orm-client'
 import {
+  readActiveBusinessOwner,
+  memoPreparationMemberIds,
+} from '../../common/services/business-preparation-reads'
+import {
+  measureBusinessStage,
+  type ExternalEventPerformance,
+} from '../../common/external-event-performance'
+import {
   EXTERNAL_EVENT_LEAD_CONTACT_FIELD_KEY,
   EXTERNAL_EVENT_LEAD_PHONE_FIELD_KEY,
   EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
@@ -609,6 +617,7 @@ export class ExternalEventTemplatesService {
     user: AuthUser,
     template: ExternalEventTemplateVO,
     data: Record<string, unknown>,
+    perf?: ExternalEventPerformance,
   ) {
     const flow = template.config.flow
     if (!flow) throw new BadRequestException('不是通用事件配置')
@@ -633,15 +642,19 @@ export class ExternalEventTemplatesService {
     const resolved =
       flow.action === 'create'
         ? null
-        : await this.resolver.resolveTarget(
-            user,
-            flow.target,
-            this.mappedWhere(template.config, data),
-            false,
-            flow.action === 'convert',
+        : await measureBusinessStage(perf, 'flow_locate', () =>
+            this.resolver.resolveTarget(
+              user,
+              flow.target,
+              this.mappedWhere(template.config, data),
+              false,
+              flow.action === 'convert',
+            ),
           )
     const target = flow.action === 'convert' ? 'customer' : flow.target
-    const targetFields = await this.metadata.listFields(user.tenantId, target)
+    const targetFields = await measureBusinessStage(perf, 'flow_fields', () =>
+      this.metadata.listFields(user.tenantId, target),
+    )
     const memberTargets = new Set(
       targetFields
         .filter((field) => field.type === 'member')
@@ -720,10 +733,21 @@ export class ExternalEventTemplatesService {
           : this.mapExternalFieldValue(value, mapping, field)
       }
     }
-    const ownerId = flow.owner
-      ? flow.action === 'create' && flow.target === 'lead'
-        ? await this.resolveMemberOptional(user, data[flow.owner.externalKey], flow.owner.provider)
-        : await this.resolveMember(user, requireData(flow.owner.externalKey), flow.owner.provider)
+    const ownerMapping = flow.owner
+    const ownerId = ownerMapping
+      ? await measureBusinessStage(perf, 'flow_owner', async () =>
+          flow.action === 'create' && flow.target === 'lead'
+            ? this.resolveMemberOptional(
+                user,
+                data[ownerMapping.externalKey],
+                ownerMapping.provider,
+              )
+            : this.resolveMember(
+                user,
+                requireData(ownerMapping.externalKey),
+                ownerMapping.provider,
+              ),
+        )
       : null
     const poolMapping = flow.fields.find(
       (mapping) => mapping.fieldKey === EXTERNAL_EVENT_LEAD_POOL_FIELD_KEY,
@@ -840,6 +864,24 @@ export class ExternalEventTemplatesService {
     return where
   }
 
+  private findMappedMemberIds(
+    tenantId: string,
+    provider: Exclude<ExternalEventUserProvider, 'CRM'>,
+    externalId: string,
+  ) {
+    return memoPreparationMemberIds(tenantId, provider, externalId, async () => {
+      const rows = await this.prisma.client.orm.public.ExternalUserMappings.where({
+        tenantId,
+        provider,
+        active: true,
+      })
+        .where((row) => or(row.externalId.eq(externalId), row.externalKey.eq(externalId)))
+        .select('userId')
+        .all()
+      return [...new Set(rows.map((row) => row.userId))]
+    })
+  }
+
   private async resolveMember(
     user: AuthUser,
     externalId: unknown,
@@ -849,25 +891,11 @@ export class ExternalEventTemplatesService {
       throw new BadRequestException('缺少客户负责人身份标识')
     let ownerId = externalId.trim()
     if (provider !== 'CRM') {
-      const rows = await this.prisma.client.orm.public.ExternalUserMappings.where({
-        tenantId: user.tenantId,
-        provider,
-        active: true,
-      })
-        .where((row) => or(row.externalId.eq(ownerId), row.externalKey.eq(ownerId)))
-        .select('userId')
-        .all()
-      const ids = [...new Set(rows.map((row) => row.userId))]
+      const ids = await this.findMappedMemberIds(user.tenantId, provider, ownerId)
       if (ids.length !== 1) throw new BadRequestException('外部接待人员无法唯一映射到 CRM 成员')
       ownerId = ids[0]!
     }
-    const active = await this.prisma.client.orm.public.Users.where({
-      id: ownerId,
-      tenantId: user.tenantId,
-      status: 'ACTIVE',
-    })
-      .select('id')
-      .first()
+    const active = await readActiveBusinessOwner(this.prisma, user.tenantId, ownerId)
     if (!active) throw new BadRequestException('指定的客户负责人不存在或已被停用')
     return active.id
   }
@@ -881,25 +909,11 @@ export class ExternalEventTemplatesService {
     if (typeof externalId !== 'string' || !externalId.trim()) return null
     let ownerId = externalId.trim()
     if (provider !== 'CRM') {
-      const rows = await this.prisma.client.orm.public.ExternalUserMappings.where({
-        tenantId: user.tenantId,
-        provider,
-        active: true,
-      })
-        .where((row) => or(row.externalId.eq(ownerId), row.externalKey.eq(ownerId)))
-        .select('userId')
-        .all()
-      const ids = [...new Set(rows.map((row) => row.userId))]
+      const ids = await this.findMappedMemberIds(user.tenantId, provider, ownerId)
       if (ids.length !== 1) return null
       ownerId = ids[0]!
     }
-    const active = await this.prisma.client.orm.public.Users.where({
-      id: ownerId,
-      tenantId: user.tenantId,
-      status: 'ACTIVE',
-    })
-      .select('id')
-      .first()
+    const active = await readActiveBusinessOwner(this.prisma, user.tenantId, ownerId)
     return active?.id ?? null
   }
 

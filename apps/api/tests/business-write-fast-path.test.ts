@@ -537,7 +537,215 @@ async function main() {
     const transformed = await leads.transform(user, { clueId: transformLead.id })
     assert.equal((await find(transformLead.id)).transitionId, transformed.customerId)
     console.log('Internal CRM transition and transform paths passed.')
+
+    // Exercise the actual configured-event entry, mapping, owner scope, preparation,
+    // transactional writes, Inbox fencing, audit and durable notification intents.
+    const { MetadataService } = await import('../src/modules/metadata/metadata.service')
+    const { DataScopeService } = await import('../src/common/services/data-scope.service')
+    const { CluePoolRepository } = await import('../src/modules/pool-rules/clue-pool.repository')
+    const { CustomerPoolRepository } =
+      await import('../src/modules/pool-rules/customer-pool.repository')
+    const { PoolRuleCalculator } =
+      await import('../src/modules/pool-rules/pool-rule-calculator.service')
+    const { ResourcePoolsService } =
+      await import('../src/modules/pool-rules/resource-pools.service')
+    const { ExternalResourceResolverService } =
+      await import('../src/modules/external-events/external-resource-resolver.service')
+    const { ExternalEventTemplatesService } =
+      await import('../src/modules/external-events/external-event-templates.service')
+    const { ExternalEventsService } =
+      await import('../src/modules/external-events/external-events.service')
+    const { ExternalEventNotificationOutboxService } =
+      await import('../src/modules/notifications/external-event-notification-outbox.service')
+    const recipient = id()
+    await orm.Users.create({
+      id: recipient,
+      tenantId,
+      name: 'fixture recipient',
+      passwordHash: 'unused-fixture',
+      updatedAt: nowInstant(),
+    })
+    await orm.ExternalUserMappings.create({
+      tenantId,
+      userId: recipient,
+      provider: 'WECOM',
+      externalId: 'fixture-recipient',
+      externalKey: 'fixture-recipient',
+      updatedAt: nowInstant(),
+    })
+    const calculator = new PoolRuleCalculator()
+    const realPools = new ResourcePoolsService(
+      prisma,
+      new CluePoolRepository(prisma, calculator, recycle),
+      new CustomerPoolRepository(prisma, calculator, recycle),
+      {} as never,
+    )
+    const realMetadata = new MetadataService(forms)
+    const realScope = new DataScopeService(prisma)
+    const actualCommon = {
+      ...common,
+      metadata: realMetadata,
+      dataScope: realScope,
+      pools: realPools,
+    }
+    const actualCustomers = Object.assign(
+      Object.create(CustomersService.prototype),
+      actualCommon,
+    ) as CustomersService
+    const actualLeads = Object.assign(Object.create(LeadsService.prototype), actualCommon, {
+      customers: actualCustomers,
+    }) as LeadsService
+    const resolver = new ExternalResourceResolverService(
+      prisma,
+      realScope,
+      realMetadata,
+      fields,
+      realPools,
+    )
+    const templates = new ExternalEventTemplatesService(
+      prisma,
+      realMetadata,
+      resolver,
+      actualCustomers,
+      actualLeads,
+    )
+    const outbox = new ExternalEventNotificationOutboxService(
+      prisma,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    )
+    const events = new ExternalEventsService(
+      prisma,
+      resolver,
+      actualCustomers,
+      actualLeads,
+      outbox,
+      templates,
+    )
+    const apiUser: AuthUser = {
+      ...user,
+      roles: [
+        { id: id(), name: 'fixture admin', dataScope: 'ALL', permissions: ['*'], scopeDeptIds: [] },
+      ],
+    }
+    const baseConfig = {
+      actions: { convertLead: false, updateCustomer: false },
+      matches: [],
+      fields: [],
+      owner: null,
+    }
+    const createTemplate = await templates.create(apiUser, {
+      name: 'fixture create',
+      enabled: true,
+      apiKeyUserId: actor,
+      config: {
+        ...baseConfig,
+        flow: {
+          target: 'lead',
+          action: 'create',
+          nameExternalKey: 'studentName',
+          owner: { externalKey: 'ownerId', provider: 'WECOM' },
+          fields: [
+            { source: 'event', externalKey: 'unique', fieldKey: unique.key },
+            { source: 'event', externalKey: 'phone', fieldKey: 'phone' },
+            {
+              source: 'event',
+              externalKey: 'pool',
+              fieldKey: '__leadPool',
+              valueMap: [{ externalValue: 'fixture', crmValue: poolId }],
+            },
+          ],
+        },
+      },
+    })
+    const convertTemplate = await templates.create(apiUser, {
+      name: 'fixture convert',
+      enabled: true,
+      apiKeyUserId: actor,
+      config: {
+        ...baseConfig,
+        matches: [{ externalKey: 'phone', crmFieldKey: 'phone' }],
+        flow: {
+          target: 'lead',
+          action: 'convert',
+          owner: { externalKey: 'ownerId', provider: 'WECOM' },
+          fields: [],
+        },
+      },
+    })
+    const request = {
+      eventType: createTemplate.eventType,
+      externalEventId: 'fixture-create',
+      data: {
+        studentName: 'fixture configured',
+        unique: 'configured-unique',
+        phone: '00000000001',
+        ownerId: 'fixture-recipient',
+      },
+    }
+    const createResult = await events.executeConfigured(apiUser, request)
+    assert.equal(createResult.replayed, false)
+    assert.equal(createResult.attempts, 1)
+    assert.equal((await find(createResult.resolvedId!)).owner, recipient)
+    const duplicateResult = await events.executeConfigured(apiUser, request)
+    assert.equal(duplicateResult.resolvedId, createResult.resolvedId)
+    assert.equal(duplicateResult.replayed, true)
+    await assert.rejects(
+      events.executeConfigured(apiUser, {
+        ...request,
+        data: { ...request.data, studentName: 'different' },
+      }),
+      /不同请求内容/,
+    )
+    const conversionRequest = {
+      eventType: convertTemplate.eventType,
+      externalEventId: 'fixture-convert',
+      data: { phone: request.data.phone, ownerId: request.data.ownerId },
+    }
+    const convertedResult = await events.executeConfigured(apiUser, conversionRequest)
+    assert.equal(convertedResult.replayed, false)
+    assert.equal(convertedResult.resolvedId, createResult.resolvedId)
+    assert.equal((await find(createResult.resolvedId!)).transitionId, convertedResult.customerId)
+    assert.equal(
+      (await events.executeConfigured(apiUser, conversionRequest)).customerId,
+      convertedResult.customerId,
+    )
+    const intents = await orm.ExternalEventNotification.where({ tenantId }).all()
+    assert.deepEqual(intents.map((x) => x.event).sort(), [
+      'CLUE_ADD',
+      'CLUE_CONVERT_CUSTOMER',
+      'CUSTOMER_ADD',
+    ])
+    assert.ok(intents.every((x) => x.recipientId === recipient))
+    assert.equal(
+      (await orm.ExternalEventInbox.where({ organizationId: tenantId, status: 'SUCCESS' }).all())
+        .length,
+      2,
+    )
+    assert.equal(
+      (await orm.OperationLogs.where({ tenantId, module: 'externalEvent' }).all()).length,
+      4,
+    )
+    // Revocation and template changes must be fresh across requests.
+    await orm.ExternalEventTemplates.where({ id: createTemplate.id, tenantId }).update({
+      enabled: false,
+      updatedAt: nowInstant(),
+    })
+    await assert.rejects(
+      events.executeConfigured(apiUser, { ...request, externalEventId: 'disabled-template' }),
+      /不存在或未启用/,
+    )
+    console.log(
+      'Configured create/convert, replay, hash conflict, audit, durable notification intents and template revocation passed.',
+    )
   } finally {
+    await orm.ExternalEventNotification.where({ tenantId }).deleteAndCount()
+    await orm.ExternalEventInbox.where({ organizationId: tenantId }).deleteAndCount()
+    await orm.ExternalEventTemplates.where({ tenantId }).deleteAndCount()
+    await orm.OperationLogs.where({ tenantId }).deleteAndCount()
+    await orm.ExternalUserMappings.where({ tenantId }).deleteAndCount()
     await orm.PoolRecycleTask.where({ organizationId: tenantId }).deleteAndCount()
     await orm.FollowUpPlans.where({ tenantId }).deleteAndCount()
     await orm.FollowUpRecords.where({ tenantId }).deleteAndCount()

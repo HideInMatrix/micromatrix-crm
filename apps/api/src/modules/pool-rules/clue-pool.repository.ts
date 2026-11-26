@@ -90,6 +90,13 @@ export class CluePoolRepository {
     private readonly recycleTasks: PoolRecycleTaskService,
   ) {}
 
+  async listPoolIds(organizationId: string): Promise<string[]> {
+    const rows = await this.prisma.client.orm.public.CluePool.where({ organizationId })
+      .select('id')
+      .all()
+    return rows.map((row) => row.id)
+  }
+
   async listPools(organizationId: string) {
     const organization = organizationId
     const pools = await this.prisma.client.orm.public.CluePool.where({

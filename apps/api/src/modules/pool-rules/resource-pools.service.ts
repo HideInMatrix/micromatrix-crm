@@ -31,6 +31,15 @@ export class ResourcePoolsService {
       : this.customerPools.listPools(user.tenantId)
   }
 
+  /** Identity lookup needs only pool IDs, not hidden fields, pick or recycle rules.
+   * Preserve list() semantics: include disabled pools for strict duplicate detection. */
+  async listIds(user: AuthUser, module: PoolModule): Promise<string[]> {
+    this.assertModule(module)
+    return module === 'lead'
+      ? this.cluePools.listPoolIds(user.tenantId)
+      : this.customerPools.listPoolIds(user.tenantId)
+  }
+
   async options(user: AuthUser, module: PoolModule) {
     const pools = await this.list(user, module)
     if (user.permissions.includes('*')) return pools.filter((pool) => pool.enable)
@@ -99,12 +108,28 @@ export class ResourcePoolsService {
     processCount = 1,
     validatedOwner?: { id: string; deptId: string | null },
   ) {
-    const tokens = await this.loadUserScopeTokens(organizationId, ownerId, validatedOwner)
-    if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacities =
       module === 'lead'
         ? [...(await this.cluePools.listCapacities(organizationId))].reverse()
         : await this.customerPools.listCapacities(organizationId)
+    // All-unlimited configuration cannot reject by ownership count. Still
+    // validate the active owner, but do not expand roles and department tree.
+    if (!capacities.some((item) => item.capacity !== null)) {
+      const owner =
+        validatedOwner?.id === ownerId
+          ? validatedOwner
+          : await this.prisma.client.orm.public.Users.where({
+              id: ownerId,
+              tenantId: organizationId,
+              status: 'ACTIVE',
+            })
+              .select('id')
+              .first()
+      if (!owner) throw new BadRequestException('负责人不存在或已禁用')
+      return
+    }
+    const tokens = await this.loadUserScopeTokens(organizationId, ownerId, validatedOwner)
+    if (!tokens.size) throw new BadRequestException('负责人不存在或已禁用')
     const capacity = capacities.find((item) => scopeMatches(item.scopeId, tokens))?.capacity
     if (capacity === null || capacity === undefined) return
     const owned = await readOwnedCapacity(

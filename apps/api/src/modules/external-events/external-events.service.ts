@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common'
 import type { AuthUser } from '../../common/auth-user'
 import { ExternalEventPerformance } from '../../common/external-event-performance'
+import { createBusinessPreparationReads } from '../../common/services/business-preparation-reads'
 import {
   hasPermission,
   type ExternalEventExecuteInput,
@@ -125,6 +126,7 @@ export class ExternalEventsService {
           )
           const inbox = await this.markSuccessInTransaction(tx, {
             inboxId: claim.row.id,
+            attempts: claim.row.attempts,
             requestHash,
             resolvedType,
             resolvedId,
@@ -158,6 +160,7 @@ export class ExternalEventsService {
         const converted = await this.leads.convertResolvedLeadInTransaction(user, prepared, tx)
         const inbox = await this.markSuccessInTransaction(tx, {
           inboxId: claim.row.id,
+          attempts: claim.row.attempts,
           requestHash,
           resolvedType: 'LEAD',
           resolvedId: resolved.leadId,
@@ -177,12 +180,13 @@ export class ExternalEventsService {
         )
       return this.successResponse(result.inbox, false)
     } catch (error) {
-      await this.markFailed(audit, claim.row.id, requestHash, error).catch((markError: unknown) =>
-        this.logger.error(
-          `外部事件失败状态记录失败 inbox=${claim.row.id}: ${
-            markError instanceof Error ? markError.message : String(markError)
-          }`,
-        ),
+      await this.markFailed(audit, claim.row.id, claim.row.attempts, requestHash, error).catch(
+        (markError: unknown) =>
+          this.logger.error(
+            `外部事件失败状态记录失败 inbox=${claim.row.id}: ${
+              markError instanceof Error ? markError.message : String(markError)
+            }`,
+          ),
       )
       throw error
     }
@@ -223,7 +227,14 @@ export class ExternalEventsService {
       requestMeta,
     }
     const claim = await perf.measure('inbox_claim', () =>
-      this.claimInbox(user, source, externalEventId, requestHash, dto.eventType),
+      this.claimInbox(
+        user,
+        source,
+        externalEventId,
+        requestHash,
+        dto.eventType,
+        template.config.flow?.action === 'create' || template.config.flow?.action === 'convert',
+      ),
     )
     if (claim.replayed) {
       await this.recordReplayed(audit, claim.row)
@@ -236,7 +247,16 @@ export class ExternalEventsService {
         let ok = false
         try {
           const execute = () =>
-            this.executeFlow(user, template, dto.data, claim.row.id, requestHash, audit, perf)
+            this.executeFlow(
+              user,
+              template,
+              dto.data,
+              claim.row.id,
+              claim.row.attempts,
+              requestHash,
+              audit,
+              perf,
+            )
           const result = await (action === 'create' || action === 'convert'
             ? withFormConfigReadMemo(execute)
             : execute())
@@ -259,6 +279,7 @@ export class ExternalEventsService {
             await this.customers.applyPreparedDynamicFieldUpdateInTransaction(user, prepared, tx)
           return this.markSuccessInTransaction(tx, {
             inboxId: claim.row.id,
+            attempts: claim.row.attempts,
             requestHash,
             resolvedType: resolved.sourceLeadId ? 'LEAD' : 'CUSTOMER',
             resolvedId: resolved.sourceLeadId ?? resolved.customerId,
@@ -285,6 +306,7 @@ export class ExternalEventsService {
         const inbox = await this.prisma.client.transaction((tx) =>
           this.markSuccessInTransaction(tx, {
             inboxId: claim.row.id,
+            attempts: claim.row.attempts,
             requestHash,
             resolvedType: 'LEAD',
             resolvedId: resolved.leadId,
@@ -311,6 +333,7 @@ export class ExternalEventsService {
         const converted = await this.leads.convertResolvedLeadInTransaction(user, prepared, tx)
         const inbox = await this.markSuccessInTransaction(tx, {
           inboxId: claim.row.id,
+          attempts: claim.row.attempts,
           requestHash,
           resolvedType: 'LEAD',
           resolvedId: resolved.leadId,
@@ -326,8 +349,9 @@ export class ExternalEventsService {
         )
       return this.successResponse(result.inbox, false)
     } catch (error) {
-      await this.markFailed(audit, claim.row.id, requestHash, error).catch((markError: unknown) =>
-        this.logger.error(`外部事件失败状态记录失败 inbox=${claim.row.id}: ${String(markError)}`),
+      await this.markFailed(audit, claim.row.id, claim.row.attempts, requestHash, error).catch(
+        (markError: unknown) =>
+          this.logger.error(`外部事件失败状态记录失败 inbox=${claim.row.id}: ${String(markError)}`),
       )
       throw error
     }
@@ -339,6 +363,7 @@ export class ExternalEventsService {
     template: ExternalEventTemplateVO,
     data: Record<string, unknown>,
     inboxId: string,
+    attempts: number,
     requestHash: string,
     audit: ExternalEventAudit,
     perf: ExternalEventPerformance,
@@ -346,10 +371,15 @@ export class ExternalEventsService {
     const templates = this.templates
     if (!templates) throw new BadRequestException('配置服务不可用')
     if (template.config.flow?.action === 'upsertCustomer') {
-      return this.executePaymentSync(user, template, data, inboxId, requestHash, audit)
+      return this.executePaymentSync(user, template, data, inboxId, attempts, requestHash, audit)
     }
+    const prepReads = createBusinessPreparationReads()
+    const prepare = <T>(task: () => Promise<T>): Promise<T> =>
+      template.config.flow?.action === 'create' || template.config.flow?.action === 'convert'
+        ? prepReads.run(task)
+        : task()
     const plan = await perf.measure('flow_prepare', () =>
-      templates.prepareFlow(user, template, data),
+      prepare(() => templates.prepareFlow(user, template, data, perf)),
     )
     const { flow, resolved, set, systemFieldUpdates, ownerId, poolId } = plan
     const notificationContext = { inboxId, tenantId: user.tenantId, operatorId: user.id }
@@ -361,6 +391,7 @@ export class ExternalEventsService {
     ) =>
       this.markSuccessInTransaction(tx, {
         inboxId,
+        attempts,
         requestHash,
         resolvedType: type,
         resolvedId: id,
@@ -422,17 +453,23 @@ export class ExternalEventsService {
       if (!resolved || resolved.kind !== 'LEAD') throw new BadRequestException('转换目标必须是线索')
       if (!hasPermission(user.permissions, 'lead:convert'))
         throw new ForbiddenException('外部事件调用账号缺少线索转化权限')
-      const prepared = await perf.measure('business_prepare', async () => {
-        const values = Object.keys(set).length
-          ? await this.customers.normalizeWritableDynamicFields(user, set)
-          : {}
-        return this.leads.prepareResolvedLeadConversion(
-          user,
-          resolved.leadId,
-          values,
-          ownerId ?? undefined,
-        )
-      })
+      const prepared = await perf.measure('business_prepare', () =>
+        prepare(async () => {
+          const values = Object.keys(set).length
+            ? await perf.measure('prepare_normalize_fields', () =>
+                this.customers.normalizeWritableDynamicFields(user, set),
+              )
+            : {}
+          return this.leads.prepareResolvedLeadConversion(
+            user,
+            resolved.leadId,
+            values,
+            ownerId ?? undefined,
+            false,
+            perf,
+          )
+        }),
+      )
       const entered = perf.begin('transaction_enter')
       const result = await perf.measure('transaction', () =>
         this.prisma.client.transaction(async (tx) => {
@@ -472,7 +509,7 @@ export class ExternalEventsService {
         throw new ForbiddenException('缺少创建目标模块的权限')
       if (flow.target === 'customer') {
         const dto = { name: plan.name!, ownerId: ownerId ?? undefined, customData: set }
-        const prepared = await this.customers.prepareCreateForTransaction(user, dto)
+        const prepared = await prepare(() => this.customers.prepareCreateForTransaction(user, dto))
         const result = await this.prisma.client.transaction(async (tx) => {
           const customer = await this.customers.createPreparedInTransaction(
             user,
@@ -499,14 +536,20 @@ export class ExternalEventsService {
         return this.successResponse(result.inbox, false)
       }
       const prepared = await perf.measure('business_prepare', () =>
-        this.leads.prepareExternalLeadCreation(user, {
-          name: plan.name!,
-          contactName: systemFieldUpdates.contact,
-          phone: systemFieldUpdates.phone,
-          ownerId: ownerId ?? undefined,
-          customData: set,
-          ...(poolId ? { toPool: true, poolId } : {}),
-        }),
+        prepare(() =>
+          this.leads.prepareExternalLeadCreation(
+            user,
+            {
+              name: plan.name!,
+              contactName: systemFieldUpdates.contact,
+              phone: systemFieldUpdates.phone,
+              ownerId: ownerId ?? undefined,
+              customData: set,
+              ...(poolId ? { toPool: true, poolId } : {}),
+            },
+            perf,
+          ),
+        ),
       )
       const entered = perf.begin('transaction_enter')
       const result = await perf.measure('transaction', () =>
@@ -544,6 +587,7 @@ export class ExternalEventsService {
     template: ExternalEventTemplateVO,
     data: Record<string, unknown>,
     inboxId: string,
+    attempts: number,
     requestHash: string,
     audit: ExternalEventAudit,
   ) {
@@ -587,6 +631,7 @@ export class ExternalEventsService {
           )
         const inbox = await this.markSuccessInTransaction(tx, {
           inboxId,
+          attempts,
           requestHash,
           resolvedType: sourceLeadId ? 'LEAD' : 'CUSTOMER',
           resolvedId: sourceLeadId ?? customerId,
@@ -615,6 +660,7 @@ export class ExternalEventsService {
         const converted = await this.leads.convertResolvedLeadInTransaction(user, prepared, tx)
         const inbox = await this.markSuccessInTransaction(tx, {
           inboxId,
+          attempts,
           requestHash,
           resolvedType: 'LEAD',
           resolvedId: leadId,
@@ -662,14 +708,19 @@ export class ExternalEventsService {
     externalEventId: string,
     requestHash: string,
     eventType?: string,
+    insertFirst = false,
   ) {
     const scope = {
       organizationId: user.tenantId,
       source,
       externalEventId,
     }
-    const existing = await this.prisma.client.orm.public.ExternalEventInbox.where(scope).first()
-    if (existing) return this.claimExisting(existing, user.id, requestHash)
+    // Fresh create/convert events need only the unique INSERT. On conflict, read
+    // the existing row and keep the same hash, replay, stale and CAS checks.
+    if (!insertFirst) {
+      const existing = await this.prisma.client.orm.public.ExternalEventInbox.where(scope).first()
+      if (existing) return this.claimExisting(existing, user.id, requestHash)
+    }
 
     const now = nowInstant()
     try {
@@ -711,11 +762,12 @@ export class ExternalEventsService {
       })
     }
 
-    const row = await this.prisma.client.orm.public.ExternalEventInbox.where({
+    const claimed = await this.prisma.client.orm.public.ExternalEventInbox.where({
       id: existing.id,
       status: existing.status,
       updatedAt: existing.updatedAt,
-    }).update({
+      attempts: existing.attempts,
+    }).updateAndCount({
       status: 'PROCESSING',
       apiKeyUserId: userId,
       attempts: existing.attempts + 1,
@@ -725,19 +777,25 @@ export class ExternalEventsService {
       errorCode: null,
       errorMessage: null,
     })
-    if (!row) {
+    if (claimed !== 1) {
       throw new ConflictException({
         code: 'EVENT_PROCESSING',
         message: '该外部事件已被其它请求抢占处理',
       })
     }
-    return { row, replayed: false }
+    // Return this claim's generation, not a subsequent read that could observe
+    // another attempt. Only the affected row count establishes ownership.
+    return {
+      row: { ...existing, status: 'PROCESSING', attempts: existing.attempts + 1, updatedAt: now },
+      replayed: false,
+    }
   }
 
   private async markSuccessInTransaction(
     tx: PrismaTransaction,
     input: {
       inboxId: string
+      attempts: number
       requestHash: string
       resolvedType: 'CUSTOMER' | 'LEAD'
       resolvedId: string
@@ -747,11 +805,12 @@ export class ExternalEventsService {
     },
   ) {
     const now = nowInstant()
-    const inbox = await tx.orm.public.ExternalEventInbox.where({
+    const updated = await tx.orm.public.ExternalEventInbox.where({
       id: input.inboxId,
       status: 'PROCESSING',
       requestHash: input.requestHash,
-    }).update({
+      attempts: input.attempts,
+    }).updateAndCount({
       status: 'SUCCESS',
       resolvedType: input.resolvedType,
       resolvedId: input.resolvedId,
@@ -761,7 +820,7 @@ export class ExternalEventsService {
       errorCode: null,
       errorMessage: null,
     })
-    if (!inbox) {
+    if (updated !== 1) {
       throw new ConflictException({
         code: 'EVENT_STATE_CHANGED',
         message: '外部事件处理状态已变化，请重新请求',
@@ -770,39 +829,49 @@ export class ExternalEventsService {
     // CRM write, inbox SUCCESS and operation audit are committed as one transaction.
     await this.writeAudit(tx, input.audit, {
       status: 'SUCCESS',
-      inboxId: inbox.id,
+      inboxId: input.inboxId,
       resolvedType: input.resolvedType,
       resolvedId: input.resolvedId,
       customerId: input.customerId,
       resultDetails: input.resultDetails,
     })
-    return inbox
+    return {
+      id: input.inboxId,
+      source: input.audit.source,
+      externalEventId: input.audit.externalEventId,
+      resolvedType: input.resolvedType,
+      resolvedId: input.resolvedId,
+      customerId: input.customerId,
+      attempts: input.attempts,
+    }
   }
 
   private async markFailed(
     audit: ExternalEventAudit,
     inboxId: string,
+    attempts: number,
     requestHash: string,
     error: unknown,
   ) {
     const now = nowInstant()
     const detail = this.errorDetail(error)
     await this.prisma.client.transaction(async (tx) => {
-      const inbox = await tx.orm.public.ExternalEventInbox.where({
+      const updated = await tx.orm.public.ExternalEventInbox.where({
         id: inboxId,
         status: 'PROCESSING',
         requestHash,
-      }).update({
+        attempts,
+      }).updateAndCount({
         status: 'FAILED',
         completedAt: now,
         updatedAt: now,
         errorCode: detail.code.slice(0, 100),
         errorMessage: detail.message.slice(0, 2_000),
       })
-      if (!inbox) return
+      if (updated !== 1) return
       await this.writeAudit(tx, audit, {
         status: 'FAILED',
-        inboxId: inbox.id,
+        inboxId,
         errorCode: detail.code,
       })
     })

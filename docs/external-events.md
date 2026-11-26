@@ -99,6 +99,12 @@ X-Secret-Key: YOUR_SECRET_KEY
 
 启用 `CRM_EXTERNAL_EVENT_PERF=1` 后，新增细分阶段 `lead_insert`、`customer_insert`、`field_save`、`recycle_refresh`、`conversion_recheck`、`follow_artifact_copy`、`conversion_associate`、`recycle_cancel`。这些是原 `business_write` / `transaction` 的嵌套耗时，不可与父阶段相加；只有慢请求/失败才输出。普通 CRM 调用复用优化后的服务，不自动开启该外部事件诊断。内部通知生命周期与 Outbox 范围本轮保持不变。
 
+第五轮事务前准备优化：v2 新建/转换使用 Inbox 唯一插入优先路径，唯一冲突后才查询已有记录；历史、更新、缴费仍保留先读路径。认领、成功提交及失败标记以受影响行数判断 CAS 结果，认领次数作为代次；过期事件被重新认领后，旧代次不能提交业务写入或覆盖状态。成功状态、业务数据、审计和适用的通知 Outbox 保持同一事务，不改变接口响应结构或幂等键。
+
+v2 新建/转换仅在单次业务事务前的两个准备阶段复用租户内有效成员、外部成员映射、同一认证上下文与权限的数据范围计算；独立请求、管理写入、认证守卫、事务内校验均不共享该读取快照。资源定位只读取所需池 ID（包括停用池以保持严格重复判定），每类匹配最多取两条；无有限库容规则时仍校验有效负责人，但无需展开角色与部门树。普通 CRM 新建及转换也复用公共库容预检查优化和已验证负责人的准备结果。模板每次执行仍从数据库读取并校验启用状态及绑定账号，不引入跨请求模板缓存。既有唯一性、库容、资源状态和事务锁协议不变。
+
+第五轮新增事务前诊断阶段：`flow_locate`、`flow_fields`、`flow_owner`、`prepare_normalize_fields`、`prepare_lead_read`、`prepare_field_mapping`、`prepare_customer`、`prepare_association`、`prepare_unique`、`prepare_validate_fields`、`prepare_owner`、`prepare_capacity`。这些是条件性、嵌套的阶段耗时，只有对应流程执行时才出现；父阶段和子阶段不可相加。不开启诊断时不计时，不记录事件数据或成员身份。生产 CPU、连接池、Worker 资源归因及30 RPS收益需重新部署后实测。
+
 ## 5. 业务通知
 
 外部事件在业务事务成功提交后，复用 CRM 的消息设置和站内通知机制：

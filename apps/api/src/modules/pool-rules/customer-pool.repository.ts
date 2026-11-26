@@ -65,6 +65,13 @@ export class CustomerPoolRepository {
     private readonly recycleTasks: PoolRecycleTaskService,
   ) {}
 
+  async listPoolIds(organizationId: string): Promise<string[]> {
+    const rows = await this.prisma.client.orm.public.CustomerPool.where({ organizationId })
+      .select('id')
+      .all()
+    return rows.map((row) => row.id)
+  }
+
   async listPools(organizationId: string) {
     const pools = await this.prisma.client.orm.public.CustomerPool.where({
       organizationId: organizationId,

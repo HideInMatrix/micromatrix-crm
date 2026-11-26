@@ -1,3 +1,4 @@
+import { readActiveBusinessOwner } from '../../common/services/business-preparation-reads'
 import {
   BadRequestException,
   ConflictException,
@@ -724,7 +725,14 @@ export class LeadsService {
       })
       const owner = toPool ? null : await this.resolveOwner(user, ownerId)
       const now = BigInt(Date.now())
-      if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
+      if (owner)
+        await this.pools.assertCapacityForOwner(
+          user.tenantId,
+          'lead',
+          owner.id,
+          1,
+          owner.id === user.id ? undefined : owner,
+        )
       return { targetPool, uniqueScope, owner, now }
     })
 
@@ -847,7 +855,11 @@ export class LeadsService {
   }
 
   /** Prepare and execute lead creation under the same transaction as the external event inbox. */
-  async prepareExternalLeadCreation(user: AuthUser, dto: LeadCreateInput) {
+  async prepareExternalLeadCreation(
+    user: AuthUser,
+    dto: LeadCreateInput,
+    perf?: ExternalEventPerformance,
+  ) {
     this.assertFunctionalPermission(user, 'lead:create', '缺少新建线索权限')
     if (!dto.name || typeof dto.name !== 'string' || !dto.name.trim() || dto.name.length > 100)
       throw new BadRequestException('线索名称不合法')
@@ -867,27 +879,37 @@ export class LeadsService {
       ? await this.pools.resolveTargetPool(user, 'lead', normalizedDto.poolId)
       : null
     const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
-    await this.assertLeadSystemUniqueRules(
-      user.tenantId,
-      {
-        name: normalizedDto.name,
-        contactName: normalizedDto.contactName,
-        phone: normalizedDto.phone,
-      },
-      uniqueScope,
-    )
-    await this.fieldValues.validate(user.tenantId, 'clue', normalizedDto.customData ?? {}, {
-      mode: 'create',
-      uniqueScope,
-    })
-    const owner = targetPool ? null : await this.resolveOwner(user, normalizedDto.ownerId)
-    if (owner)
-      await this.pools.assertCapacityForOwner(
+    await measureBusinessStage(perf, 'prepare_unique', () =>
+      this.assertLeadSystemUniqueRules(
         user.tenantId,
-        'lead',
-        owner.id,
-        1,
-        owner.id === user.id ? undefined : owner,
+        {
+          name: normalizedDto.name,
+          contactName: normalizedDto.contactName,
+          phone: normalizedDto.phone,
+        },
+        uniqueScope,
+      ),
+    )
+    await measureBusinessStage(perf, 'prepare_validate_fields', () =>
+      this.fieldValues.validate(user.tenantId, 'clue', normalizedDto.customData ?? {}, {
+        mode: 'create',
+        uniqueScope,
+      }),
+    )
+    const owner = targetPool
+      ? null
+      : await measureBusinessStage(perf, 'prepare_owner', () =>
+          this.resolveOwner(user, normalizedDto.ownerId),
+        )
+    if (owner)
+      await measureBusinessStage(perf, 'prepare_capacity', () =>
+        this.pools.assertCapacityForOwner(
+          user.tenantId,
+          'lead',
+          owner.id,
+          1,
+          owner.id === user.id ? undefined : owner,
+        ),
       )
     return { dto: normalizedDto, uniqueScope, owner, targetPool }
   }
@@ -1444,12 +1466,15 @@ export class LeadsService {
     customerCustomData: Record<string, unknown> = {},
     customerOwnerId?: string | null,
     allowUnassignedOwner = false,
+    perf?: ExternalEventPerformance,
   ) {
     this.assertFunctionalPermission(user, 'customer:create', '无新建客户权限')
-    const candidate = await this.prisma.client.orm.public.Clue.where({
-      id: leadId,
-      organizationId: user.tenantId,
-    }).first()
+    const candidate = await measureBusinessStage(perf, 'prepare_lead_read', async () =>
+      this.prisma.client.orm.public.Clue.where({
+        id: leadId,
+        organizationId: user.tenantId,
+      }).first(),
+    )
     if (!candidate) throw new NotFoundException('线索不存在')
     let lead: Lead
     if (candidate.inSharedPool) {
@@ -1490,21 +1515,28 @@ export class LeadsService {
       throw new BadRequestException('线索暂无负责人，无法转换')
     }
 
-    const mapped = await this.mapLeadCustomData(user.tenantId, 'customer', lead, true)
+    const mapped = await measureBusinessStage(perf, 'prepare_field_mapping', () =>
+      this.mapLeadCustomData(user.tenantId, 'customer', lead, true),
+    )
     const customerCreateDto = {
       name: lead.name,
       ownerId: conversionOwnerId ?? null,
       customData: { ...mapped, ...customerCustomData },
     }
-    const customerPrepared = await this.customers.prepareCreateForTransaction(
-      user,
-      customerCreateDto,
-      { allowUnassignedOwner },
+    const customerPrepared = await measureBusinessStage(perf, 'prepare_customer', () =>
+      this.customers.prepareCreateForTransaction(
+        user,
+        customerCreateDto,
+        { allowUnassignedOwner },
+        perf,
+      ),
     )
-    const associationPrepared = await this.prepareLeadAssociation(
-      user,
-      [lead.inSharedPool ? { ...lead, owner: conversionOwnerId } : lead],
-      customerPrepared.owner?.id !== user.id ? customerPrepared.owner : null,
+    const associationPrepared = await measureBusinessStage(perf, 'prepare_association', () =>
+      this.prepareLeadAssociation(
+        user,
+        [lead.inSharedPool ? { ...lead, owner: conversionOwnerId } : lead],
+        customerPrepared.owner?.id !== user.id ? customerPrepared.owner : null,
+      ),
     )
     return { lead, customerCreateDto, customerPrepared, associationPrepared, allowUnassignedOwner }
   }
@@ -1657,7 +1689,11 @@ export class LeadsService {
         const customerPrepared = customerCreateDto
           ? await this.customers.prepareCreateForTransaction(user, customerCreateDto)
           : null
-        const associationPrepared = await this.prepareLeadAssociation(user, [lead])
+        const associationPrepared = await this.prepareLeadAssociation(
+          user,
+          [lead],
+          customerPrepared?.owner?.id !== user.id ? customerPrepared?.owner : null,
+        )
         return { matchedCustomer, customerCreateDto, customerPrepared, associationPrepared }
       })
 
@@ -2799,13 +2835,7 @@ export class LeadsService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const owner = await this.prisma.client.orm.public.Users.where({
-      id: ownerId,
-      tenantId: user.tenantId,
-      status: 'ACTIVE',
-    })
-      .select('id', 'deptId')
-      .first()
+    const owner = await readActiveBusinessOwner(this.prisma, user.tenantId, ownerId)
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner
   }

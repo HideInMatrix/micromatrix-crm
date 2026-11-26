@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { hasPermission } from '@micromatrix/shared'
 import { PrismaService } from '../../prisma.service'
 import type { AuthUser } from '../auth-user'
+import { memoPreparationOwnerFilter } from './business-preparation-reads'
 
 /**
  * 按业务权限码计算多角色数据范围。
@@ -37,11 +38,13 @@ export class DataScopeService {
     user: AuthUser,
     permission: string,
   ): Promise<{ owner?: string | { in: string[] } }> {
-    const scope = await this.resolveScope(user, permission)
-    if (!scope.hasPermission) return { owner: '__permission_scope_denied__' }
-    if (scope.all) return {}
-    const ownerIds = await this.ownerIdsForScope(user, scope.deptIds)
-    return ownerIds.size === 1 ? { owner: user.id } : { owner: { in: [...ownerIds] } }
+    return memoPreparationOwnerFilter(user, permission, async () => {
+      const scope = await this.resolveScope(user, permission)
+      if (!scope.hasPermission) return { owner: '__permission_scope_denied__' }
+      if (scope.all) return {}
+      const ownerIds = await this.ownerIdsForScope(user, scope.deptIds)
+      return ownerIds.size === 1 ? { owner: user.id } : { owner: { in: [...ownerIds] } }
+    })
   }
 
   async matchesDirectOwner(user: AuthUser, ownerId: string | null, permission: string) {

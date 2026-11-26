@@ -1,3 +1,4 @@
+import { readActiveBusinessOwner } from '../common/services/business-preparation-reads'
 import {
   BadRequestException,
   ConflictException,
@@ -776,22 +777,31 @@ export class CustomersService {
     user: AuthUser,
     dto: CreateCustomerDto,
     options: { allowUnassignedOwner?: boolean } = {},
+    perf?: ExternalEventPerformance,
   ) {
     return withFormConfigReadMemo(async () => {
       const values = this.customerFieldInput(dto)
-      await this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' })
-      await this.assertCustomerUniqueRules(user.tenantId, dto)
+      await measureBusinessStage(perf, 'prepare_validate_fields', () =>
+        this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' }),
+      )
+      await measureBusinessStage(perf, 'prepare_unique', () =>
+        this.assertCustomerUniqueRules(user.tenantId, dto),
+      )
       const owner =
         options.allowUnassignedOwner && dto.ownerId === null
           ? null
-          : await this.resolveOwner(user, dto.ownerId ?? undefined)
+          : await measureBusinessStage(perf, 'prepare_owner', () =>
+              this.resolveOwner(user, dto.ownerId ?? undefined),
+            )
       if (owner)
-        await this.pools.assertCapacityForOwner(
-          user.tenantId,
-          'customer',
-          owner.id,
-          1,
-          owner.id === user.id ? undefined : owner,
+        await measureBusinessStage(perf, 'prepare_capacity', () =>
+          this.pools.assertCapacityForOwner(
+            user.tenantId,
+            'customer',
+            owner.id,
+            1,
+            owner.id === user.id ? undefined : owner,
+          ),
         )
       return { values, owner }
     })
@@ -2982,13 +2992,7 @@ export class CustomersService {
 
   private async resolveOwner(user: AuthUser, ownerId?: string) {
     if (!ownerId || ownerId === user.id) return { id: user.id, deptId: user.deptId }
-    const owner = await this.prisma.client.orm.public.Users.where({
-      id: ownerId,
-      tenantId: user.tenantId,
-      status: 'ACTIVE',
-    })
-      .select('id', 'deptId')
-      .first()
+    const owner = await readActiveBusinessOwner(this.prisma, user.tenantId, ownerId)
     if (!owner) throw new BadRequestException('负责人不存在或已禁用')
     return owner
   }

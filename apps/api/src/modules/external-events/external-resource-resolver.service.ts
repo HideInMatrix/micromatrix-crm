@@ -131,8 +131,8 @@ export class ExternalResourceResolverService {
     }
 
     const [customerPools, leadPools, customerScope, leadScope] = await Promise.all([
-      this.pools.list(user, 'customer'),
-      this.pools.list(user, 'lead'),
+      this.pools.listIds(user, 'customer'),
+      this.pools.listIds(user, 'lead'),
       this.dataScope.directOwnerFilter(user, 'customer:update'),
       this.dataScope.directOwnerFilter(user, 'lead:update'),
     ])
@@ -141,16 +141,10 @@ export class ExternalResourceResolverService {
         '缴费成功同步需要具有客户和线索全局数据范围的 API Key 账号，避免遗漏匹配记录',
       )
     }
-    if (
-      customerPools.length > 0 &&
-      !hasPermission(user.permissions, 'customerPool:assign')
-    ) {
+    if (customerPools.length > 0 && !hasPermission(user.permissions, 'customerPool:assign')) {
       throw new ForbiddenException('缴费成功同步需要客户公海查询权限，避免遗漏公海客户')
     }
-    if (
-      leadPools.length > 0 &&
-      !hasPermission(user.permissions, 'leadPool:assign')
-    ) {
+    if (leadPools.length > 0 && !hasPermission(user.permissions, 'leadPool:assign')) {
       throw new ForbiddenException('缴费成功同步需要线索池查询权限，避免遗漏公海线索')
     }
 
@@ -171,7 +165,8 @@ export class ExternalResourceResolverService {
         }
         throw new ConflictException({
           code: 'CROSS_MODULE_IDENTITY_CONFLICT',
-          message: '同一姓名和手机号同时匹配到独立客户与线索，存在重复数据；缴费事件未执行，请先处理重复记录',
+          message:
+            '同一姓名和手机号同时匹配到独立客户与线索，存在重复数据；缴费事件未执行，请先处理重复记录',
         })
       }
       return { kind: 'CUSTOMER', customerId }
@@ -349,7 +344,9 @@ export class ExternalResourceResolverService {
     includeVisiblePools = false,
   ): Promise<string[]> {
     const ownerScope = await this.dataScope.directOwnerFilter(user, 'customer:update')
-    const applyConditions = (query: ReturnType<typeof this.prisma.client.orm.public.Customer.where>) => {
+    const applyConditions = (
+      query: ReturnType<typeof this.prisma.client.orm.public.Customer.where>,
+    ) => {
       if (customIds) query = query.where((row) => row.id.in(customIds))
       for (const condition of system) query = this.applyCustomerSystemCondition(query, condition)
       return query
@@ -363,11 +360,15 @@ export class ExternalResourceResolverService {
       const ownerIds = ownerScope.owner.in
       ordinary = ordinary.where((row) => row.owner.in(ownerIds))
     }
-    const rows = await applyConditions(ordinary).select('id').all()
+    const rows = await applyConditions(ordinary).select('id').limit(2).all()
     const ids = rows.map((row) => String(row.id))
 
-    if (includeVisiblePools && hasPermission(user.permissions, 'customerPool:assign')) {
-      const poolIds = (await this.pools.list(user, 'customer')).map((pool) => pool.id)
+    if (
+      ids.length < 2 &&
+      includeVisiblePools &&
+      hasPermission(user.permissions, 'customerPool:assign')
+    ) {
+      const poolIds = await this.pools.listIds(user, 'customer')
       if (poolIds.length) {
         const pooled = await applyConditions(
           this.prisma.client.orm.public.Customer.where({
@@ -376,6 +377,7 @@ export class ExternalResourceResolverService {
           }).where((row) => row.poolId.in(poolIds)),
         )
           .select('id')
+          .limit(2)
           .all()
         ids.push(...pooled.map((row) => String(row.id)))
       }
@@ -409,15 +411,21 @@ export class ExternalResourceResolverService {
     }
     const ordinary = await base(false)
       .select('id', 'owner', 'transitionType', 'transitionId', 'inSharedPool')
+      .limit(2)
       .all()
     // Pool lookup is only enabled by a conversion event and requires explicit pool permissions.
-    if (!allowPooledConversion || !hasPermission(user.permissions, 'leadPool:assign'))
+    if (
+      ordinary.length > 1 ||
+      !allowPooledConversion ||
+      !hasPermission(user.permissions, 'leadPool:assign')
+    )
       return ordinary
-    const poolIds = (await this.pools.list(user, 'lead')).map((pool) => pool.id)
+    const poolIds = await this.pools.listIds(user, 'lead')
     if (!poolIds.length) return ordinary
     const pooled = await base(true)
       .where((row) => row.poolId.in(poolIds))
       .select('id', 'owner', 'transitionType', 'transitionId', 'inSharedPool')
+      .limit(2)
       .all()
     return [...ordinary, ...pooled]
   }
@@ -475,8 +483,10 @@ export class ExternalResourceResolverService {
   }
 
   private async assertPermission(user: AuthUser, permission: string) {
-    const scope = await this.dataScope.resolveScope(user, permission)
-    if (!scope.hasPermission) {
+    // resolveScope.hasPermission is solely the presence of a qualifying role.
+    // Do not expand the department tree merely to test that boolean; the
+    // following tenant-scoped lookup still applies the full owner filter.
+    if (!user.roles.some((role) => hasPermission(role.permissions, permission))) {
       throw new ForbiddenException({
         code: 'PERMISSION_DENIED',
         message: `缺少权限：${permission}`,
