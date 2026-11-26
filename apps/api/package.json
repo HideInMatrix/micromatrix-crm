@@ -15,6 +15,7 @@
     "test:external-event-outbox": "tsx tests/external-event-notification-outbox.test.ts",
     "test:lead-conversion-concurrency": "tsx tests/lead-conversion-concurrency.test.ts",
     "test:transactional-capacity": "tsx tests/transactional-capacity.test.ts",
+    "test:business-write-fast-path": "tsx tests/business-write-fast-path.test.ts",
     "prisma:generate": "prisma contract emit",
     "prisma:migrate": "prisma contract emit && prisma migration plan",
     "prisma:deploy": "prisma db migrate --advance-ref db --yes",

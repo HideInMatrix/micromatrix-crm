@@ -141,6 +141,62 @@ export class ResourceFieldValueService {
     uniqueScope?: ResourceFieldUniqueScope,
   ): Promise<Record<string, unknown>> {
     await this.assertResource(tx, organizationId, resourceType, resourceId)
+    return this.persistValues(
+      organizationId,
+      resourceType,
+      resourceId,
+      values,
+      mode,
+      tx,
+      actorId,
+      uniqueScope,
+      false,
+    )
+  }
+
+  /**
+   * Only for a row just INSERTed by the caller in this same transaction, before
+   * any field values have been written. Updates must use save(), even if empty.
+   * The insert proves existence; the returned row proves tenant ownership.
+   */
+  async saveNew(
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    created: { id: string; organizationId?: string; tenantId?: string },
+    values: Record<string, unknown>,
+    tx: PrismaTransaction,
+    actorId: string,
+    uniqueScope?: ResourceFieldUniqueScope,
+  ): Promise<Record<string, unknown>> {
+    const tenant =
+      resourceType === 'clue' || resourceType === 'customer'
+        ? created.organizationId
+        : created.tenantId
+    if (tenant !== organizationId) throw new NotFoundException('业务数据不存在')
+    return this.persistValues(
+      organizationId,
+      resourceType,
+      created.id,
+      values,
+      'create',
+      tx,
+      actorId,
+      uniqueScope,
+      true,
+    )
+  }
+
+  private async persistValues(
+    organizationId: string,
+    resourceType: ResourceFieldType,
+    resourceId: string,
+    values: Record<string, unknown>,
+    mode: ResourceFieldSaveMode,
+    tx: PrismaTransaction,
+    actorId: string,
+    uniqueScope: ResourceFieldUniqueScope | undefined,
+    newlyInserted: boolean,
+  ): Promise<Record<string, unknown>> {
     const fields = await this.moduleForms.listFieldsInTransaction(
       tx,
       organizationId,
@@ -153,6 +209,7 @@ export class ResourceFieldValueService {
       fields,
       values,
       { mode, resourceId, uniqueScope },
+      newlyInserted,
     )
 
     await this.claimResourceFieldAttachments(
@@ -163,6 +220,7 @@ export class ResourceFieldValueService {
       fields,
       validated,
       actorId,
+      newlyInserted,
     )
 
     for (const item of validated.filter(
@@ -176,7 +234,8 @@ export class ResourceFieldValueService {
     }
 
     const fieldIds = validated.map((item) => item.field.id)
-    if (fieldIds.length) await this.deleteValues(tx, resourceType, resourceId, fieldIds)
+    if (!newlyInserted && fieldIds.length)
+      await this.deleteValues(tx, resourceType, resourceId, fieldIds)
     const normal = validated.filter((item) => item.serialized !== null && item.storage === 'normal')
     const blob = validated.filter((item) => item.serialized !== null && item.storage === 'blob')
     await this.createValues(tx, resourceType, resourceId, normal, blob)
@@ -547,6 +606,7 @@ export class ResourceFieldValueService {
     fields: FieldVO[],
     values: Record<string, unknown>,
     options: ResourceFieldValidationOptions,
+    deferUniqueCheck = false,
   ): Promise<ValidatedFieldValue[]> {
     const customFields = fields.filter((field) => !field.system && field.type !== 'formula')
     const fieldMap = new Map(
@@ -590,7 +650,7 @@ export class ResourceFieldValueService {
       }
       if (field.required && this.isEmpty(value))
         throw new BadRequestException(`「${field.label}」为必填项`)
-      if (field.config?.unique && serialized !== null) {
+      if (!deferUniqueCheck && field.config?.unique && serialized !== null) {
         await this.assertUnique(
           client,
           organizationId,
@@ -773,6 +833,7 @@ export class ResourceFieldValueService {
     fields: FieldVO[],
     validated: ValidatedFieldValue[],
     actorId: string,
+    newlyInserted = false,
   ): Promise<void> {
     const fileItems = validated.filter((item) => RESOURCE_FIELD_FILE_TYPES.has(item.field.type))
     if (!fileItems.length) return
@@ -781,13 +842,15 @@ export class ResourceFieldValueService {
     const fileFieldIds = new Set(
       fields.filter((field) => RESOURCE_FIELD_FILE_TYPES.has(field.type)).map((field) => field.id),
     )
-    const [currentNormal, currentBlob] = await this.findValues(tx, organizationId, resourceType, [
-      resourceId,
-    ])
     const occupiedByUnchangedField = new Set<string>()
-    for (const row of [...currentNormal, ...currentBlob]) {
-      if (!fileFieldIds.has(row.fieldId) || changedFieldIds.has(row.fieldId)) continue
-      for (const id of this.decodeFileIds(row.fieldValue)) occupiedByUnchangedField.add(id)
+    if (!newlyInserted) {
+      const [currentNormal, currentBlob] = await this.findValues(tx, organizationId, resourceType, [
+        resourceId,
+      ])
+      for (const row of [...currentNormal, ...currentBlob]) {
+        if (!fileFieldIds.has(row.fieldId) || changedFieldIds.has(row.fieldId)) continue
+        for (const id of this.decodeFileIds(row.fieldValue)) occupiedByUnchangedField.add(id)
+      }
     }
 
     const idsByField = new Map<string, string[]>()

@@ -3,9 +3,9 @@ import type { ModuleFormConfigVO } from './module-forms.service'
 
 const reads = new AsyncLocalStorage<Map<string, Promise<ModuleFormConfigVO>>>()
 
-/** Only wrap read preparation for one external request, never admin/config writes. */
+/** Only wrap read preparation for one business operation, never admin/config writes. */
 export function withFormConfigReadMemo<T>(task: () => Promise<T>): Promise<T> {
-  return reads.run(new Map(), task)
+  return reads.getStore() ? task() : reads.run(new Map(), task)
 }
 
 export function memoFormConfigRead(

@@ -57,3 +57,12 @@ export class ExternalEventPerformance {
     )
   }
 }
+
+/** Shared business services can record sub-stages when their caller supplies diagnostics. */
+export function measureBusinessStage<T>(
+  perf: ExternalEventPerformance | undefined,
+  stage: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  return perf ? perf.measure(stage, task) : task()
+}

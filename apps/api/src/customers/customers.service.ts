@@ -17,7 +17,10 @@ import {
   hasPermission,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../common/auth-user'
-import type { ExternalEventPerformance } from '../common/external-event-performance'
+import {
+  measureBusinessStage,
+  type ExternalEventPerformance,
+} from '../common/external-event-performance'
 import { toCsv } from '../common/csv'
 import type {
   BatchAffectResult,
@@ -35,6 +38,7 @@ import { BusinessChangeLogService } from '../common/services/business-change-log
 import { and, not, or } from '@prisma/orm-postgres/orm-client'
 import { MetadataService } from '../modules/metadata/metadata.service'
 import { ModuleFormsService } from '../modules/metadata/module-forms.service'
+import { withFormConfigReadMemo } from '../modules/metadata/form-config-read-memo'
 import { ResourceFieldValueService } from '../modules/metadata/resource-field-value.service'
 import { CustomerFollowUpCompletionService } from '../modules/metadata/customer-follow-up-completion.service'
 import { DictionariesService } from '../modules/dictionaries/dictionaries.service'
@@ -773,22 +777,24 @@ export class CustomersService {
     dto: CreateCustomerDto,
     options: { allowUnassignedOwner?: boolean } = {},
   ) {
-    const values = this.customerFieldInput(dto)
-    await this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' })
-    await this.assertCustomerUniqueRules(user.tenantId, dto)
-    const owner =
-      options.allowUnassignedOwner && dto.ownerId === null
-        ? null
-        : await this.resolveOwner(user, dto.ownerId ?? undefined)
-    if (owner)
-      await this.pools.assertCapacityForOwner(
-        user.tenantId,
-        'customer',
-        owner.id,
-        1,
-        owner.id === user.id ? undefined : owner,
-      )
-    return { values, owner }
+    return withFormConfigReadMemo(async () => {
+      const values = this.customerFieldInput(dto)
+      await this.fieldValues.validate(user.tenantId, 'customer', values, { mode: 'create' })
+      await this.assertCustomerUniqueRules(user.tenantId, dto)
+      const owner =
+        options.allowUnassignedOwner && dto.ownerId === null
+          ? null
+          : await this.resolveOwner(user, dto.ownerId ?? undefined)
+      if (owner)
+        await this.pools.assertCapacityForOwner(
+          user.tenantId,
+          'customer',
+          owner.id,
+          1,
+          owner.id === user.id ? undefined : owner,
+        )
+      return { values, owner }
+    })
   }
 
   async createPreparedInTransaction(
@@ -808,32 +814,30 @@ export class CustomersService {
         perf,
       )
     const now = BigInt(Date.now())
-    const created = await tx.orm.public.Customer.create({
-      id: createLegacyId32(),
-      name: dto.name.trim(),
-      owner: prepared.owner?.id ?? null,
-      collectionTime: prepared.owner ? now : null,
-      poolId: null,
-      createTime: now,
-      updateTime: now,
-      createUser: user.id,
-      updateUser: user.id,
-      inSharedPool: false,
-      organizationId: user.tenantId,
-      follower: null,
-      followTime: null,
-      reasonId: null,
-    })
-    await this.fieldValues.save(
-      user.tenantId,
-      'customer',
-      created.id,
-      prepared.values,
-      'create',
-      tx,
-      user.id,
+    const created = await measureBusinessStage(perf, 'customer_insert', async () =>
+      tx.orm.public.Customer.create({
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        owner: prepared.owner?.id ?? null,
+        collectionTime: prepared.owner ? now : null,
+        poolId: null,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
+        inSharedPool: false,
+        organizationId: user.tenantId,
+        follower: null,
+        followTime: null,
+        reasonId: null,
+      }),
     )
-    await this.recycleTasks.refreshCustomerInTransaction(tx, user.tenantId, created.id)
+    await measureBusinessStage(perf, 'field_save', () =>
+      this.fieldValues.saveNew(user.tenantId, 'customer', created, prepared.values, tx, user.id),
+    )
+    await measureBusinessStage(perf, 'recycle_refresh', () =>
+      this.recycleTasks.refreshCreatedInTransaction(tx, user.tenantId, 'customer', created),
+    )
     return created
   }
 
@@ -2812,15 +2816,7 @@ export class CustomersService {
         followTime: null,
         reasonId: null,
       })
-      await this.fieldValues.save(
-        user.tenantId,
-        'customer',
-        created.id,
-        values,
-        'create',
-        tx,
-        user.id,
-      )
+      await this.fieldValues.saveNew(user.tenantId, 'customer', created, values, tx, user.id)
       return created
     })
     return this.toSingleVO(user, customer)

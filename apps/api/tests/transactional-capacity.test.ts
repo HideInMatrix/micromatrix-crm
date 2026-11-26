@@ -80,6 +80,7 @@ async function main() {
     updateUser: operator,
   }
   const noRecycle = {
+    refreshCreatedInTransaction: async () => {},
     refreshCustomerInTransaction: async () => {},
     refreshLeadInTransaction: async () => {},
     cancelInTransaction: async () => {},
@@ -94,7 +95,7 @@ async function main() {
     pools,
     recycleTasks: noRecycle,
     fieldValues: {
-      save: async () => {
+      saveNew: async () => {
         await afterCustomerWrite?.()
       },
     },
@@ -106,7 +107,7 @@ async function main() {
     pools,
     customers: customerService,
     recycleTasks: noRecycle,
-    fieldValues: { save: async () => {} },
+    fieldValues: { saveNew: async () => {} },
   }) as LeadsService
   const owner = (id: string) => ({ id, deptId: null, name: 'fixture owner' })
   const customerPrepared = (id: string) => ({ owner: owner(id), values: {} })

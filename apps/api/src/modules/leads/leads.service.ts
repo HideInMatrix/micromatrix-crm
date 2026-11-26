@@ -16,7 +16,10 @@ import {
   hasPermission,
 } from '@micromatrix/shared'
 import type { AuthUser } from '../../common/auth-user'
-import type { ExternalEventPerformance } from '../../common/external-event-performance'
+import {
+  measureBusinessStage,
+  type ExternalEventPerformance,
+} from '../../common/external-event-performance'
 import { toCsv } from '../../common/csv'
 import type {
   BatchAffectResult,
@@ -40,6 +43,7 @@ import { DictionariesService } from '../dictionaries/dictionaries.service'
 import { HomeFilterService } from '../home/home-filter.service'
 import { MetadataService } from '../metadata/metadata.service'
 import { ModuleFormsService } from '../metadata/module-forms.service'
+import { withFormConfigReadMemo } from '../metadata/form-config-read-memo'
 import {
   ResourceFieldValueService,
   type ResourceFieldUniqueScope,
@@ -706,20 +710,23 @@ export class LeadsService {
 
   async create(user: AuthUser, dto: LeadCreateInput): Promise<LeadVO> {
     const { customData, ownerId, toPool, poolId } = dto
-    const targetPool = toPool ? await this.pools.resolveTargetPool(user, 'lead', poolId) : null
-    const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
-    await this.assertLeadSystemUniqueRules(
-      user.tenantId,
-      { name: dto.name, contactName: dto.contactName, phone: dto.phone },
-      uniqueScope,
-    )
-    await this.fieldValues.validate(user.tenantId, 'clue', customData ?? {}, {
-      mode: 'create',
-      uniqueScope,
+    const { targetPool, uniqueScope, owner, now } = await withFormConfigReadMemo(async () => {
+      const targetPool = toPool ? await this.pools.resolveTargetPool(user, 'lead', poolId) : null
+      const uniqueScope = await this.resolveLeadUniqueScope(user.tenantId, targetPool?.id)
+      await this.assertLeadSystemUniqueRules(
+        user.tenantId,
+        { name: dto.name, contactName: dto.contactName, phone: dto.phone },
+        uniqueScope,
+      )
+      await this.fieldValues.validate(user.tenantId, 'clue', customData ?? {}, {
+        mode: 'create',
+        uniqueScope,
+      })
+      const owner = toPool ? null : await this.resolveOwner(user, ownerId)
+      const now = BigInt(Date.now())
+      if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
+      return { targetPool, uniqueScope, owner, now }
     })
-    const owner = toPool ? null : await this.resolveOwner(user, ownerId)
-    const now = BigInt(Date.now())
-    if (owner) await this.pools.assertCapacityForOwner(user.tenantId, 'lead', owner.id)
 
     const lead = await this.prisma.client.transaction(async (tx) => {
       if (owner)
@@ -745,17 +752,16 @@ export class LeadsService {
         createUser: user.id,
         updateUser: user.id,
       })
-      await this.fieldValues.save(
+      await this.fieldValues.saveNew(
         user.tenantId,
         'clue',
-        created.id,
+        created,
         customData ?? {},
-        'create',
         tx,
         user.id,
         uniqueScope,
       )
-      await this.recycleTasks.refreshLeadInTransaction(tx, user.tenantId, created.id)
+      await this.recycleTasks.refreshCreatedInTransaction(tx, user.tenantId, 'lead', created)
       return created
     })
     if (owner && owner.id !== user.id) {
@@ -903,32 +909,37 @@ export class LeadsService {
         perf,
       )
     const now = BigInt(Date.now())
-    const lead = await tx.orm.public.Clue.create({
-      id: createLegacyId32(),
-      name: dto.name.trim(),
-      contact: dto.contactName ?? null,
-      phone: dto.phone ?? null,
-      organizationId: user.tenantId,
-      inSharedPool: Boolean(targetPool),
-      poolId: targetPool?.id ?? null,
-      owner: owner?.id ?? null,
-      collectionTime: owner ? now : null,
-      createTime: now,
-      updateTime: now,
-      createUser: user.id,
-      updateUser: user.id,
-    })
-    await this.fieldValues.save(
-      user.tenantId,
-      'clue',
-      lead.id,
-      dto.customData ?? {},
-      'create',
-      tx,
-      user.id,
-      uniqueScope,
+    const lead = await measureBusinessStage(perf, 'lead_insert', async () =>
+      tx.orm.public.Clue.create({
+        id: createLegacyId32(),
+        name: dto.name.trim(),
+        contact: dto.contactName ?? null,
+        phone: dto.phone ?? null,
+        organizationId: user.tenantId,
+        inSharedPool: Boolean(targetPool),
+        poolId: targetPool?.id ?? null,
+        owner: owner?.id ?? null,
+        collectionTime: owner ? now : null,
+        createTime: now,
+        updateTime: now,
+        createUser: user.id,
+        updateUser: user.id,
+      }),
     )
-    await this.recycleTasks.refreshLeadInTransaction(tx, user.tenantId, lead.id)
+    await measureBusinessStage(perf, 'field_save', () =>
+      this.fieldValues.saveNew(
+        user.tenantId,
+        'clue',
+        lead,
+        dto.customData ?? {},
+        tx,
+        user.id,
+        uniqueScope,
+      ),
+    )
+    await measureBusinessStage(perf, 'recycle_refresh', () =>
+      this.recycleTasks.refreshCreatedInTransaction(tx, user.tenantId, 'lead', lead),
+    )
     return lead
   }
 
@@ -1527,11 +1538,13 @@ export class LeadsService {
       await (perf ? perf.measure('conversion_resource_lock', task) : task())
     }
     await (perf ? perf.measure('conversion_lock', acquireLocks) : acquireLocks())
-    const current = await tx.orm.public.Clue.where({
-      id: prepared.lead.id,
-      organizationId: user.tenantId,
-      inSharedPool: prepared.lead.inSharedPool,
-    }).first()
+    const current = await measureBusinessStage(perf, 'conversion_recheck', async () =>
+      tx.orm.public.Clue.where({
+        id: prepared.lead.id,
+        organizationId: user.tenantId,
+        inSharedPool: prepared.lead.inSharedPool,
+      }).first(),
+    )
     if (!current) throw new NotFoundException('线索不存在或已不在可转换范围')
 
     if (current.transitionId || current.transitionType === 'CUSTOMER') {
@@ -1599,6 +1612,7 @@ export class LeadsService {
       createdCustomer.id,
       { copyFollowArtifacts: true, createdCustomer },
       prepared.associationPrepared,
+      perf,
     )
     return {
       customerId: String(createdCustomer.id),
@@ -1630,18 +1644,22 @@ export class LeadsService {
     }
     if (!lead.owner) throw new BadRequestException('线索暂无负责人，无法转换')
 
-    const matchedCustomer = await this.selectTransformCustomer(user, lead)
-    const customerCreateDto = !matchedCustomer
-      ? {
-          name: lead.name,
-          ownerId: lead.owner,
-          customData: await this.mapLeadCustomData(user.tenantId, 'customer', lead, true),
-        }
-      : null
-    const customerPrepared = customerCreateDto
-      ? await this.customers.prepareCreateForTransaction(user, customerCreateDto)
-      : null
-    const associationPrepared = await this.prepareLeadAssociation(user, [lead])
+    const { matchedCustomer, customerCreateDto, customerPrepared, associationPrepared } =
+      await withFormConfigReadMemo(async () => {
+        const matchedCustomer = await this.selectTransformCustomer(user, lead)
+        const customerCreateDto = !matchedCustomer
+          ? {
+              name: lead.name,
+              ownerId: lead.owner,
+              customData: await this.mapLeadCustomData(user.tenantId, 'customer', lead, true),
+            }
+          : null
+        const customerPrepared = customerCreateDto
+          ? await this.customers.prepareCreateForTransaction(user, customerCreateDto)
+          : null
+        const associationPrepared = await this.prepareLeadAssociation(user, [lead])
+        return { matchedCustomer, customerCreateDto, customerPrepared, associationPrepared }
+      })
 
     const transactionResult = await this.prisma.client.transaction(async (tx) => {
       await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
@@ -1678,7 +1696,7 @@ export class LeadsService {
         user,
         [current as unknown as Lead],
         customerId,
-        { copyFollowArtifacts: true },
+        { copyFollowArtifacts: true, createdCustomer: createdCustomer ?? undefined },
         associationPrepared,
       )
       return { customerId, createdCustomer }
@@ -1928,6 +1946,7 @@ export class LeadsService {
       }
     } = {},
     prepared: LeadAssociationPrepared,
+    perf?: ExternalEventPerformance,
   ) {
     if (leads.length === 0) return
     const customer =
@@ -1972,7 +1991,9 @@ export class LeadsService {
       }
 
       if (options.copyFollowArtifacts) {
-        await this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId)
+        await measureBusinessStage(perf, 'follow_artifact_copy', () =>
+          this.copyLeadFollowArtifactsInTransaction(tx, user, lead.id, customerId),
+        )
       }
 
       if (lead.followTime && (!newestFollowedAt || lead.followTime > newestFollowedAt)) {
@@ -1981,27 +2002,31 @@ export class LeadsService {
       }
 
       const now = BigInt(Date.now())
-      const transitioned = await tx.orm.public.Clue.where({
-        id: lead.id,
-        organizationId: user.tenantId,
-        owner: lead.owner,
-        updateTime: lead.updateTime,
-        inSharedPool: lead.inSharedPool,
-        poolId: lead.poolId,
-        transitionId: lead.transitionId,
-        transitionType: lead.transitionType,
-        followTime: lead.followTime,
-        follower: lead.follower,
-      }).update({
-        transitionType: 'CUSTOMER',
-        transitionId: customerId,
-        inSharedPool: false,
-        poolId: null,
-        updateTime: now,
-        updateUser: user.id,
-      })
+      const transitioned = await measureBusinessStage(perf, 'conversion_associate', async () =>
+        tx.orm.public.Clue.where({
+          id: lead.id,
+          organizationId: user.tenantId,
+          owner: lead.owner,
+          updateTime: lead.updateTime,
+          inSharedPool: lead.inSharedPool,
+          poolId: lead.poolId,
+          transitionId: lead.transitionId,
+          transitionType: lead.transitionType,
+          followTime: lead.followTime,
+          follower: lead.follower,
+        }).update({
+          transitionType: 'CUSTOMER',
+          transitionId: customerId,
+          inSharedPool: false,
+          poolId: null,
+          updateTime: now,
+          updateUser: user.id,
+        }),
+      )
       if (!transitioned) throw new ConflictException('线索在关联过程中发生变化，请重新定位后重试')
-      await this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', lead.id)
+      await measureBusinessStage(perf, 'recycle_cancel', () =>
+        this.recycleTasks.cancelInTransaction(tx, user.tenantId, 'lead', lead.id),
+      )
     }
 
     if (newestFollowedAt && newestFollowedAt !== customer.followTime) {
@@ -2023,6 +2048,27 @@ export class LeadsService {
     leadId: string,
     customerId: string,
   ) {
+    // Keep ORM-generated parent IDs and the original copy semantics. Group child
+    // reads and writes, without assuming createAll returns rows in input order.
+    const batches = function* <T>(rows: readonly T[], size = 100) {
+      for (let offset = 0; offset < rows.length; offset += size) {
+        yield rows.slice(offset, offset + size)
+      }
+    }
+    const remapFields = (
+      rows: readonly { resourceId: string; fieldId: string; fieldValue: string }[],
+      ids: Map<string, string>,
+    ) =>
+      rows.map((field) => {
+        const resourceId = ids.get(field.resourceId)
+        if (!resourceId) throw new ConflictException('跟进数据迁移关联异常')
+        return {
+          id: createLegacyId32(),
+          resourceId,
+          fieldId: field.fieldId,
+          fieldValue: field.fieldValue,
+        }
+      })
     const sourceRecords = await tx.orm.public.FollowUpRecords.where({
       tenantId: user.tenantId,
       targetType: 'lead',
@@ -2031,51 +2077,40 @@ export class LeadsService {
       .orderBy((row) => row.createdAt.asc())
       .all()
     const recordIdMap = new Map<string, string>()
-    for (const record of sourceRecords) {
-      const [fields, fieldBlobs] = await Promise.all([
-        tx.orm.public.FollowUpRecordField.where({ resourceId: record.id })
-          .select('fieldId', 'fieldValue')
+    for (const records of batches(sourceRecords)) {
+      const sourceIds = records.map((row) => row.id)
+      const [fields, blobs] = await Promise.all([
+        tx.orm.public.FollowUpRecordField.where((row) => row.resourceId.in(sourceIds))
+          .select('resourceId', 'fieldId', 'fieldValue')
           .all(),
-        tx.orm.public.FollowUpRecordFieldBlob.where({ resourceId: record.id })
-          .select('fieldId', 'fieldValue')
+        tx.orm.public.FollowUpRecordFieldBlob.where((row) => row.resourceId.in(sourceIds))
+          .select('resourceId', 'fieldId', 'fieldValue')
           .all(),
       ])
-      const copied = await tx.orm.public.FollowUpRecords.create({
-        tenantId: record.tenantId,
-        targetType: 'customer',
-        targetId: customerId,
-        _type: record._type,
-        content: record.content,
-        followedAt: record.followedAt,
-        ownerId: record.ownerId,
-        ownerName: record.ownerName,
-        deptId: record.deptId,
-        createdById: record.createdById,
-        commentCount: 0,
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
-      })
-      if (fields.length) {
-        await tx.orm.public.FollowUpRecordField.createAll(
-          fields.map((field) => ({
-            id: createLegacyId32(),
-            resourceId: copied.id,
-            fieldId: field.fieldId,
-            fieldValue: field.fieldValue,
-          })),
-        )
+      for (const record of records) {
+        const copied = await tx.orm.public.FollowUpRecords.create({
+          tenantId: record.tenantId,
+          targetType: 'customer',
+          targetId: customerId,
+          _type: record._type,
+          content: record.content,
+          followedAt: record.followedAt,
+          ownerId: record.ownerId,
+          ownerName: record.ownerName,
+          deptId: record.deptId,
+          createdById: record.createdById,
+          commentCount: 0,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+        })
+        recordIdMap.set(record.id, copied.id)
       }
-      if (fieldBlobs.length) {
-        await tx.orm.public.FollowUpRecordFieldBlob.createAll(
-          fieldBlobs.map((field) => ({
-            id: createLegacyId32(),
-            resourceId: copied.id,
-            fieldId: field.fieldId,
-            fieldValue: field.fieldValue,
-          })),
-        )
+      for (const rows of batches(fields, 500)) {
+        await tx.orm.public.FollowUpRecordField.createAll(remapFields(rows, recordIdMap))
       }
-      recordIdMap.set(record.id, copied.id)
+      for (const rows of batches(blobs, 500)) {
+        await tx.orm.public.FollowUpRecordFieldBlob.createAll(remapFields(rows, recordIdMap))
+      }
     }
 
     const sourcePlans = await tx.orm.public.FollowUpPlans.where({
@@ -2085,56 +2120,47 @@ export class LeadsService {
     })
       .orderBy((row) => row.createdAt.asc())
       .all()
-    for (const plan of sourcePlans) {
-      const convertedRecordId = plan.convertedRecordId
-        ? (recordIdMap.get(plan.convertedRecordId) ?? null)
-        : null
-      const [fields, fieldBlobs] = await Promise.all([
-        tx.orm.public.FollowUpPlanField.where({ resourceId: plan.id })
-          .select('fieldId', 'fieldValue')
+    for (const plans of batches(sourcePlans)) {
+      const sourceIds = plans.map((row) => row.id)
+      const [fields, blobs] = await Promise.all([
+        tx.orm.public.FollowUpPlanField.where((row) => row.resourceId.in(sourceIds))
+          .select('resourceId', 'fieldId', 'fieldValue')
           .all(),
-        tx.orm.public.FollowUpPlanFieldBlob.where({ resourceId: plan.id })
-          .select('fieldId', 'fieldValue')
+        tx.orm.public.FollowUpPlanFieldBlob.where((row) => row.resourceId.in(sourceIds))
+          .select('resourceId', 'fieldId', 'fieldValue')
           .all(),
       ])
-      const copied = await tx.orm.public.FollowUpPlans.create({
-        tenantId: plan.tenantId,
-        targetType: 'customer',
-        targetId: customerId,
-        content: plan.content,
-        method: plan.method,
-        estimatedAt: plan.estimatedAt,
-        status: plan.status,
-        converted: plan.converted && !!convertedRecordId,
-        convertedRecordId,
-        ownerId: plan.ownerId,
-        deptId: plan.deptId,
-        createdById: plan.createdById,
-        dueNotifiedAt: plan.dueNotifiedAt,
-        commentCount: 0,
-        customData: plan.customData,
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-      })
-      if (fields.length) {
-        await tx.orm.public.FollowUpPlanField.createAll(
-          fields.map((field) => ({
-            id: createLegacyId32(),
-            resourceId: copied.id,
-            fieldId: field.fieldId,
-            fieldValue: field.fieldValue,
-          })),
-        )
+      const planIdMap = new Map<string, string>()
+      for (const plan of plans) {
+        const convertedRecordId = plan.convertedRecordId
+          ? (recordIdMap.get(plan.convertedRecordId) ?? null)
+          : null
+        const copied = await tx.orm.public.FollowUpPlans.create({
+          tenantId: plan.tenantId,
+          targetType: 'customer',
+          targetId: customerId,
+          content: plan.content,
+          method: plan.method,
+          estimatedAt: plan.estimatedAt,
+          status: plan.status,
+          converted: plan.converted && !!convertedRecordId,
+          convertedRecordId,
+          ownerId: plan.ownerId,
+          deptId: plan.deptId,
+          createdById: plan.createdById,
+          dueNotifiedAt: plan.dueNotifiedAt,
+          commentCount: 0,
+          customData: plan.customData,
+          createdAt: plan.createdAt,
+          updatedAt: plan.updatedAt,
+        })
+        planIdMap.set(plan.id, copied.id)
       }
-      if (fieldBlobs.length) {
-        await tx.orm.public.FollowUpPlanFieldBlob.createAll(
-          fieldBlobs.map((field) => ({
-            id: createLegacyId32(),
-            resourceId: copied.id,
-            fieldId: field.fieldId,
-            fieldValue: field.fieldValue,
-          })),
-        )
+      for (const rows of batches(fields, 500)) {
+        await tx.orm.public.FollowUpPlanField.createAll(remapFields(rows, planIdMap))
+      }
+      for (const rows of batches(blobs, 500)) {
+        await tx.orm.public.FollowUpPlanFieldBlob.createAll(remapFields(rows, planIdMap))
       }
     }
   }

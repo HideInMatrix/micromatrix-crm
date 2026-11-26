@@ -83,6 +83,18 @@ export class PoolRecycleTaskService {
     return this.refreshOneInTransaction(tx, organizationId, 'customer', resourceId)
   }
 
+  /** Use only the row returned by INSERT in this transaction. Existing rows use refresh by id. */
+  async refreshCreatedInTransaction(
+    tx: PrismaTransaction,
+    organizationId: string,
+    resourceType: ResourceType,
+    resource: ResourceSnapshot & { organizationId: string },
+  ): Promise<void> {
+    if (resource.organizationId !== organizationId)
+      throw new ConflictException('资源所属组织不一致')
+    await this.refreshSnapshotInTransaction(tx, organizationId, resourceType, resource)
+  }
+
   async completeInTransaction(
     tx: PrismaTransaction,
     organizationId: string,
@@ -452,25 +464,51 @@ export class PoolRecycleTaskService {
       await this.cancelTaskInTransaction(tx, organizationId, resourceType, resourceId)
       return
     }
+    await this.refreshSnapshotInTransaction(
+      tx,
+      organizationId,
+      resourceType,
+      resource as ResourceSnapshot,
+    )
+  }
+
+  private async refreshSnapshotInTransaction(
+    tx: PrismaTransaction,
+    organizationId: string,
+    resourceType: ResourceType,
+    resource: ResourceSnapshot,
+  ): Promise<void> {
+    // No eligible owner or no enabled automatic rule: keep the task lock and
+    // cancellation semantics, but skip unrelated owner/scope lookups.
+    if (
+      !resource.owner ||
+      resource.inSharedPool ||
+      (resourceType === 'lead' && resource.transitionId)
+    ) {
+      await this.cancelTaskInTransaction(tx, organizationId, resourceType, resource.id)
+      return
+    }
     const pools = await this.loadPools(tx, organizationId, resourceType)
     const rules = await this.loadRules(
       tx,
       resourceType,
       pools.map((pool) => pool.id),
     )
+    if (!rules.length) {
+      await this.cancelTaskInTransaction(tx, organizationId, resourceType, resource.id)
+      return
+    }
     const ruleByPool = new Map(rules.map((rule) => [rule.poolId, rule]))
-    const tokens = resource.owner
-      ? await loadUserScopeTokensPrisma(tx, organizationId, resource.owner)
-      : new Set<string>()
-    const pool = resource.owner
-      ? pools.find((candidate) => scopeMatches(candidate.scopeId, tokens))
-      : null
+    const tokens = await loadUserScopeTokensPrisma(tx, organizationId, resource.owner)
+    // Do not filter pools by rule existence first; newest matching pool wins,
+    // including a pool whose rule is absent (same as the previous behavior).
+    const pool = pools.find((candidate) => scopeMatches(candidate.scopeId, tokens))
     const rule = pool ? ruleByPool.get(pool.id) : null
     await this.upsertForSnapshotInTransaction(
       tx,
       organizationId,
       resourceType,
-      resource as ResourceSnapshot,
+      resource,
       pool && rule ? { pool, rule } : null,
     )
   }

@@ -367,12 +367,11 @@ export class FollowUpsService {
         createdById: user.id,
         updatedAt: nowInstant(),
       })
-      await this.fieldValues.save(
+      await this.fieldValues.saveNew(
         user.tenantId,
         'followRecord',
-        created.id,
+        created,
         dynamicValues,
-        'create',
         tx,
         user.id,
       )

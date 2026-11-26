@@ -16,6 +16,7 @@ async function main() {
     const [a, b] = await Promise.all([read('t1', 'lead'), read('t1', 'lead')])
     assert.equal(a, b)
     assert.equal(await read('t1', 'lead'), a)
+    assert.equal(await withFormConfigReadMemo(() => read('t1', 'lead')), a)
     assert.equal(calls, 1)
     await read('t2', 'lead')
     await read('t1', 'customer')

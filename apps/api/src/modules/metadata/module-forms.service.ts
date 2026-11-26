@@ -133,11 +133,7 @@ export class ModuleFormsService {
 
   private async loadConfig(organizationId: string, formKey: string): Promise<ModuleFormConfigVO> {
     return this.prisma.client.transaction(async (tx) => {
-      const form = await this.ensureForm(tx, organizationId, formKey)
-      const [blob, fields] = await Promise.all([
-        tx.orm.public.SysModuleFormBlob.where({ id: form.id }).first(),
-        this.findFields(tx, form.id),
-      ])
+      const { blob, fields } = await this.readInitializedForm(tx, organizationId, formKey)
       const formProp = this.parseObject(blob?.prop)
       this.sanitizeRetiredLeadStageConfig(formKey, formProp)
       return {
@@ -159,11 +155,47 @@ export class ModuleFormsService {
     organizationId: string,
     formKey: string,
   ): Promise<FieldVO[]> {
-    const form = await this.ensureForm(tx, organizationId, formKey)
-    const fields = await this.findFields(tx, form.id)
+    const { fields } = await this.readInitializedForm(tx, organizationId, formKey)
     return fields
       .filter((field) => this.isVisibleModuleField(formKey, field))
       .map((field) => this.toVO(field, formKey))
+  }
+
+  /**
+   * Healthy, already initialized forms are read-only, including inside business
+   * transactions. Bootstrap and legacy system-field repair still use ensureForm.
+   * Never reuse a pre-transaction configuration snapshot for write validation.
+   */
+  private async readInitializedForm(
+    tx: PrismaTransaction,
+    organizationId: string,
+    formKey: string,
+  ) {
+    if (formKey === 'contact') throw new BadRequestException('联系人模块已移除')
+    const existing = await tx.orm.public.SysModuleForm.where({ organizationId, formKey }).first()
+    if (existing) {
+      const [blob, fields] = await Promise.all([
+        tx.orm.public.SysModuleFormBlob.where({ id: existing.id }).first(),
+        this.findFields(tx, existing.id),
+      ])
+      const byKey = new Map(fields.map((field) => [field.internalKey, field]))
+      const templates =
+        MODULE_SYSTEM_FIELDS[formKey]?.filter((template) => template.system !== false) ?? []
+      const complete = templates.every((template) => {
+        const current = byKey.get(template.key)
+        if (!current) return false
+        const untouched =
+          current.createUser === current.updateUser && current.createTime === current.updateTime
+        return !(template.mobile !== false && current.mobile === false && untouched)
+      })
+      if (blob && complete && byKey.size === fields.length) return { blob, fields }
+    }
+    const form = await this.ensureForm(tx, organizationId, formKey)
+    const [blob, fields] = await Promise.all([
+      tx.orm.public.SysModuleFormBlob.where({ id: form.id }).first(),
+      this.findFields(tx, form.id),
+    ])
+    return { blob, fields }
   }
 
   async resolveFormLink(
