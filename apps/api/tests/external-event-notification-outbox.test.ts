@@ -242,6 +242,116 @@ async function main() {
     assert.equal((await pending()).length, 0)
     assert.equal((await systemRows()).length, 4)
     assert.equal((await deliveryRows()).length, 4)
+    // Re-enable recipient. A full group reuses reads; a new group must reload.
+    await orm.Users.where({ id: recipientId, tenantId }).update({ status: 'ACTIVE' })
+    const batchIntents = Array.from(
+      { length: 10 },
+      (_, i) =>
+        externalEventNotificationIntent(
+          { ...context, inboxId: randomUUID() },
+          'CLUE_ADD',
+          recipientId,
+          'group-' + i,
+          'lead-group-' + i,
+        )[0]!,
+    )
+    let settingReads = 0
+    let gateReads = 0
+    const readSetting = settings.getEffectiveSetting.bind(settings)
+    const readGate = settings.getDeliveryChannelGate.bind(settings)
+    settings.getEffectiveSetting = async (...args) => {
+      settingReads++
+      return readSetting(...args)
+    }
+    settings.getDeliveryChannelGate = async (...args) => {
+      gateReads++
+      return readGate(...args)
+    }
+    await prisma.client.transaction((tx) => worker.enqueue(tx, batchIntents))
+    await worker.drain()
+    assert.equal((await pending()).length, 0)
+    assert.equal((await systemRows()).length, 14)
+    assert.equal((await deliveryRows()).length, 14)
+    assert.equal(settingReads, 2)
+    assert.equal(gateReads, 2)
+    const groupNotifications = (await systemRows()).filter((row) =>
+      batchIntents.some((intent) => intent.inboxId === row.sourceId),
+    )
+    assert.equal(groupNotifications.length, 10)
+    assert.equal(new Set(groupNotifications.map((row) => row.link)).size, 10)
+    settings.getEffectiveSetting = readSetting
+    settings.getDeliveryChannelGate = readGate
+
+    // One malformed intent rolls back the group and falls back to singles;
+    // the other two must commit, not be duplicated or delayed by the bad row.
+    const mixed = Array.from(
+      { length: 3 },
+      (_, i) =>
+        externalEventNotificationIntent(
+          { ...context, inboxId: randomUUID() },
+          'CLUE_ADD',
+          recipientId,
+          'mixed-' + i,
+          'lead-mixed-' + i,
+        )[0]!,
+    )
+    deliveries.prepareOutboxRecords = async (...args) =>
+      (await prepareRecords(...args)).map((row) =>
+        args[0].link?.endsWith('lead-mixed-1') ? { ...row, tenantId: 'does-not-exist' } : row,
+      )
+    await prisma.client.transaction((tx) => worker.enqueue(tx, mixed))
+    await worker.drain()
+    const remaining = await pending()
+    assert.equal(remaining.length, 1)
+    assert.equal(remaining[0]!.inboxId, mixed[1]!.inboxId)
+    assert.equal(remaining[0]!.attempts, 1)
+    assert.equal((await systemRows()).length, 16)
+    assert.equal((await deliveryRows()).length, 16)
+    deliveries.prepareOutboxRecords = prepareRecords
+    await orm.ExternalEventNotification.where({ id: remaining[0]!.id }).update({
+      nextAttemptAt: instantFromEpochMilliseconds(Date.now() - 1),
+    })
+    await worker.drain()
+    assert.equal((await pending()).length, 0)
+    assert.equal((await systemRows()).length, 17)
+    assert.equal((await deliveryRows()).length, 17)
+    assert.equal(new Set(published).size, 17)
+    assert.equal(new Set(kicked).size, 17)
+
+    // Actual UPDATE RETURNING claim, two independent executors, stubbed provider.
+    // Verify the row payload, exactly one invocation and durable success status.
+    const target = (await deliveryRows()).find((row) => row.link?.endsWith('lead-group-0'))!
+    const providerCalls: unknown[] = []
+    const integrationStub = {
+      getWeComRuntimeContext: async () => ({
+        integration: { id: target.integrationId },
+        credentials: { corpId: 'fixture', agentId: 'fixture', appSecret: 'fixture' },
+      }),
+    }
+    const providerStub = {
+      sendTextMessage: async (input: unknown) => {
+        providerCalls.push(input)
+        return { success: true, providerMessageId: 'fixture-message' }
+      },
+    }
+    const realDelivery = () =>
+      new MessageDeliveryService(prisma, settings, integrationStub as never, providerStub as never)
+    await Promise.all([
+      realDelivery().processIds([target.id]),
+      realDelivery().processIds([target.id]),
+    ])
+    assert.equal(providerCalls.length, 1)
+    const providerInput = providerCalls[0] as Record<string, unknown>
+    assert.equal(providerInput.toUser, 'fixture-user')
+    assert.equal(providerInput.link, target.link)
+    assert.equal(providerInput.title, target.title)
+    const sent = await orm.MessageDeliveries.where({ id: target.id }).first()
+    assert.equal(sent?.status, 'SUCCEEDED')
+    assert.equal(sent?.attempts, 1)
+    assert.equal(sent?.providerMessageId, 'fixture-message')
+    console.log(
+      'Grouped reads, batch rollback isolation, distinct payloads and concurrent delivery RETURNING passed.',
+    )
     console.log(
       'Real PostgreSQL outbox rollback, concurrent claim, channel settings, retry and notification deduplication tests passed; no provider requests sent.',
     )

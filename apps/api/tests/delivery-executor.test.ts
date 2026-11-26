@@ -24,10 +24,12 @@ async function main() {
   // Concurrent enqueue calls and a scheduled scan share the same worker slots.
   const batches = Array.from({ length: 30 }, (_, i) => executor.run([String(i)]))
   const duplicate = executor.run(['0', '1', '1'])
+  assert.deepEqual(executor.snapshot(), { active: 5, pending: 25, outstanding: 30 })
   await Promise.all([...batches, duplicate])
   assert.equal(peak, 5)
   assert.equal(calls.length, 30)
   assert.equal(new Set(calls).size, 30)
+  assert.deepEqual(executor.snapshot(), { active: 0, pending: 0, outstanding: 0 })
 
   // A failed worker releases its slot and does not prevent other deliveries.
   const failed = executor.run(['bad', 'after-bad'])

@@ -117,6 +117,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       REDIS_DB: ${REDIS_DB:-0}
       ASYNC_EXPORT_CONCURRENCY: ${ASYNC_EXPORT_CONCURRENCY:-2}
+      CRM_EXTERNAL_EVENT_PERF: ${CRM_EXTERNAL_EVENT_PERF:-0}
     volumes:
       - release_uploads:/app/uploads
     depends_on:

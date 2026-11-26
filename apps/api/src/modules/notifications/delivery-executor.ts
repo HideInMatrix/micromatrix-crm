@@ -61,6 +61,10 @@ export class DeliveryExecutor {
     return { accepted: tasks.length, deferred }
   }
 
+  snapshot() {
+    return { active: this.active, pending: this.pending.length, outstanding: this.outstanding.size }
+  }
+
   private pump(): void {
     while (this.active < this.concurrency && this.pending.length) {
       const task = this.pending.shift()!

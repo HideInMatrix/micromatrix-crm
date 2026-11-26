@@ -9,6 +9,7 @@ import { MessageSettingsService } from '../message-settings/message-settings.ser
 import { NotificationsService } from './notifications.service'
 import { MessageDeliveryService } from './message-delivery.service'
 import { MessageTemplateService } from './message-template.service'
+import type { NotificationPreparationReads } from './notification-preparation-reads'
 
 export interface BusinessNotificationInput {
   tenantId: string
@@ -86,7 +87,7 @@ export class BusinessNotificationsService {
   }
 
   /** Resolve active recipients and render once; callers may persist inside a transaction. */
-  async prepare(input: BusinessNotificationInput) {
+  async prepare(input: BusinessNotificationInput, reads?: NotificationPreparationReads) {
     const candidateIds = [
       ...new Set(
         input.recipientIds.filter(
@@ -95,21 +96,29 @@ export class BusinessNotificationsService {
       ),
     ]
     if (candidateIds.length === 0) return null
-    const [users, operator] = await Promise.all([
+    const loadUsers = async () =>
       this.prisma.client.orm.public.Users.where({
         tenantId: input.tenantId,
         status: 'ACTIVE',
       })
         .where((user) => user.id.in(candidateIds))
         .select('id')
-        .all(),
+        .all()
+    const loadOperator = () =>
+      this.prisma.client.orm.public.Users.where({
+        id: input.operatorId!,
+        tenantId: input.tenantId,
+      })
+        .select('name', 'language')
+        .first()
+    const [users, operator] = await Promise.all([
+      reads
+        ? reads.read(['recipients', input.tenantId, ...candidateIds.slice().sort()], loadUsers)
+        : loadUsers(),
       input.operatorId
-        ? this.prisma.client.orm.public.Users.where({
-            id: input.operatorId,
-            tenantId: input.tenantId,
-          })
-            .select('name', 'language')
-            .first()
+        ? reads
+          ? reads.read(['operator', input.tenantId, input.operatorId], loadOperator)
+          : loadOperator()
         : null,
     ])
     const userIds = users.map((user) => user.id)

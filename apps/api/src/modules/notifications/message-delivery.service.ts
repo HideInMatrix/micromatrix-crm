@@ -28,6 +28,7 @@ import { WeComClient } from '../enterprise-integrations/wecom.client'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { QueryMessageDeliveriesDto } from './dto/message-delivery.dto'
 import { DeliveryExecutor } from './delivery-executor'
+import type { NotificationPreparationReads } from './notification-preparation-reads'
 
 export interface EnqueueMessageInput {
   tenantId: string
@@ -149,6 +150,7 @@ export class MessageDeliveryService {
       dingTalkEnabled: boolean
       larkEnabled: boolean
     },
+    reads?: NotificationPreparationReads,
   ) {
     const enabled = {
       WECOM: setting.weComEnabled,
@@ -157,7 +159,7 @@ export class MessageDeliveryService {
     }
     const rows = await Promise.all(
       SUPPORTED_CHANNELS.map((channel) =>
-        this.prepareChannelRecords(channel, input, enabled[channel]),
+        this.prepareChannelRecords(channel, input, enabled[channel], reads),
       ),
     )
     return rows.flat()
@@ -167,6 +169,7 @@ export class MessageDeliveryService {
     channel: SupportedDeliveryChannel,
     input: EnqueueMessageInput,
     enabledOverride?: boolean,
+    reads?: NotificationPreparationReads,
   ) {
     const enabled =
       enabledOverride ??
@@ -176,22 +179,26 @@ export class MessageDeliveryService {
           ? await this.messageSettings.isLarkEnabled(input.tenantId, input.event)
           : await this.messageSettings.isWeComEnabled(input.tenantId, input.event))
     if (!enabled) return []
-    const { gate, integrationId } = await this.messageSettings.getDeliveryChannelGate(
-      input.tenantId,
-      channel,
-    )
+    const loadGate = () => this.messageSettings.getDeliveryChannelGate(input.tenantId, channel)
+    const { gate, integrationId } = await (reads
+      ? reads.read(['gate', input.tenantId, channel], loadGate)
+      : loadGate())
     if (!gate.available || !integrationId) return []
 
     const userIds = [...new Set(input.recipientIds)]
     if (userIds.length === 0) return []
-    const mappings = await this.prisma.client.orm.public.ExternalUserMappings.where({
-      tenantId: input.tenantId,
-      provider: channel,
-      active: true,
-    })
-      .where((mapping) => mapping.userId.in(userIds))
-      .select('userId', 'externalId')
-      .all()
+    const loadMappings = async () =>
+      this.prisma.client.orm.public.ExternalUserMappings.where({
+        tenantId: input.tenantId,
+        provider: channel,
+        active: true,
+      })
+        .where((mapping) => mapping.userId.in(userIds))
+        .select('userId', 'externalId')
+        .all()
+    const mappings = await (reads
+      ? reads.read(['mapping', input.tenantId, channel, ...userIds.slice().sort()], loadMappings)
+      : loadMappings())
     const mappingByUser = new Map(mappings.map((mapping) => [mapping.userId, mapping]))
     const updatedAt = nowInstant()
     return userIds.map((userId) => {
@@ -334,6 +341,10 @@ export class MessageDeliveryService {
     return this.processIds(due.map((item) => item.id))
   }
 
+  executorSnapshot() {
+    return this.executor.snapshot()
+  }
+
   async processIds(ids: string[]): Promise<number> {
     const { accepted, deferred } = await this.executor.run(ids)
     if (deferred && Date.now() - this.lastOverflowWarningAt >= 30_000) {
@@ -344,21 +355,7 @@ export class MessageDeliveryService {
   }
 
   private async processOne(id: string): Promise<void> {
-    if (!(await this.claimDelivery(id))) return
-    const delivery = await this.prisma.client.orm.public.MessageDeliveries.where({ id })
-      .select(
-        'id',
-        'tenantId',
-        'integrationId',
-        'channel',
-        'externalSubject',
-        'title',
-        'content',
-        'link',
-        'attempts',
-        'maxAttempts',
-      )
-      .first()
+    const delivery = await this.claimDelivery(id)
     if (!delivery) return
     if (!this.isSupportedChannel(delivery.channel)) {
       await this.fail(delivery, 'UNSUPPORTED_CHANNEL', '当前投递渠道暂未实现', false)
@@ -406,7 +403,7 @@ export class MessageDeliveryService {
     if (!updated) throw new NotFoundException('投递记录不存在')
   }
 
-  private async claimDelivery(id: string): Promise<boolean> {
+  private async claimDelivery(id: string): Promise<WorkerDelivery | null> {
     const client = this.prisma.client
     const now = new Date().toISOString()
     const query = client.raw.sql`UPDATE message_deliveries
@@ -422,10 +419,21 @@ export class MessageDeliveryService {
           "nextAttemptAt" IS NULL
           OR "nextAttemptAt" <= ${now}::timestamptz
         )
-      RETURNING id`.returnsRow({ id: client.sql.public.message_deliveries.columns.id })
-    let claimed = false
-    for await (const _row of client.runtime().query(query.build())) claimed = true
-    return claimed
+      RETURNING id, "tenantId", "integrationId", channel::text AS channel, "externalSubject",
+        title, content, link, attempts, "maxAttempts"`.returnsRow({
+      id: client.sql.public.message_deliveries.columns.id,
+      tenantId: client.sql.public.message_deliveries.columns.tenantId,
+      integrationId: client.sql.public.message_deliveries.columns.integrationId,
+      channel: 'pg/text@1',
+      externalSubject: client.sql.public.message_deliveries.columns.externalSubject,
+      title: client.sql.public.message_deliveries.columns.title,
+      content: client.sql.public.message_deliveries.columns.content,
+      link: client.sql.public.message_deliveries.columns.link,
+      attempts: client.sql.public.message_deliveries.columns.attempts,
+      maxAttempts: client.sql.public.message_deliveries.columns.maxAttempts,
+    })
+    for await (const row of client.runtime().query(query.build())) return row
+    return null
   }
 
   private async sendByChannel(channel: SupportedDeliveryChannel, delivery: WorkerDelivery) {

@@ -364,6 +364,30 @@ async function main() {
     )
     assert.equal((await taskQuery().first())?.status, 'PENDING')
 
+    // Atomic cancellation preserves the resource/tenant lock and generation.
+    const beforeCancel = (await taskQuery().first())!
+    await assert.rejects(
+      prisma.client.transaction(async (tx) => {
+        await recycle.cancelInTransaction(tx, tenantId, 'lead', source.id)
+        throw new Error('cancel rollback')
+      }),
+      /cancel rollback/,
+    )
+    assert.equal((await taskQuery().first())?.generation, beforeCancel.generation)
+    assert.equal((await taskQuery().first())?.status, 'PENDING')
+    await prisma.client.transaction(async (tx) => {
+      await recycle.cancelInTransaction(tx, tenantId, 'lead', source.id)
+      await recycle.cancelInTransaction(tx, tenantId, 'lead', source.id)
+      await recycle.cancelInTransaction(tx, id(), 'lead', source.id)
+      await recycle.cancelInTransaction(tx, tenantId, 'lead', id())
+    })
+    assert.equal((await taskQuery().first())?.generation, beforeCancel.generation + 2)
+    assert.equal((await taskQuery().first())?.status, 'CANCELED')
+    await prisma.client.transaction((tx) =>
+      recycle.refreshLeadInTransaction(tx, tenantId, source.id),
+    )
+    assert.equal((await taskQuery().first())?.status, 'PENDING')
+
     // Use actual new-field writes for follow records/plans and verify batched
     // copy preserves both storage types, source records, and convertedRecordId.
     for (let i = 0; i < 3; i++) {

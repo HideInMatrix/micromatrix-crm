@@ -523,11 +523,6 @@ export class PoolRecycleTaskService {
     await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
       `pool-recycle:${organizationId}:${resourceType}:${resource.id}`,
     ])
-    const existing = await tx.orm.public.PoolRecycleTask.where({
-      organizationId,
-      resourceType,
-      resourceId: resource.id,
-    }).first()
     const now = BigInt(Date.now())
     const eligible =
       !!context &&
@@ -559,20 +554,17 @@ export class PoolRecycleTaskService {
       if (nextDueAt) dueAt = BigInt(nextDueAt.getTime())
     }
 
-    const generation = (existing?.generation ?? 0) + 1
     if (dueAt === null || !context || !eligible) {
-      if (existing) {
-        await tx.orm.public.PoolRecycleTask.where({ id: existing.id }).update({
-          generation,
-          status: 'CANCELED',
-          lockedUntil: null,
-          lastError: null,
-          updateTime: now,
-        })
-      }
+      await this.cancelLockedTaskInTransaction(tx, organizationId, resourceType, resource.id)
       return false
     }
 
+    const existing = await tx.orm.public.PoolRecycleTask.where({
+      organizationId,
+      resourceType,
+      resourceId: resource.id,
+    }).first()
+    const generation = (existing?.generation ?? 0) + 1
     const values = {
       poolId: context.pool.id,
       dueAt,
@@ -612,19 +604,35 @@ export class PoolRecycleTaskService {
     await acquirePoolTransactionLocksPrisma(this.prisma.client, tx, [
       `pool-recycle:${organizationId}:${resourceType}:${resourceId}`,
     ])
-    const existing = await tx.orm.public.PoolRecycleTask.where({
-      organizationId,
-      resourceType,
-      resourceId,
-    }).first()
-    if (!existing) return
-    await tx.orm.public.PoolRecycleTask.where({ id: existing.id }).update({
-      generation: existing.generation + 1,
-      status: 'CANCELED',
-      lockedUntil: null,
-      lastError: null,
-      updateTime: BigInt(Date.now()),
-    })
+    await this.cancelLockedTaskInTransaction(tx, organizationId, resourceType, resourceId)
+  }
+
+  /** Caller holds the same resource advisory lock. Increment the generation
+   * atomically even when the task is already canceled; missing rows are no-ops.
+   */
+  private async cancelLockedTaskInTransaction(
+    tx: PrismaTransaction,
+    organizationId: string,
+    resourceType: ResourceType,
+    resourceId: string,
+  ): Promise<void> {
+    const client = this.prisma.client
+    const now = Date.now().toString()
+    const query = client.raw.sql`
+      UPDATE pool_recycle_task
+      SET generation = generation + 1,
+          status = 'CANCELED',
+          locked_until = NULL,
+          last_error = NULL,
+          update_time = ${now}::bigint
+      WHERE organization_id = ${organizationId}
+        AND resource_type = ${resourceType}
+        AND resource_id = ${resourceId}
+      RETURNING id
+    `.returnsRow({ id: client.sql.public.pool_recycle_task.columns.id })
+    for await (const _row of tx.query(query.build())) {
+      // Consume the result; the unique resource key permits at most one row.
+    }
   }
 
   private async loadPools(

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { performance } from 'node:perf_hooks'
 import type { PrismaClient } from '../../prisma/db'
 import { PrismaService } from '../../prisma.service'
 import { instantFromEpochMilliseconds, nowInstant } from '../../prisma/temporal'
@@ -6,6 +7,7 @@ import { BusinessNotificationsService } from './business-notifications.service'
 import { MessageDeliveryService } from './message-delivery.service'
 import { NotificationsService } from './notifications.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
+import { NotificationPreparationReads } from './notification-preparation-reads'
 import {
   externalEventNotificationInput,
   type ExternalEventNotificationIntent,
@@ -14,7 +16,25 @@ import {
 type Transaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 const BATCH_SIZE = 50
 const CONCURRENCY = 2
+const WRITE_GROUP_SIZE = 8
 const MAX_BATCHES_PER_DRAIN = 4
+
+type PreparedIntent = Awaited<ReturnType<ExternalEventNotificationOutboxService['prepareJob']>>
+type OutboxJob = Awaited<ReturnType<ExternalEventNotificationOutboxService['loadDue']>>[number]
+type DrainMetrics = {
+  scanned: number
+  fullScans: number
+  oldestDueAgeMs: number
+  scanMs: number
+  claimed: number
+  retryUpdates: number
+  fallbackGroups: number
+  notifications: number
+  deliveries: number
+  prepareMs: number
+  persistMs: number
+  publishMs: number
+}
 
 @Injectable()
 export class ExternalEventNotificationOutboxService {
@@ -37,104 +57,216 @@ export class ExternalEventNotificationOutboxService {
   }
 
   async drain(): Promise<void> {
-    for (let batch = 0; batch < MAX_BATCHES_PER_DRAIN; batch++) {
-      if ((await this.drainBatch()) < BATCH_SIZE) break
+    const diagnostic = process.env.CRM_EXTERNAL_EVENT_PERF === '1'
+    const start = performance.now()
+    const cpuStart = diagnostic ? process.cpuUsage() : undefined
+    const loopStart = diagnostic ? performance.eventLoopUtilization() : undefined
+    const metrics: DrainMetrics = {
+      scanned: 0,
+      fullScans: 0,
+      oldestDueAgeMs: 0,
+      scanMs: 0,
+      claimed: 0,
+      retryUpdates: 0,
+      fallbackGroups: 0,
+      notifications: 0,
+      deliveries: 0,
+      prepareMs: 0,
+      persistMs: 0,
+      publishMs: 0,
+    }
+    try {
+      for (let batch = 0; batch < MAX_BATCHES_PER_DRAIN; batch++) {
+        if ((await this.drainBatch(metrics)) < BATCH_SIZE) break
+      }
+    } finally {
+      if (diagnostic && metrics.scanned) {
+        const cpu = process.cpuUsage(cpuStart)
+        this.logger.log(
+          JSON.stringify({
+            kind: 'external_event_outbox_perf',
+            ...metrics,
+            processCpuMs: (cpu.user + cpu.system) / 1_000,
+            eventLoopUtilization: loopStart
+              ? performance.eventLoopUtilization(loopStart).utilization
+              : 0,
+            deliveryExecutor: this.deliveries.executorSnapshot(),
+            totalMs: Math.round((performance.now() - start) * 100) / 100,
+          }),
+        )
+      }
     }
   }
 
-  private async drainBatch(): Promise<number> {
-    const due = await this.prisma.client.orm.public.ExternalEventNotification.where((row) =>
+  private loadDue() {
+    return this.prisma.client.orm.public.ExternalEventNotification.where((row) =>
       row.nextAttemptAt.lte(nowInstant()),
     )
       .orderBy((row) => row.nextAttemptAt.asc())
       .orderBy((row) => row.createdAt.asc())
       .limit(BATCH_SIZE)
       .all()
-    for (let i = 0; i < due.length; i += CONCURRENCY) {
-      const results = await Promise.allSettled(
-        due.slice(i, i + CONCURRENCY).map(async (job) => {
-          try {
-            const input = externalEventNotificationInput(job)
-            const [prepared, setting] = await Promise.all([
-              this.business.prepare(input),
-              this.settings.getEffectiveSetting(input.tenantId, input.event),
-            ])
-            const deliveryRows = prepared
-              ? await this.deliveries.prepareOutboxRecords(
-                  {
-                    tenantId: input.tenantId,
-                    event: input.event,
-                    recipientIds: prepared.userIds,
-                    title: prepared.title,
-                    content: prepared.content,
-                    link: input.link,
-                  },
-                  setting,
-                )
-              : []
-            // Delete is the transactional claim: concurrent workers cannot both win.
-            // A failure or process crash before commit restores the task and all writes.
-            const result = await this.prisma.client.transaction(async (tx) => {
-              const claimed = await tx.orm.public.ExternalEventNotification.where({
-                id: job.id,
-                attempts: job.attempts,
-              }).deleteAndCount()
-              if (!claimed) return null
-              const notifications =
-                prepared && setting.systemEnabled
-                  ? await tx.orm.public.Notifications.createAll(
-                      prepared.userIds.map((userId) => ({
-                        tenantId: input.tenantId,
-                        userId,
-                        _type: input.type,
-                        title: prepared.title,
-                        content: prepared.content ?? null,
-                        link: input.link ?? null,
-                        sourceType: `EXTERNAL_EVENT:${input.event}`,
-                        sourceId: job.inboxId,
-                      })),
-                    )
-                  : []
-              const deliveries = deliveryRows.length
-                ? await tx.orm.public.MessageDeliveries.createAll(deliveryRows)
-                : []
-              return { notifications, deliveries }
-            })
-            if (!result) return
-            // Only best-effort realtime signals and the delivery kick happen after commit.
-            // The durable records already exist, and scheduled delivery recovery still applies.
-            const postCommit = await Promise.allSettled([
-              ...result.notifications.map((row) =>
-                this.notifications.publishCreated(row.tenantId, row.userId, row),
-              ),
-            ])
-            if (postCommit.some((outcome) => outcome.status === 'rejected')) {
-              this.logger.warn('外部事件通知已落库，实时刷新失败')
-            }
-            const ids = result.deliveries
-              .filter((row) => row.status === 'PENDING')
-              .map((row) => row.id)
-            if (ids.length)
-              void this.deliveries.processIds(ids).catch(() => {
-                this.logger.warn('外部事件投递即时处理失败，等待定时恢复')
-              })
-          } catch {
-            // Retry indefinitely with a capped delay; do not discard a committed intent.
-            const delay = Math.min(300_000, 1_000 * 2 ** Math.min(job.attempts, 9))
-            await this.prisma.client.orm.public.ExternalEventNotification.where({
-              id: job.id,
-              attempts: job.attempts,
-            }).update({
-              attempts: job.attempts + 1,
-              nextAttemptAt: instantFromEpochMilliseconds(Date.now() + delay),
-            })
-            this.logger.warn(`外部事件通知任务失败 event=${job.event} attempt=${job.attempts + 1}`)
-          }
-        }),
-      )
-      if (results.some((result) => result.status === 'rejected')) {
-        this.logger.warn('外部事件通知重试状态更新失败，任务仍可重新扫描')
+  }
+
+  private async prepareJob(job: OutboxJob, reads: NotificationPreparationReads) {
+    const input = externalEventNotificationInput(job)
+    const [prepared, setting] = await Promise.all([
+      this.business.prepare(input, reads),
+      reads.read(['setting', input.tenantId, input.event], () =>
+        this.settings.getEffectiveSetting(input.tenantId, input.event),
+      ),
+    ])
+    const deliveryRows = prepared
+      ? await this.deliveries.prepareOutboxRecords(
+          {
+            tenantId: input.tenantId,
+            event: input.event,
+            recipientIds: prepared.userIds,
+            title: prepared.title,
+            content: prepared.content,
+            link: input.link,
+          },
+          setting,
+          reads,
+        )
+      : []
+    const notificationRows =
+      prepared && setting.systemEnabled
+        ? prepared.userIds.map((userId) => ({
+            tenantId: input.tenantId,
+            userId,
+            _type: input.type,
+            title: prepared.title,
+            content: prepared.content ?? null,
+            link: input.link ?? null,
+            sourceType: `EXTERNAL_EVENT:${input.event}`,
+            sourceId: job.inboxId,
+          }))
+        : []
+    return { job, notificationRows, deliveryRows }
+  }
+
+  private async persistGroup(group: PreparedIntent[]) {
+    return this.prisma.client.transaction(async (tx) => {
+      // Stable claim order avoids conflicting lock orders across workers.
+      const claimedIds = new Set<string>()
+      for (const item of [...group].sort((a, b) => a.job.id.localeCompare(b.job.id))) {
+        const count = await tx.orm.public.ExternalEventNotification.where({
+          id: item.job.id,
+          attempts: item.job.attempts,
+        }).deleteAndCount()
+        if (count === 1) claimedIds.add(item.job.id)
       }
+      const claimed = group.filter((item) => claimedIds.has(item.job.id))
+      const notificationRows = claimed.flatMap((item) => item.notificationRows)
+      const deliveryRows = claimed.flatMap((item) => item.deliveryRows)
+      const notifications = notificationRows.length
+        ? await tx.orm.public.Notifications.createAll(notificationRows)
+        : []
+      const deliveries = deliveryRows.length
+        ? await tx.orm.public.MessageDeliveries.createAll(deliveryRows)
+        : []
+      return { claimed: claimed.length, notifications, deliveries }
+    })
+  }
+
+  private async publishCommitted(
+    result: Awaited<ReturnType<ExternalEventNotificationOutboxService['persistGroup']>>,
+    metrics: DrainMetrics,
+  ): Promise<void> {
+    metrics.claimed += result.claimed
+    metrics.notifications += result.notifications.length
+    metrics.deliveries += result.deliveries.length
+    const start = performance.now()
+    // Realtime and provider processing never run inside the durable transaction.
+    // Even if a post-commit signal fails, a committed intent must not be retried.
+    const postCommit = await Promise.allSettled(
+      result.notifications.map(async (row) =>
+        this.notifications.publishCreated(row.tenantId, row.userId, row),
+      ),
+    )
+    if (postCommit.some((outcome) => outcome.status === 'rejected')) {
+      this.logger.warn('外部事件通知已落库，实时刷新失败')
+    }
+    const ids = result.deliveries.filter((row) => row.status === 'PENDING').map((row) => row.id)
+    if (ids.length)
+      void this.deliveries.processIds(ids).catch(() => {
+        this.logger.warn('外部事件投递即时处理失败，等待定时恢复')
+      })
+    metrics.publishMs += performance.now() - start
+  }
+
+  private async retry(job: OutboxJob, metrics: DrainMetrics): Promise<void> {
+    const delay = Math.min(300_000, 1_000 * 2 ** Math.min(job.attempts, 9))
+    try {
+      const updated = await this.prisma.client.orm.public.ExternalEventNotification.where({
+        id: job.id,
+        attempts: job.attempts,
+      }).updateAndCount({
+        attempts: job.attempts + 1,
+        nextAttemptAt: instantFromEpochMilliseconds(Date.now() + delay),
+      })
+      metrics.retryUpdates += updated
+      if (updated)
+        this.logger.warn(`外部事件通知任务失败 event=${job.event} attempt=${job.attempts + 1}`)
+    } catch {
+      this.logger.warn('外部事件通知重试状态更新失败，任务仍可重新扫描')
+    }
+  }
+
+  private async persistAndPublish(group: PreparedIntent[], metrics: DrainMetrics): Promise<void> {
+    if (!group.length) return
+    const start = performance.now()
+    let result: Awaited<ReturnType<ExternalEventNotificationOutboxService['persistGroup']>>
+    try {
+      result = await this.persistGroup(group)
+    } catch {
+      metrics.persistMs += performance.now() - start
+      if (group.length > 1) {
+        // A malformed intent must not poison the rest of the group. The rolled
+        // back claims are safe to retry separately, with the same attempt fence.
+        metrics.fallbackGroups++
+        for (const item of group) await this.persistAndPublish([item], metrics)
+      } else {
+        await this.retry(group[0]!.job, metrics)
+      }
+      return
+    }
+    metrics.persistMs += performance.now() - start
+    await this.publishCommitted(result, metrics)
+  }
+
+  private async drainBatch(metrics: DrainMetrics): Promise<number> {
+    const scanStart = performance.now()
+    const due = await this.loadDue()
+    metrics.scanMs += performance.now() - scanStart
+    metrics.scanned += due.length
+    if (due.length === BATCH_SIZE) metrics.fullScans++
+    if (due.length)
+      metrics.oldestDueAgeMs = Math.max(
+        metrics.oldestDueAgeMs,
+        Date.now() - due[0]!.nextAttemptAt.epochMilliseconds,
+      )
+    for (let i = 0; i < due.length; i += WRITE_GROUP_SIZE) {
+      const group = due.slice(i, i + WRITE_GROUP_SIZE)
+      const reads = new NotificationPreparationReads()
+      const prepared: PreparedIntent[] = []
+      const start = performance.now()
+      for (let j = 0; j < group.length; j += CONCURRENCY) {
+        const wave = await Promise.all(
+          group.slice(j, j + CONCURRENCY).map(async (job) => {
+            try {
+              return await this.prepareJob(job, reads)
+            } catch {
+              await this.retry(job, metrics)
+              return null
+            }
+          }),
+        )
+        for (const item of wave) if (item) prepared.push(item)
+      }
+      metrics.prepareMs += performance.now() - start
+      await this.persistAndPublish(prepared, metrics)
     }
     return due.length
   }

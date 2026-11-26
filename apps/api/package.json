@@ -12,6 +12,7 @@
     "test:delivery-executor": "tsx tests/delivery-executor.test.ts",
     "test:external-event-performance": "tsx tests/external-event-performance.test.ts",
     "test:form-config-read-memo": "tsx tests/form-config-read-memo.test.ts",
+    "test:notification-preparation-reads": "tsx tests/notification-preparation-reads.test.ts",
     "test:external-event-outbox": "tsx tests/external-event-notification-outbox.test.ts",
     "test:lead-conversion-concurrency": "tsx tests/lead-conversion-concurrency.test.ts",
     "test:transactional-capacity": "tsx tests/transactional-capacity.test.ts",
