@@ -272,6 +272,14 @@
       "model": "NotificationItem",
       "namespace": "public"
     },
+    "notification_lifecycle_cursors": {
+      "model": "NotificationLifecycleCursor",
+      "namespace": "public"
+    },
+    "notification_source_tombstones": {
+      "model": "NotificationSourceTombstone",
+      "namespace": "public"
+    },
     "notifications": {
       "model": "Notifications",
       "namespace": "public"
@@ -370,6 +378,14 @@
     },
     "users": {
       "model": "Users",
+      "namespace": "public"
+    },
+    "wecom_rate_cooldowns": {
+      "model": "WeComRateCooldown",
+      "namespace": "public"
+    },
+    "wecom_send_reservations": {
+      "model": "WeComSendReservation",
       "namespace": "public"
     }
   },
@@ -8902,6 +8918,13 @@
                   }
                 }
               },
+              "claimToken": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "content": {
                 "nullable": true,
                 "type": {
@@ -9101,6 +9124,9 @@
                 },
                 "channel": {
                   "column": "channel"
+                },
+                "claimToken": {
+                  "column": "claim_token"
                 },
                 "content": {
                   "column": "content"
@@ -9440,6 +9466,16 @@
                   "kind": "scalar"
                 }
               },
+              "detailsArchivedAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
               "externalSubject": {
                 "nullable": true,
                 "type": {
@@ -9475,6 +9511,16 @@
                   "kind": "scalar"
                 }
               },
+              "nextSealAttemptAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
               "outputId": {
                 "nullable": true,
                 "type": {
@@ -9500,6 +9546,30 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "sealDeadAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "sealErrorCode": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "sealFailures": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
                   "kind": "scalar"
                 }
               },
@@ -9585,6 +9655,9 @@
                 "credentialVersion": {
                   "column": "credential_version"
                 },
+                "detailsArchivedAt": {
+                  "column": "details_archived_at"
+                },
                 "externalSubject": {
                   "column": "external_subject"
                 },
@@ -9600,6 +9673,9 @@
                 "language": {
                   "column": "language"
                 },
+                "nextSealAttemptAt": {
+                  "column": "next_seal_attempt_at"
+                },
                 "outputId": {
                   "column": "output_id"
                 },
@@ -9611,6 +9687,15 @@
                 },
                 "scopeKey": {
                   "column": "scope_key"
+                },
+                "sealDeadAt": {
+                  "column": "seal_dead_at"
+                },
+                "sealErrorCode": {
+                  "column": "seal_error_code"
+                },
+                "sealFailures": {
+                  "column": "seal_failures"
                 },
                 "sealedAt": {
                   "column": "sealed_at"
@@ -9724,6 +9809,23 @@
                   "kind": "scalar"
                 }
               },
+              "suppressedAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "suppressionReason": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "title": {
                 "nullable": false,
                 "type": {
@@ -9788,12 +9890,113 @@
                 "sourceType": {
                   "column": "source_type"
                 },
+                "suppressedAt": {
+                  "column": "suppressed_at"
+                },
+                "suppressionReason": {
+                  "column": "suppression_reason"
+                },
                 "title": {
                   "column": "title"
                 }
               },
               "namespaceId": "public",
               "table": "notification_items"
+            }
+          },
+          "NotificationLifecycleCursor": {
+            "fields": {
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "lastBatchId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "id": {
+                  "column": "id"
+                },
+                "lastBatchId": {
+                  "column": "last_batch_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "notification_lifecycle_cursors"
+            }
+          },
+          "NotificationSourceTombstone": {
+            "fields": {
+              "batchId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "expiresAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "itemId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "sourceKey": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "tenantId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "batchId": {
+                  "column": "batch_id"
+                },
+                "expiresAt": {
+                  "column": "expires_at"
+                },
+                "itemId": {
+                  "column": "item_id"
+                },
+                "sourceKey": {
+                  "column": "source_key"
+                },
+                "tenantId": {
+                  "column": "tenant_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "notification_source_tombstones"
             }
           },
           "Notifications": {
@@ -13555,6 +13758,94 @@
               },
               "namespaceId": "public",
               "table": "users"
+            }
+          },
+          "WeComRateCooldown": {
+            "fields": {
+              "appKey": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "blockedUntil": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "appKey": {
+                  "column": "app_key"
+                },
+                "blockedUntil": {
+                  "column": "blocked_until"
+                }
+              },
+              "namespaceId": "public",
+              "table": "wecom_rate_cooldowns"
+            }
+          },
+          "WeComSendReservation": {
+            "fields": {
+              "appKey": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "memberKey": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "reservedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "appKey": {
+                  "column": "app_key"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "memberKey": {
+                  "column": "member_key"
+                },
+                "reservedAt": {
+                  "column": "reserved_at"
+                }
+              },
+              "namespaceId": "public",
+              "table": "wecom_send_reservations"
             }
           }
         }
@@ -21661,6 +21952,11 @@
                     "plane": "storage"
                   }
                 },
+                "claim_token": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "content": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -21845,6 +22141,16 @@
                 }
               ],
               "indexes": [
+                {
+                  "columns": [
+                    "channel",
+                    "status",
+                    "nextAttemptAt",
+                    "createdAt"
+                  ],
+                  "name": "message_deliveries_channel_status_due_idx",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "tenantId",
@@ -22147,6 +22453,14 @@
                   "nativeType": "int4",
                   "nullable": true
                 },
+                "details_archived_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
                 "external_subject": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -22176,6 +22490,14 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "next_seal_attempt_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
                 "output_id": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -22194,6 +22516,28 @@
                 "scope_key": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
+                  "nullable": false
+                },
+                "seal_dead_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "seal_error_code": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "seal_failures": {
+                  "codecId": "pg/int4@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  },
+                  "nativeType": "int4",
                   "nullable": false
                 },
                 "sealed_at": {
@@ -22261,6 +22605,17 @@
                     "created_at"
                   ],
                   "name": "notification_batches_recipient_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "sealed_at",
+                    "seal_dead_at",
+                    "window_end",
+                    "next_seal_attempt_at",
+                    "id"
+                  ],
+                  "name": "notification_batches_retry_due_idx",
                   "unique": false
                 },
                 {
@@ -22347,6 +22702,19 @@
                   "nativeType": "text",
                   "nullable": true
                 },
+                "suppressed_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "suppression_reason": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "title": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -22402,6 +22770,86 @@
                   "id"
                 ],
                 "name": "notification_items_pkey"
+              },
+              "uniques": []
+            },
+            "notification_lifecycle_cursors": {
+              "columns": {
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "last_batch_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
+            },
+            "notification_source_tombstones": {
+              "columns": {
+                "batch_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "expires_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "item_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "source_key": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "expires_at",
+                    "source_key"
+                  ],
+                  "name": "notification_source_tombstones_expiry_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "tenant_id",
+                    "expires_at",
+                    "source_key"
+                  ],
+                  "name": "notification_source_tombstones_tenant_expiry_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "source_key"
+                ]
               },
               "uniques": []
             },
@@ -25401,6 +25849,99 @@
                 "name": "users_pkey"
               },
               "uniques": []
+            },
+            "wecom_rate_cooldowns": {
+              "columns": {
+                "app_key": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "blocked_until": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "blocked_until"
+                  ],
+                  "name": "wecom_rate_cooldowns_expiry_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "app_key"
+                ]
+              },
+              "uniques": []
+            },
+            "wecom_send_reservations": {
+              "columns": {
+                "app_key": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "member_key": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "reserved_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "app_key",
+                    "reserved_at"
+                  ],
+                  "name": "wecom_send_reservations_app_time_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "reserved_at",
+                    "id"
+                  ],
+                  "name": "wecom_send_reservations_expiry_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "member_key",
+                    "reserved_at"
+                  ],
+                  "name": "wecom_send_reservations_member_time_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
             }
           },
           "valueSet": {
@@ -25551,10 +26092,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "4a68c767b49167c5bb54dd466f46873a34b71e93b3fe1e248a8bfd7f84daf50c"
+    "storageHash": "d42f976229912985a97851f800785770ca8d00dab8243e56e5466526e1030df5"
   },
   "execution": {
-    "executionHash": "70e113a98706e0eb1a5fc96c6c1c7d19dc8c18b331eb1e05534c0fd636d54b1e",
+    "executionHash": "68c117db145f60d6bffa533c1b332f54e729ef8b1168158c9d4d0454c9009628",
     "mutations": {
       "defaults": [
         {
@@ -26006,6 +26547,17 @@
             "column": "id",
             "namespace": "public",
             "table": "users"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "cuid2",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "wecom_send_reservations"
           }
         }
       ]

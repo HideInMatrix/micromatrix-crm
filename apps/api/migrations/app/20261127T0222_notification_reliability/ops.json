@@ -1,0 +1,251 @@
+[
+  {
+    "id": "column.public.message_deliveries.claim_token",
+    "label": "Add column \"claim_token\" to \"message_deliveries\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "claim_token",
+        "table": "message_deliveries"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"claim_token\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "message_deliveries",
+          "claim_token"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"claim_token\"",
+        "sql": "ALTER TABLE \"public\".\"message_deliveries\" ADD COLUMN \"claim_token\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"claim_token\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "message_deliveries",
+          "claim_token"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.notification_batches.next_seal_attempt_at",
+    "label": "Add column \"next_seal_attempt_at\" to \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "next_seal_attempt_at",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"next_seal_attempt_at\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "next_seal_attempt_at"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"next_seal_attempt_at\"",
+        "sql": "ALTER TABLE \"public\".\"notification_batches\" ADD COLUMN \"next_seal_attempt_at\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"next_seal_attempt_at\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "next_seal_attempt_at"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.notification_batches.seal_dead_at",
+    "label": "Add column \"seal_dead_at\" to \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "seal_dead_at",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"seal_dead_at\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "seal_dead_at"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"seal_dead_at\"",
+        "sql": "ALTER TABLE \"public\".\"notification_batches\" ADD COLUMN \"seal_dead_at\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"seal_dead_at\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "seal_dead_at"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.notification_batches.seal_error_code",
+    "label": "Add column \"seal_error_code\" to \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "seal_error_code",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"seal_error_code\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "seal_error_code"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"seal_error_code\"",
+        "sql": "ALTER TABLE \"public\".\"notification_batches\" ADD COLUMN \"seal_error_code\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"seal_error_code\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "seal_error_code"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.notification_batches.seal_failures",
+    "label": "Add column \"seal_failures\" to \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "seal_failures",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"seal_failures\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "seal_failures"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"seal_failures\"",
+        "sql": "ALTER TABLE \"public\".\"notification_batches\" ADD COLUMN \"seal_failures\" int4 DEFAULT 0 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"seal_failures\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "seal_failures"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_batches.notification_batches_retry_due_idx",
+    "label": "Create index \"notification_batches_retry_due_idx\" on \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_batches_retry_due_idx",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_batches_retry_due_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_retry_due_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_batches_retry_due_idx\"",
+        "sql": "CREATE INDEX \"notification_batches_retry_due_idx\" ON \"public\".\"notification_batches\" (\"sealed_at\", \"seal_dead_at\", \"window_end\", \"next_seal_attempt_at\", \"id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_batches_retry_due_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_retry_due_idx\""
+        ]
+      }
+    ]
+  }
+]

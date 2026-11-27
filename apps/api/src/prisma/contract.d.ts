@@ -34,9 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'4a68c767b49167c5bb54dd466f46873a34b71e93b3fe1e248a8bfd7f84daf50c'>;
+  StorageHashBase<'d42f976229912985a97851f800785770ca8d00dab8243e56e5466526e1030df5'>;
 export type ExecutionHash =
-  ExecutionHashBase<'70e113a98706e0eb1a5fc96c6c1c7d19dc8c18b331eb1e05534c0fd636d54b1e'>;
+  ExecutionHashBase<'68c117db145f60d6bffa533c1b332f54e729ef8b1168158c9d4d0454c9009628'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -974,6 +974,7 @@ export type FieldOutputTypes = {
       readonly status: 'PENDING' | 'SENDING' | 'SUCCEEDED' | 'FAILED' | 'DEAD';
       readonly attempts: CodecTypes['pg/int4@1']['output'];
       readonly maxAttempts: CodecTypes['pg/int4@1']['output'];
+      readonly claimToken: CodecTypes['pg/text@1']['output'] | null;
       readonly nextAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly providerMessageId: CodecTypes['pg/text@1']['output'] | null;
       readonly errorCode: CodecTypes['pg/text@1']['output'] | null;
@@ -1024,6 +1025,11 @@ export type FieldOutputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly sealedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly outputId: CodecTypes['pg/text@1']['output'] | null;
+      readonly sealFailures: CodecTypes['pg/int4@1']['output'];
+      readonly nextSealAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly sealDeadAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly sealErrorCode: CodecTypes['pg/text@1']['output'] | null;
+      readonly detailsArchivedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     };
     readonly NotificationItem: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -1039,6 +1045,12 @@ export type FieldOutputTypes = {
       readonly sourceId: CodecTypes['pg/text@1']['output'] | null;
       readonly occurredAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly suppressedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly suppressionReason: CodecTypes['pg/text@1']['output'] | null;
+    };
+    readonly NotificationLifecycleCursor: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly lastBatchId: CodecTypes['pg/text@1']['output'];
     };
     readonly Notifications: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -1053,6 +1065,13 @@ export type FieldOutputTypes = {
       readonly linkLabel: CodecTypes['pg/text@1']['output'] | null;
       readonly sourceId: CodecTypes['pg/text@1']['output'] | null;
       readonly sourceType: CodecTypes['pg/text@1']['output'] | null;
+    };
+    readonly NotificationSourceTombstone: {
+      readonly sourceKey: CodecTypes['pg/text@1']['output'];
+      readonly tenantId: CodecTypes['pg/text@1']['output'] | null;
+      readonly batchId: CodecTypes['pg/text@1']['output'];
+      readonly itemId: CodecTypes['pg/text@1']['output'];
+      readonly expiresAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     };
     readonly OperationLogBlobs: {
       readonly operationLogId: CodecTypes['pg/text@1']['output'];
@@ -1330,6 +1349,16 @@ export type FieldOutputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly language: CodecTypes['pg/text@1']['output'];
+    };
+    readonly WeComRateCooldown: {
+      readonly appKey: CodecTypes['pg/text@1']['output'];
+      readonly blockedUntil: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    };
+    readonly WeComSendReservation: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly appKey: CodecTypes['pg/text@1']['output'];
+      readonly memberKey: CodecTypes['pg/text@1']['output'];
+      readonly reservedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
   };
 };
@@ -2067,6 +2096,7 @@ export type FieldInputTypes = {
       readonly status: 'PENDING' | 'SENDING' | 'SUCCEEDED' | 'FAILED' | 'DEAD';
       readonly attempts: CodecTypes['pg/int4@1']['input'];
       readonly maxAttempts: CodecTypes['pg/int4@1']['input'];
+      readonly claimToken: CodecTypes['pg/text@1']['input'] | null;
       readonly nextAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly providerMessageId: CodecTypes['pg/text@1']['input'] | null;
       readonly errorCode: CodecTypes['pg/text@1']['input'] | null;
@@ -2117,6 +2147,11 @@ export type FieldInputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly sealedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly outputId: CodecTypes['pg/text@1']['input'] | null;
+      readonly sealFailures: CodecTypes['pg/int4@1']['input'];
+      readonly nextSealAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly sealDeadAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly sealErrorCode: CodecTypes['pg/text@1']['input'] | null;
+      readonly detailsArchivedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
     };
     readonly NotificationItem: {
       readonly id: CodecTypes['pg/text@1']['input'];
@@ -2132,6 +2167,12 @@ export type FieldInputTypes = {
       readonly sourceId: CodecTypes['pg/text@1']['input'] | null;
       readonly occurredAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly suppressedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly suppressionReason: CodecTypes['pg/text@1']['input'] | null;
+    };
+    readonly NotificationLifecycleCursor: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly lastBatchId: CodecTypes['pg/text@1']['input'];
     };
     readonly Notifications: {
       readonly id: CodecTypes['pg/text@1']['input'];
@@ -2146,6 +2187,13 @@ export type FieldInputTypes = {
       readonly linkLabel: CodecTypes['pg/text@1']['input'] | null;
       readonly sourceId: CodecTypes['pg/text@1']['input'] | null;
       readonly sourceType: CodecTypes['pg/text@1']['input'] | null;
+    };
+    readonly NotificationSourceTombstone: {
+      readonly sourceKey: CodecTypes['pg/text@1']['input'];
+      readonly tenantId: CodecTypes['pg/text@1']['input'] | null;
+      readonly batchId: CodecTypes['pg/text@1']['input'];
+      readonly itemId: CodecTypes['pg/text@1']['input'];
+      readonly expiresAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
     };
     readonly OperationLogBlobs: {
       readonly operationLogId: CodecTypes['pg/text@1']['input'];
@@ -2423,6 +2471,16 @@ export type FieldInputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly language: CodecTypes['pg/text@1']['input'];
+    };
+    readonly WeComRateCooldown: {
+      readonly appKey: CodecTypes['pg/text@1']['input'];
+      readonly blockedUntil: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
+    readonly WeComSendReservation: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly appKey: CodecTypes['pg/text@1']['input'];
+      readonly memberKey: CodecTypes['pg/text@1']['input'];
+      readonly reservedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
     };
   };
 };
@@ -3149,6 +3207,7 @@ export type StorageColumnTypes = {
     readonly message_deliveries: {
       readonly attempts: CodecTypes['pg/int4@1']['output'];
       readonly channel: 'WECOM' | 'DINGTALK' | 'LARK' | 'EMAIL';
+      readonly claim_token: CodecTypes['pg/text@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly errorCode: CodecTypes['pg/text@1']['output'] | null;
@@ -3196,15 +3255,20 @@ export type StorageColumnTypes = {
       readonly channel: CodecTypes['pg/text@1']['output'];
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly credential_version: CodecTypes['pg/int4@1']['output'] | null;
+      readonly details_archived_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly external_subject: CodecTypes['pg/text@1']['output'] | null;
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly integration_id: CodecTypes['pg/text@1']['output'] | null;
       readonly item_count: CodecTypes['pg/int4@1']['output'];
       readonly language: CodecTypes['pg/text@1']['output'];
+      readonly next_seal_attempt_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly output_id: CodecTypes['pg/text@1']['output'] | null;
       readonly priority: CodecTypes['pg/text@1']['output'];
       readonly recipient_id: CodecTypes['pg/text@1']['output'];
       readonly scope_key: CodecTypes['pg/text@1']['output'];
+      readonly seal_dead_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly seal_error_code: CodecTypes['pg/text@1']['output'] | null;
+      readonly seal_failures: CodecTypes['pg/int4@1']['output'];
       readonly sealed_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly shard: CodecTypes['pg/int4@1']['output'];
       readonly tenant_id: CodecTypes['pg/text@1']['output'];
@@ -3223,8 +3287,21 @@ export type StorageColumnTypes = {
       readonly source_id: CodecTypes['pg/text@1']['output'] | null;
       readonly source_key: CodecTypes['pg/text@1']['output'];
       readonly source_type: CodecTypes['pg/text@1']['output'] | null;
+      readonly suppressed_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly suppression_reason: CodecTypes['pg/text@1']['output'] | null;
       readonly title: CodecTypes['pg/text@1']['output'];
       readonly type: CodecTypes['pg/text@1']['output'];
+    };
+    readonly notification_lifecycle_cursors: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly last_batch_id: CodecTypes['pg/text@1']['output'];
+    };
+    readonly notification_source_tombstones: {
+      readonly batch_id: CodecTypes['pg/text@1']['output'];
+      readonly expires_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly item_id: CodecTypes['pg/text@1']['output'];
+      readonly source_key: CodecTypes['pg/text@1']['output'];
+      readonly tenant_id: CodecTypes['pg/text@1']['output'] | null;
     };
     readonly notifications: {
       readonly content: CodecTypes['pg/text@1']['output'] | null;
@@ -3516,6 +3593,16 @@ export type StorageColumnTypes = {
       readonly status: 'ACTIVE' | 'DISABLED';
       readonly tenantId: CodecTypes['pg/text@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    };
+    readonly wecom_rate_cooldowns: {
+      readonly app_key: CodecTypes['pg/text@1']['output'];
+      readonly blocked_until: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    };
+    readonly wecom_send_reservations: {
+      readonly app_key: CodecTypes['pg/text@1']['output'];
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly member_key: CodecTypes['pg/text@1']['output'];
+      readonly reserved_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
   };
 };
@@ -4242,6 +4329,7 @@ export type StorageColumnInputTypes = {
     readonly message_deliveries: {
       readonly attempts: CodecTypes['pg/int4@1']['input'];
       readonly channel: 'WECOM' | 'DINGTALK' | 'LARK' | 'EMAIL';
+      readonly claim_token: CodecTypes['pg/text@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly errorCode: CodecTypes['pg/text@1']['input'] | null;
@@ -4289,15 +4377,20 @@ export type StorageColumnInputTypes = {
       readonly channel: CodecTypes['pg/text@1']['input'];
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly credential_version: CodecTypes['pg/int4@1']['input'] | null;
+      readonly details_archived_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly external_subject: CodecTypes['pg/text@1']['input'] | null;
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly integration_id: CodecTypes['pg/text@1']['input'] | null;
       readonly item_count: CodecTypes['pg/int4@1']['input'];
       readonly language: CodecTypes['pg/text@1']['input'];
+      readonly next_seal_attempt_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly output_id: CodecTypes['pg/text@1']['input'] | null;
       readonly priority: CodecTypes['pg/text@1']['input'];
       readonly recipient_id: CodecTypes['pg/text@1']['input'];
       readonly scope_key: CodecTypes['pg/text@1']['input'];
+      readonly seal_dead_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly seal_error_code: CodecTypes['pg/text@1']['input'] | null;
+      readonly seal_failures: CodecTypes['pg/int4@1']['input'];
       readonly sealed_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly shard: CodecTypes['pg/int4@1']['input'];
       readonly tenant_id: CodecTypes['pg/text@1']['input'];
@@ -4316,8 +4409,21 @@ export type StorageColumnInputTypes = {
       readonly source_id: CodecTypes['pg/text@1']['input'] | null;
       readonly source_key: CodecTypes['pg/text@1']['input'];
       readonly source_type: CodecTypes['pg/text@1']['input'] | null;
+      readonly suppressed_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly suppression_reason: CodecTypes['pg/text@1']['input'] | null;
       readonly title: CodecTypes['pg/text@1']['input'];
       readonly type: CodecTypes['pg/text@1']['input'];
+    };
+    readonly notification_lifecycle_cursors: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly last_batch_id: CodecTypes['pg/text@1']['input'];
+    };
+    readonly notification_source_tombstones: {
+      readonly batch_id: CodecTypes['pg/text@1']['input'];
+      readonly expires_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly item_id: CodecTypes['pg/text@1']['input'];
+      readonly source_key: CodecTypes['pg/text@1']['input'];
+      readonly tenant_id: CodecTypes['pg/text@1']['input'] | null;
     };
     readonly notifications: {
       readonly content: CodecTypes['pg/text@1']['input'] | null;
@@ -4609,6 +4715,16 @@ export type StorageColumnInputTypes = {
       readonly status: 'ACTIVE' | 'DISABLED';
       readonly tenantId: CodecTypes['pg/text@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
+    readonly wecom_rate_cooldowns: {
+      readonly app_key: CodecTypes['pg/text@1']['input'];
+      readonly blocked_until: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
+    readonly wecom_send_reservations: {
+      readonly app_key: CodecTypes['pg/text@1']['input'];
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly member_key: CodecTypes['pg/text@1']['input'];
+      readonly reserved_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
     };
   };
 };
@@ -5641,6 +5757,7 @@ export namespace Models {
     status: 'PENDING' | 'SENDING' | 'SUCCEEDED' | 'FAILED' | 'DEAD';
     attempts: CodecTypes['pg/int4@1']['output'];
     maxAttempts: CodecTypes['pg/int4@1']['output'];
+    claimToken: CodecTypes['pg/text@1']['output'] | null;
     nextAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     providerMessageId: CodecTypes['pg/text@1']['output'] | null;
     errorCode: CodecTypes['pg/text@1']['output'] | null;
@@ -5930,6 +6047,31 @@ export namespace Models {
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     readonly [RelationKeys]?: never;
   };
+  export type public_WeComSendReservation = {
+    id: CodecTypes['pg/text@1']['output'];
+    appKey: CodecTypes['pg/text@1']['output'];
+    memberKey: CodecTypes['pg/text@1']['output'];
+    reservedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
+  export type public_WeComRateCooldown = {
+    appKey: CodecTypes['pg/text@1']['output'];
+    blockedUntil: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
+  export type public_NotificationSourceTombstone = {
+    sourceKey: CodecTypes['pg/text@1']['output'];
+    tenantId: CodecTypes['pg/text@1']['output'] | null;
+    batchId: CodecTypes['pg/text@1']['output'];
+    itemId: CodecTypes['pg/text@1']['output'];
+    expiresAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    readonly [RelationKeys]?: never;
+  };
+  export type public_NotificationLifecycleCursor = {
+    id: CodecTypes['pg/text@1']['output'];
+    lastBatchId: CodecTypes['pg/text@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
   export type public_NotificationBatch = {
     id: CodecTypes['pg/text@1']['output'];
     scopeKey: CodecTypes['pg/text@1']['output'];
@@ -5951,6 +6093,11 @@ export namespace Models {
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     sealedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     outputId: CodecTypes['pg/text@1']['output'] | null;
+    sealFailures: CodecTypes['pg/int4@1']['output'];
+    nextSealAttemptAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    sealDeadAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    sealErrorCode: CodecTypes['pg/text@1']['output'] | null;
+    detailsArchivedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     items: public_NotificationItem[];
     readonly [RelationKeys]?: 'items';
   };
@@ -5968,6 +6115,8 @@ export namespace Models {
     sourceId: CodecTypes['pg/text@1']['output'] | null;
     occurredAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    suppressedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    suppressionReason: CodecTypes['pg/text@1']['output'] | null;
     batch: public_NotificationBatch;
     readonly [RelationKeys]?: 'batch';
   };
@@ -6109,6 +6258,10 @@ export declare const models: {
     UserExtensions: Models.public_UserExtensions;
     UserKey: Models.public_UserKey;
     ExternalEventTemplates: Models.public_ExternalEventTemplates;
+    WeComSendReservation: Models.public_WeComSendReservation;
+    WeComRateCooldown: Models.public_WeComRateCooldown;
+    NotificationSourceTombstone: Models.public_NotificationSourceTombstone;
+    NotificationLifecycleCursor: Models.public_NotificationLifecycleCursor;
     NotificationBatch: Models.public_NotificationBatch;
     NotificationItem: Models.public_NotificationItem;
     ExternalEventNotification: Models.public_ExternalEventNotification;
@@ -11873,6 +12026,11 @@ type ContractBase = Omit<
                     readonly value: DefaultLiteralValue<'pg/int4@1', 3>;
                   };
                 };
+                readonly claim_token: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
                 readonly nextAttemptAt: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-temporal@1';
@@ -11933,6 +12091,11 @@ type ContractBase = Omit<
                 {
                   readonly name: 'message_deliveries_tenantId_userId_createdAt_idx';
                   readonly columns: readonly ['tenantId', 'userId', 'createdAt'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'message_deliveries_channel_status_due_idx';
+                  readonly columns: readonly ['channel', 'status', 'nextAttemptAt', 'createdAt'];
                   readonly unique: false;
                 },
               ];
@@ -12277,6 +12440,38 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
                 };
+                readonly seal_failures: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly next_seal_attempt_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly seal_dead_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly seal_error_code: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly details_archived_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
               };
               primaryKey: {
                 readonly columns: readonly ['id'];
@@ -12302,6 +12497,17 @@ type ContractBase = Omit<
                 {
                   readonly name: 'notification_batches_recipient_idx';
                   readonly columns: readonly ['tenant_id', 'recipient_id', 'created_at'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'notification_batches_retry_due_idx';
+                  readonly columns: readonly [
+                    'sealed_at',
+                    'seal_dead_at',
+                    'window_end',
+                    'next_seal_attempt_at',
+                    'id',
+                  ];
                   readonly unique: false;
                 },
               ];
@@ -12377,6 +12583,17 @@ type ContractBase = Omit<
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
                   readonly typeParams: { readonly precision: 3 };
                 };
+                readonly suppressed_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly suppression_reason: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
               };
               primaryKey: {
                 readonly columns: readonly ['id'];
@@ -12410,6 +12627,69 @@ type ContractBase = Omit<
                   readonly name: 'notification_items_batch_id_fkey';
                 },
               ];
+            };
+            readonly notification_lifecycle_cursors: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly last_batch_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+              };
+              primaryKey: { readonly columns: readonly ['id'] };
+              uniques: readonly [];
+              indexes: readonly [];
+              foreignKeys: readonly [];
+            };
+            readonly notification_source_tombstones: {
+              columns: {
+                readonly source_key: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly tenant_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly batch_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly item_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly expires_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              primaryKey: { readonly columns: readonly ['source_key'] };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'notification_source_tombstones_expiry_idx';
+                  readonly columns: readonly ['expires_at', 'source_key'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'notification_source_tombstones_tenant_expiry_idx';
+                  readonly columns: readonly ['tenant_id', 'expires_at', 'source_key'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [];
             };
             readonly notifications: {
               columns: {
@@ -14580,6 +14860,76 @@ type ContractBase = Omit<
                 },
               ];
             };
+            readonly wecom_rate_cooldowns: {
+              columns: {
+                readonly app_key: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly blocked_until: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              primaryKey: { readonly columns: readonly ['app_key'] };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'wecom_rate_cooldowns_expiry_idx';
+                  readonly columns: readonly ['blocked_until'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [];
+            };
+            readonly wecom_send_reservations: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly app_key: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly member_key: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly reserved_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              primaryKey: { readonly columns: readonly ['id'] };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'wecom_send_reservations_app_time_idx';
+                  readonly columns: readonly ['app_key', 'reserved_at'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'wecom_send_reservations_member_time_idx';
+                  readonly columns: readonly ['member_key', 'reserved_at'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'wecom_send_reservations_expiry_idx';
+                  readonly columns: readonly ['reserved_at', 'id'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [];
+            };
           };
           readonly valueSet: {
             readonly DataScope: {
@@ -14996,6 +15346,22 @@ type ContractBase = Omit<
     readonly external_event_templates: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'ExternalEventTemplates';
+    };
+    readonly wecom_send_reservations: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'WeComSendReservation';
+    };
+    readonly wecom_rate_cooldowns: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'WeComRateCooldown';
+    };
+    readonly notification_source_tombstones: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'NotificationSourceTombstone';
+    };
+    readonly notification_lifecycle_cursors: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'NotificationLifecycleCursor';
     };
     readonly notification_batches: {
       readonly namespace: 'public' & NamespaceId;
@@ -20280,6 +20646,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
+              readonly claimToken: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly nextAttemptAt: {
                 readonly nullable: true;
                 readonly type: {
@@ -20380,6 +20750,7 @@ type ContractBase = Omit<
                 readonly status: { readonly column: 'status' };
                 readonly attempts: { readonly column: 'attempts' };
                 readonly maxAttempts: { readonly column: 'maxAttempts' };
+                readonly claimToken: { readonly column: 'claim_token' };
                 readonly nextAttemptAt: { readonly column: 'nextAttemptAt' };
                 readonly providerMessageId: { readonly column: 'providerMessageId' };
                 readonly errorCode: { readonly column: 'errorCode' };
@@ -20629,6 +21000,38 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly sealFailures: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly nextSealAttemptAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly sealDeadAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly sealErrorCode: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly detailsArchivedAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
             };
             readonly relations: {
               readonly items: {
@@ -20667,6 +21070,11 @@ type ContractBase = Omit<
                 readonly createdAt: { readonly column: 'created_at' };
                 readonly sealedAt: { readonly column: 'sealed_at' };
                 readonly outputId: { readonly column: 'output_id' };
+                readonly sealFailures: { readonly column: 'seal_failures' };
+                readonly nextSealAttemptAt: { readonly column: 'next_seal_attempt_at' };
+                readonly sealDeadAt: { readonly column: 'seal_dead_at' };
+                readonly sealErrorCode: { readonly column: 'seal_error_code' };
+                readonly detailsArchivedAt: { readonly column: 'details_archived_at' };
               };
             };
           };
@@ -20732,6 +21140,18 @@ type ContractBase = Omit<
                   readonly typeParams: { readonly precision: 3 };
                 };
               };
+              readonly suppressedAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly suppressionReason: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
             };
             readonly relations: {
               readonly batch: {
@@ -20764,6 +21184,29 @@ type ContractBase = Omit<
                 readonly sourceId: { readonly column: 'source_id' };
                 readonly occurredAt: { readonly column: 'occurred_at' };
                 readonly createdAt: { readonly column: 'created_at' };
+                readonly suppressedAt: { readonly column: 'suppressed_at' };
+                readonly suppressionReason: { readonly column: 'suppression_reason' };
+              };
+            };
+          };
+          readonly NotificationLifecycleCursor: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly lastBatchId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+            };
+            readonly relations: Record<string, never>;
+            readonly storage: {
+              readonly table: 'notification_lifecycle_cursors';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly lastBatchId: { readonly column: 'last_batch_id' };
               };
             };
           };
@@ -20843,6 +21286,46 @@ type ContractBase = Omit<
                 readonly linkLabel: { readonly column: 'linkLabel' };
                 readonly sourceId: { readonly column: 'sourceId' };
                 readonly sourceType: { readonly column: 'sourceType' };
+              };
+            };
+          };
+          readonly NotificationSourceTombstone: {
+            readonly fields: {
+              readonly sourceKey: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly tenantId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly batchId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly itemId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly expiresAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+            };
+            readonly relations: Record<string, never>;
+            readonly storage: {
+              readonly table: 'notification_source_tombstones';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly sourceKey: { readonly column: 'source_key' };
+                readonly tenantId: { readonly column: 'tenant_id' };
+                readonly batchId: { readonly column: 'batch_id' };
+                readonly itemId: { readonly column: 'item_id' };
+                readonly expiresAt: { readonly column: 'expires_at' };
               };
             };
           };
@@ -23133,6 +23616,66 @@ type ContractBase = Omit<
               };
             };
           };
+          readonly WeComRateCooldown: {
+            readonly fields: {
+              readonly appKey: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly blockedUntil: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+            };
+            readonly relations: Record<string, never>;
+            readonly storage: {
+              readonly table: 'wecom_rate_cooldowns';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly appKey: { readonly column: 'app_key' };
+                readonly blockedUntil: { readonly column: 'blocked_until' };
+              };
+            };
+          };
+          readonly WeComSendReservation: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly appKey: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly memberKey: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly reservedAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+            };
+            readonly relations: Record<string, never>;
+            readonly storage: {
+              readonly table: 'wecom_send_reservations';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly appKey: { readonly column: 'app_key' };
+                readonly memberKey: { readonly column: 'member_key' };
+                readonly reservedAt: { readonly column: 'reserved_at' };
+              };
+            };
+          };
         };
       };
     };
@@ -23484,6 +24027,14 @@ type ContractBase = Omit<
           readonly ref: {
             readonly namespace: 'public';
             readonly table: 'users';
+            readonly column: 'id';
+          };
+          readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };
+        },
+        {
+          readonly ref: {
+            readonly namespace: 'public';
+            readonly table: 'wecom_send_reservations';
             readonly column: 'id';
           };
           readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };

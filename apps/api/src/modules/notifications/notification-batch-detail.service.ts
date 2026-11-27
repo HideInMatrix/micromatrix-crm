@@ -112,18 +112,34 @@ export class NotificationBatchDetailService {
             .select('id')
             .first()
     if (!output) throw new NotFoundException('通知批次不存在')
-    const rows = await orm.NotificationItem.where({ batchId: batch.id })
-      .orderBy((row) => row.createdAt.asc())
-      .orderBy((row) => row.id.asc())
-      .offset((page - 1) * pageSize)
-      .limit(pageSize)
-      .all()
+    const visible = () =>
+      orm.NotificationItem.where({ batchId: batch.id }).where((row) => row.suppressedAt.isNull())
+    const [rows, count] = await Promise.all([
+      visible()
+        .orderBy((row) => row.createdAt.asc())
+        .orderBy((row) => row.id.asc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+        .all(),
+      visible().aggregate((agg) => ({ total: agg.count() })),
+    ])
+    // Archive may commit between the first batch read and the page read.
+    // Re-read the marker; never expose a partial page for an archived batch.
+    const current = await orm.NotificationBatch.where({
+      id: batch.id,
+      tenantId: user.tenantId,
+      recipientId: user.id,
+    })
+      .select('detailsArchivedAt')
+      .first()
+    if (!current) throw new NotFoundException('通知批次不存在')
+    const archivedAt = current.detailsArchivedAt
     const language: MessageLanguage = batch.language === 'en-US' ? 'en-US' : 'zh-CN'
     const resources = MESSAGE_TEMPLATE_RESOURCES[language] as Record<string, { eventName: string }>
     const items: NotificationBatchItemVO[] = []
     // Limit DB concurrency and reuse only authorization results within this response.
     const decisions = new Map<string, Promise<string | null>>()
-    for (const row of rows) {
+    for (const row of archivedAt ? [] : rows) {
       let link: string | null = null
       if (row.link) {
         const key = JSON.stringify([row.event, row.link])
@@ -145,15 +161,20 @@ export class NotificationBatchDetailService {
         eventName,
         occurredAt: instantToISOString(row.occurredAt),
         accessible: link !== null,
-        title: link ? row.title : null,
-        content: link ? row.content : null,
+        // A link proves access to its target, not every historical template
+        // variable (e.g. a converted customer's former lead or actor name).
+        // Use only static labels; the live resource UI enforces field access.
+        title: link ? eventName : null,
+        content: null,
         link,
-        linkLabel: link ? row.linkLabel : null,
+        linkLabel: link ? (language === 'en-US' ? 'View resource' : '查看业务记录') : null,
       })
     }
-    const title =
-      CATEGORIES[batch.category]?.[language === 'en-US' ? 1 : 0] ??
-      (language === 'en-US' ? 'Business activity' : '业务动态')
+    const title = Object.prototype.hasOwnProperty.call(CATEGORIES, batch.category)
+      ? CATEGORIES[batch.category]![language === 'en-US' ? 1 : 0]
+      : language === 'en-US'
+        ? 'Business activity'
+        : '业务动态'
     return {
       id: batch.id,
       category: batch.category as NotificationCategory,
@@ -161,7 +182,8 @@ export class NotificationBatchDetailService {
       title,
       windowStart: instantToISOString(batch.windowStart),
       windowEnd: instantToISOString(batch.windowEnd),
-      total: batch.itemCount,
+      detailsArchivedAt: archivedAt ? instantToISOString(archivedAt) : null,
+      total: archivedAt ? 0 : count.total,
       page,
       pageSize,
       items,

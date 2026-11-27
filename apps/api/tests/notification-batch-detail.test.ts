@@ -243,6 +243,8 @@ async function main() {
       assert.ok(!JSON.stringify(row).includes('fixture-private'))
     }
     assert.equal(first.items[0]?.link, '/leads?id=' + leadId)
+    assert.ok(!JSON.stringify([...first.items, ...second.items]).includes('fixture-private'))
+    assert.equal(first.items[0]?.content, null)
     assert.equal(
       new Set([...first.items, ...second.items].map((row) => row.id)).size,
       sample.length,
@@ -292,6 +294,27 @@ async function main() {
     assert.equal(deleted.items[8]?.accessible, false)
     await orm.Roles.where({ id: roleId, tenantId }).update({ permissions: [] })
     assert.ok((await service.list(cachedAuth, batchId)).items.every((row) => !row.accessible))
+    const excludedId = first.items[0]!.id
+    await orm.NotificationItem.where({ id: excludedId, batchId }).update({
+      suppressedAt: now,
+      suppressionReason: 'CHANNEL_EVENT_DISABLED',
+    })
+    const filtered = await service.list(cachedAuth, batchId, 1, 100)
+    assert.equal(filtered.total, sample.length - 1)
+    assert.equal(filtered.items.length, sample.length - 1)
+    assert.ok(!filtered.items.some((row) => row.id === excludedId))
+
+    await prisma.client.transaction(async (tx) => {
+      await tx.orm.public.NotificationItem.where({ batchId }).deleteAndCount()
+      await tx.orm.public.NotificationBatch.where({ id: batchId }).update({
+        detailsArchivedAt: now,
+      })
+    })
+    const archived = await service.list(cachedAuth, batchId)
+    assert.equal(archived.total, 0)
+    assert.deepEqual(archived.items, [])
+    assert.ok(archived.detailsArchivedAt)
+    await assert.rejects(service.list({ ...cachedAuth, id: other }, batchId), /通知批次不存在/)
     await orm.Users.where({ id: member, tenantId }).update({ status: 'DISABLED' })
     await assert.rejects(service.list(cachedAuth, batchId), /通知批次不存在/)
     assert.equal(

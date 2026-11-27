@@ -65,17 +65,8 @@ export function buildAggregationSummary(
   }[],
 ) {
   if (!items.length) throw new Error('Empty notification batch')
-  if (items.length === 1) {
-    const item = items[0]!
-    return {
-      event: item.event,
-      type: item._type,
-      title: item.title,
-      content: item.content,
-      link: item.link,
-      linkLabel: item.linkLabel,
-    }
-  }
+  // Single-item batches are delayed too: no historical business payload
+  // outside the authenticated detail endpoint.
   const language: MessageLanguage = batch.language === 'en-US' ? 'en-US' : 'zh-CN'
   const en = language === 'en-US'
   const titles: Record<string, [string, string]> = {
@@ -84,13 +75,20 @@ export function buildAggregationSummary(
     BUSINESS_TODO: ['业务待办', 'Business tasks'],
     INTERACTION: ['互动消息', 'Interactions'],
   }
-  const name = titles[batch.category]?.[en ? 1 : 0] ?? (en ? 'Business activity' : '业务动态')
+  const name = Object.prototype.hasOwnProperty.call(titles, batch.category)
+    ? titles[batch.category]![en ? 1 : 0]
+    : en
+      ? 'Business activity'
+      : '业务动态'
   const counts = new Map<string, number>()
   for (const item of items) counts.set(item.event, (counts.get(item.event) ?? 0) + 1)
   const resources = MESSAGE_TEMPLATE_RESOURCES[language] as Record<string, { eventName: string }>
   const details = [...counts]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([event, count]) => `${resources[event]?.eventName ?? event}: ${count}`)
+    .map(
+      ([event, count]) =>
+        `${Object.prototype.hasOwnProperty.call(resources, event) ? resources[event]!.eventName : en ? 'Business notification' : '业务通知'}: ${count}`,
+    )
   // Bounded UTF-8 payload including escaped HTML entities. Keep total even
   // when some per-event counts must be omitted from the card.
   let content = en ? `${items.length} notifications` : `共 ${items.length} 条通知`

@@ -1,0 +1,83 @@
+[
+  {
+    "id": "column.public.notification_source_tombstones.expires_at",
+    "label": "Add column \"expires_at\" to \"notification_source_tombstones\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "expires_at",
+        "table": "notification_source_tombstones"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"expires_at\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_source_tombstones",
+          "expires_at"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"expires_at\"",
+        "sql": "ALTER TABLE \"public\".\"notification_source_tombstones\" ADD COLUMN \"expires_at\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"expires_at\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_source_tombstones",
+          "expires_at"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_source_tombstones.notification_source_tombstones_expiry_idx",
+    "label": "Create index \"notification_source_tombstones_expiry_idx\" on \"notification_source_tombstones\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_source_tombstones_expiry_idx",
+        "table": "notification_source_tombstones"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_source_tombstones_expiry_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_source_tombstones_expiry_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_source_tombstones_expiry_idx\"",
+        "sql": "CREATE INDEX \"notification_source_tombstones_expiry_idx\" ON \"public\".\"notification_source_tombstones\" (\"expires_at\", \"source_key\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_source_tombstones_expiry_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_source_tombstones_expiry_idx\""
+        ]
+      }
+    ]
+  }
+]

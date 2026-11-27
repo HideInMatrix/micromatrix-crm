@@ -254,7 +254,7 @@ async function main() {
         }),
       )
       process.env.CRM_NOTIFICATION_AGGREGATION = '1'
-      // WeCom only: system switch stays off; single-item preserves original.
+      // WeCom only: system switch stays off; delayed singleton is a safe summary.
       await orm.MessageTaskSettings.where({ tenantId, event: 'CUSTOMER_ADD' }).update({
         systemEnabled: false,
       })
@@ -272,9 +272,16 @@ async function main() {
       await waitSealed()
       await waitSent()
       assert.equal((await systemRows()).length, 2)
-      const single = (await deliveryRows()).find((row) => row.title === 'single fixture')
-      assert.equal(single?.link, '/customers?id=fixture-single')
-      assert.equal(single?.content, 'original content')
+      const singleBatch = (await batches()).find(
+        (row) =>
+          row.channel === 'WECOM' && row.category === 'CUSTOMER_ACTIVITY' && row.itemCount === 1,
+      )
+      assert.ok(singleBatch?.outputId)
+      const single = (await deliveryRows()).find((row) => row.id === singleBatch.outputId)
+      assert.equal(single?.link, '/notifications/batches/' + singleBatch.id)
+      assert.ok(single?.content?.includes('共 1 条通知'))
+      assert.ok(!JSON.stringify(single).includes('original content'))
+      assert.ok(!JSON.stringify(posts[2]).includes('single fixture'))
       assert.equal(posts.length, 3)
       // Direct notifications + important @ mention remain separately handled.
       await align()
@@ -311,13 +318,21 @@ async function main() {
       await waitSealed()
       await waitSent()
       assert.equal(posts.length, 4)
-      assert.equal(
-        (await deliveryRows()).find((row) => row.title === 'mapping fixture')?.status,
-        'DEAD',
+      assert.ok(
+        (await deliveryRows()).some(
+          (row) => row.status === 'DEAD' && row.errorCode === 'AGGREGATION_IDENTITY_CHANGED',
+        ),
+      )
+      assert.ok(
+        (
+          await orm.NotificationItem.where({ event: 'CLUE_ADD' })
+            .where((row) => row.suppressionReason.eq('CHANNEL_IDENTITY_CHANGED'))
+            .all()
+        ).length > 0,
       )
       assert.ok(
         (await systemRows()).some(
-          (row) => row.title === 'direct fixture' || row.content?.includes('共 2 条通知'),
+          (row) => row.content?.includes('共 1 条通知') || row.content?.includes('共 2 条通知'),
         ),
       )
       // System only; no WeCom candidate. Credentials revoked after admission
@@ -338,8 +353,13 @@ async function main() {
         title: 'system-only fixture',
       })
       await waitSealed()
-      assert.ok((await systemRows()).some((row) => row.title === 'system-only fixture'))
-      assert.ok(!(await deliveryRows()).some((row) => row.title === 'system-only fixture'))
+      const systemOnly = await orm.NotificationItem.where({ title: 'system-only fixture' }).all()
+      assert.equal(systemOnly.length, 1)
+      const systemOnlyBatch = await orm.NotificationBatch.where({
+        id: systemOnly[0]!.batchId,
+      }).first()
+      assert.equal(systemOnlyBatch?.channel, 'SYSTEM')
+      assert.ok(systemOnlyBatch?.outputId)
       await orm.MessageTaskSettings.where({ tenantId, event: 'CLUE_ADD' }).update({
         weComEnabled: true,
       })
@@ -357,8 +377,13 @@ async function main() {
       })
       await waitSealed()
       await waitSent()
+      const rotatedItems = await orm.NotificationItem.where({ title: 'rotated fixture' }).all()
+      const rotatedBatches = await orm.NotificationBatch.where((row) =>
+        row.id.in(rotatedItems.map((item) => item.batchId)),
+      ).all()
+      const rotated = rotatedBatches.find((row) => row.channel === 'WECOM')!
       assert.equal(
-        (await deliveryRows()).find((row) => row.title === 'rotated fixture')?.status,
+        (await deliveryRows()).find((row) => row.id === rotated.outputId)?.status,
         'DEAD',
       )
       assert.equal(posts.length, 4)

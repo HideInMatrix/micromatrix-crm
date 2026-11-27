@@ -115,3 +115,25 @@ Bootstrap Seed 只在空安装时补齐基础数据和初始管理员；检测�
 ## 10. v0.2.52 聚合阶段发布保护
 
 v0.2.52 包含新增通知批次/明细表及 PC/H5 明细入口，迁移 `20261126T0958_add_notification_aggregation` 仅新增数据库结构。部署前备份 PostgreSQL，统一 API、Migration、Worker、Web 版本并确认 migration 成功。API 和 Worker 保持 `CRM_NOTIFICATION_AGGREGATION=0`（未设置等同关闭），不得在可靠性、浏览器、真实渠道及性能验收完成前启用。关闭仅停止新明细入窗，已有批次仍恢复消费；不需要删除或重发历史通知。详情见 [Messaging 设计](./specs/messaging/design.md)。
+
+## 11. v0.2.53 可靠性与性能阶段发布
+
+本版本包含 R8.8.1–R8.8.6、R8.9 与 R8.10：持久化封批退避、投递代次隔离、企微频控、部分禁用抑制、安全详情投影、生命周期及用户确认的去重凭据清理、批量聚合写入优化。七项新增迁移均为增量结构变更，正式迁移图目标为 `d42f976229912985a97851f800785770ca8d00dab8243e56e5466526e1030df5`。已通过隔离数据库迁移、全仓构建及真实服务回归。具体测试口径见 [Messaging 设计 §10.12–10.14](./specs/messaging/design.md)。
+
+生产首发保持 API 与 Worker 配置一致：
+
+```env
+APP_VERSION=v0.2.53
+CRM_NOTIFICATION_AGGREGATION=0
+CRM_WECOM_RATE_LIMIT=0
+CRM_NOTIFICATION_RETENTION=0
+CRM_NOTIFICATION_DEDUP_RETENTION_DAYS=30
+```
+
+最后一个参数只决定最早可手动清理的时间，绝不触发自动删除去重凭据。已删除身份的孤儿清理独立于到期归档开关。不要在未验证真实应用额度前启用频控；不要将隔离 50 RPS × 60 秒结果解释为生产服务器长期容量。
+
+1. 确认三个目标版本镜像发布成功，备份目标 PostgreSQL，核对当前迁移状态。
+2. 停止旧版本 API/Worker 的业务写入和消费，避免新旧投递代次机制混用；统一更新 Migration、API、Worker、Web 至同一 Tag。
+3. 运行正式 Migration 服务，确认退出码为 0、结构验证成功后再启动新版本 API/Worker/Web。
+4. 检查健康状态、Worker 日志、PC/H5 与手动清理预览；先做低负载业务回归和真实企微终端收件核对，禁止未经授权的生产压测或历史任务重放。
+5. 真实企微额度、SSO、生产资源及启用聚合后的表现另行验收。Tag 发布不自动部署；不在故障时盲目回滚数据库或混跑旧 Worker。

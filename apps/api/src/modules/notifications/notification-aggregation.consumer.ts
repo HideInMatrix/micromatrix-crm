@@ -8,12 +8,12 @@ import {
   NotificationAggregationStore,
   type SealedOutputWriter,
 } from './notification-aggregation.store'
+import { projectAggregationItems } from './notification-aggregation-projection'
 import { AGGREGATED_SOURCE, buildAggregationSummary } from './notification-aggregation-runtime'
 
 @Injectable()
 export class NotificationAggregationConsumer {
   private readonly logger = new Logger(NotificationAggregationConsumer.name)
-  private cursor = 0
 
   constructor(
     private readonly prisma: PrismaService,
@@ -23,8 +23,9 @@ export class NotificationAggregationConsumer {
   ) {}
 
   private readonly writeOutput: SealedOutputWriter = async (tx, batch, items) => {
-    const summary = buildAggregationSummary(batch, items)
-    const first = items[0]!
+    const active = await projectAggregationItems(tx, batch, items)
+    if (!active.length) return null
+    const summary = buildAggregationSummary(batch, active)
     if (batch.channel === 'SYSTEM') {
       return (
         await tx.orm.public.Notifications.create({
@@ -35,8 +36,8 @@ export class NotificationAggregationConsumer {
           content: summary.content,
           link: summary.link,
           linkLabel: summary.linkLabel,
-          sourceType: items.length === 1 ? first.sourceType : AGGREGATED_SOURCE,
-          sourceId: items.length === 1 ? first.sourceId : batch.id,
+          sourceType: AGGREGATED_SOURCE,
+          sourceId: batch.id,
         })
       ).id
     }
@@ -61,12 +62,8 @@ export class NotificationAggregationConsumer {
 
   async drain() {
     const start = performance.now()
-    // Bounded scan; rotate across the oldest 200 candidates so a failed
-    // writer does not continually starve all healthy candidates in that page.
-    const candidates = await this.store.dueIds(200)
-    const offset = candidates.length ? this.cursor % candidates.length : 0
-    const ids = [...candidates.slice(offset), ...candidates.slice(0, offset)].slice(0, 50)
-    this.cursor += ids.length
+    // Deferred and quarantined batches do not occupy the normal candidate page.
+    const ids = await this.store.dueIds(50)
     const metrics = {
       scanned: ids.length,
       sealed: 0,
@@ -75,6 +72,7 @@ export class NotificationAggregationConsumer {
       items: 0,
       failed: 0,
       publishFailures: 0,
+      suppressedBatches: 0,
     }
     for (let i = 0; i < ids.length; i += 4) {
       await Promise.all(
@@ -89,6 +87,10 @@ export class NotificationAggregationConsumer {
           if (!result) return
           metrics.sealed++
           metrics.items += result.itemCount
+          if (!result.outputId) {
+            metrics.suppressedBatches++
+            return
+          }
           try {
             if (result.channel === 'SYSTEM') {
               metrics.system++
@@ -109,7 +111,8 @@ export class NotificationAggregationConsumer {
         }),
       )
     }
-    if (metrics.failed) this.logger.warn(`通知聚合封批失败 ${metrics.failed} 批，保留待重试`)
+    if (metrics.failed)
+      this.logger.warn(`通知聚合封批失败 ${metrics.failed} 批，已尝试记录持久化退避或隔离状态`)
     if (process.env.CRM_EXTERNAL_EVENT_PERF === '1' && metrics.scanned)
       this.logger.log(
         JSON.stringify({

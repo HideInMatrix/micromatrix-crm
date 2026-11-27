@@ -8,7 +8,7 @@ import { Settings } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extractErrorMessage } from '@/api/http'
-import { messageSettingApi } from '@/api/system'
+import { messageSettingApi, notificationDedupApi } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 import AnnouncementList from './components/AnnouncementList.vue'
 import MessageConfigDrawer from './components/MessageConfigDrawer.vue'
@@ -35,6 +35,44 @@ const weComGate = ref<MessageChannelGateVO | null>(null)
 const dingTalkGate = ref<MessageChannelGateVO | null>(null)
 const larkGate = ref<MessageChannelGateVO | null>(null)
 const canUpdate = computed(() => auth.hasPerm('system:message:update'))
+const dedupCleaning = ref(false)
+async function confirmDedupCleanup() {
+  if (!canUpdate.value || dedupCleaning.value) return
+  dedupCleaning.value = true
+  try {
+    const { data: preview } = await notificationDedupApi.preview()
+    if (!preview.count) {
+      ElMessage.info('当前企业没有可清理的到期去重凭据')
+      return
+    }
+    const accepted = await ElMessageBox.confirm(
+      `本次可清理 ${preview.count.toLocaleString()} 条到期去重凭据。${preview.hasMore ? '还有更多到期记录，本次仅清理预览的这一批。' : ''}清理不可撤销，旧来源直接重放可能重新生成通知。原始业务记录、通知摘要及投递历史不会被删除。确认清理？`,
+      '确认清理去重凭据',
+      {
+        type: 'warning',
+        confirmButtonText: '确认清理',
+        cancelButtonText: '取消',
+        closeOnClickModal: false,
+      },
+    )
+      .then(() => true)
+      .catch(() => false)
+    if (!accepted) return
+    const { data } = await notificationDedupApi.cleanup({
+      confirm: true,
+      count: preview.count,
+      fingerprint: preview.fingerprint,
+    })
+    ElMessage.success(
+      `已清理 ${data.deleted.toLocaleString()} 条去重凭据${preview.hasMore ? '，如需继续请再次预览并确认' : ''}`,
+    )
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  } finally {
+    dedupCleaning.value = false
+  }
+}
+
 const rows = computed<MessageTableRow[]>(() =>
   groups.value.flatMap((group) =>
     group.items.map((item, index) => ({
@@ -305,6 +343,9 @@ onMounted(() => {
         </div>
       </div>
       <div class="flex gap-2">
+        <el-button v-if="canUpdate" :loading="dedupCleaning" @click="confirmDedupCleanup">
+          清理去重凭据
+        </el-button>
         <el-button v-if="weComGate?.configured" @click="openDeliveries('WECOM')">
           企业微信投递记录
         </el-button>

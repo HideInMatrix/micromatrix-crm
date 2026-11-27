@@ -76,7 +76,10 @@ onBeforeUnmount(() => {
             {{ new Date(detail.windowEnd).toLocaleTimeString() }}
           </div>
         </div>
-        <van-empty v-if="!detail.items.length" description="暂无明细" />
+        <van-empty
+          v-if="!detail.items.length"
+          :description="detail.detailsArchivedAt ? '明细已超过保留期限' : '暂无明细'"
+        />
         <div
           v-for="item in detail.items"
           :key="item.id"
@@ -91,7 +94,12 @@ onBeforeUnmount(() => {
             }}</span>
           </div>
           <template v-if="item.accessible">
-            <div v-if="item.title" class="mt-2 text-sm font-medium">{{ item.title }}</div>
+            <div
+              v-if="item.title && item.title !== item.eventName"
+              class="mt-2 text-sm font-medium"
+            >
+              {{ item.title }}
+            </div>
             <div
               v-if="item.content"
               class="mt-2 text-sm whitespace-pre-wrap break-words text-[var(--text-n4)]"

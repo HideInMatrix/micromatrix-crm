@@ -54,6 +54,8 @@ export interface WeComMessageResult {
   providerCode: number | null
   providerMessageId: string | null
   message: string
+  deferred?: 'rate_wait' | 'stale_claim' | 'suppressed'
+  rateLimited?: boolean
 }
 
 interface WeComResponse {
@@ -272,6 +274,7 @@ export class WeComClient {
   async sendTextMessage(
     input: WeComMessageInput,
     perf?: DeliveryPerformance,
+    beforePost?: () => Promise<'granted' | 'rate_wait' | 'stale_claim' | 'suppressed'>,
   ): Promise<WeComMessageResult> {
     const getToken = () => this.messageToken(input, perf)
     const { key, response: tokenResponse } = await (perf
@@ -286,6 +289,17 @@ export class WeComClient {
     }
     const accessToken = tokenResponse.data.accessToken
     if (!accessToken) return this.messageFailure(null, '企业微信未返回 access token', false)
+
+    // Admission is outside the network exception handler: no POST if quota
+    // persistence failed, and do not misclassify it as a provider error.
+    if (beforePost) {
+      const admission = await beforePost()
+      if (admission !== 'granted')
+        return {
+          ...this.messageFailure(null, '企业微信发送等待配额或认领已失效', false),
+          deferred: admission,
+        }
+    }
 
     const url = this.apiUrl('/cgi-bin/message/send')
     url.searchParams.set('access_token', accessToken)
@@ -326,11 +340,14 @@ export class WeComClient {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
         if (!response.ok) {
-          return this.messageFailure(
-            null,
-            `企业微信服务响应异常（HTTP ${response.status}）`,
-            response.status === 429 || response.status >= 500,
-          )
+          return {
+            ...this.messageFailure(
+              null,
+              `企业微信服务响应异常（HTTP ${response.status}）`,
+              response.status === 429 || response.status >= 500,
+            ),
+            ...(response.status === 429 ? { rateLimited: true } : {}),
+          }
         }
         const raw: unknown = await response.json()
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {

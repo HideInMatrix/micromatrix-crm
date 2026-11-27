@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
 
 import { RolesService } from '../roles/roles.service'
+import { lockNotificationRecipient } from '../notifications/notification-lifecycle-locks'
 import { CreateMemberDto, QueryMembersDto, UpdateMemberDto } from './dto/member.dto'
 
 type MemberRow = {
@@ -236,12 +237,7 @@ export class MembersService {
     const customerIds = await this.prisma.client.orm.public.Customer.where({ organizationId })
       .select('id')
       .all()
-    const [
-      customers,
-      clues,
-      followUps,
-      collaborations,
-    ] = await Promise.all([
+    const [customers, clues, followUps, collaborations] = await Promise.all([
       this.prisma.client.orm.public.Customer.where({ organizationId, owner: memberId }).aggregate(
         (agg) => ({ count: agg.count() }),
       ),
@@ -261,12 +257,7 @@ export class MembersService {
             .aggregate((agg) => ({ count: agg.count() }))
         : Promise.resolve({ count: 0 }),
     ])
-    const referenceCounts = [
-      customers.count,
-      clues.count,
-      followUps.count,
-      collaborations.count,
-    ]
+    const referenceCounts = [customers.count, clues.count, followUps.count, collaborations.count]
     if (referenceCounts.some((count) => count > 0)) {
       throw new BadRequestException('成员仍有关联业务数据，请先转移负责人或停用账号')
     }
@@ -276,6 +267,7 @@ export class MembersService {
     ).map(({ id: subordinateId }) => subordinateId)
 
     await this.prisma.client.transaction(async (tx) => {
+      await lockNotificationRecipient(this.prisma.client, tx, tenantId, id)
       const updatedAt = nowInstant()
       await tx.orm.public.Departments.where({ tenantId, leaderId: id }).updateAndCount({
         leaderId: null,

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
+import { or } from '@prisma/orm-postgres/orm-client'
 import {
   notificationAggregationIdentity,
   resolveNotificationAggregationPolicy,
@@ -9,6 +10,7 @@ import {
 import type { PrismaClient } from '../../prisma/db'
 import { instantFromEpochMilliseconds, type nowInstant } from '../../prisma/temporal'
 import { PrismaService } from '../../prisma.service'
+import { notificationRecipientLock } from './notification-lifecycle-locks'
 
 type Transaction = Parameters<Parameters<PrismaClient['transaction']>[0]>[0]
 type Instant = ReturnType<typeof nowInstant>
@@ -39,13 +41,21 @@ export type AggregationItemInput = Channel & {
   occurredAt: Instant
 }
 
+type AppendResult = { batchId: string; itemId: string; inserted: boolean } | null
+type PendingAppend = {
+  input: AggregationItemInput
+  policy: ReturnType<typeof resolveNotificationAggregationPolicy>
+  sourceKey: string
+  indices: number[]
+}
+
 type Batch = NonNullable<Awaited<ReturnType<NotificationAggregationStore['findBatch']>>>
 type Item = Awaited<ReturnType<NotificationAggregationStore['findItems']>>[number]
 export type SealedOutputWriter = (
   tx: Transaction,
   batch: Batch,
   items: readonly Item[],
-) => Promise<string>
+) => Promise<string | null>
 
 function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -58,6 +68,9 @@ function digest(value: unknown): string {
  */
 @Injectable()
 export class NotificationAggregationStore {
+  private readonly logger = new Logger(NotificationAggregationStore.name)
+  private static readonly SEAL_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000]
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async databaseTime(tx: Transaction): Promise<number> {
@@ -90,147 +103,247 @@ export class NotificationAggregationStore {
       .all()
   }
 
-  /** Stable recipient lock order for grouped caller transactions. Seal only takes
-   * a scope lock; it never waits for a recipient lock. */
-  async appendMany(tx: Transaction, inputs: AggregationItemInput[]) {
-    const keys = [...new Set(inputs.map((input) => this.recipientLock(input)))].sort()
-    for (const key of keys) await this.lock(tx, key)
-    const results = []
-    for (const input of inputs) results.push(await this.append(tx, input))
+  /** Stable lock order across callers. Group reads/writes are transaction-local;
+   * never reuse permission or identity checks across transactions. */
+  async appendMany(tx: Transaction, inputs: AggregationItemInput[]): Promise<AppendResult[]> {
+    const results: AppendResult[] = inputs.map(() => null)
+    const unique = new Map<string, PendingAppend>()
+    for (const [index, input] of inputs.entries()) {
+      const policy = resolveNotificationAggregationPolicy(input)
+      if (policy.aggregationMode === 'NONE') continue
+      if (!input.intentId) throw new Error('Notification aggregation requires a stable intent id')
+      const sourceKey = digest([
+        input.tenantId,
+        input.recipientId,
+        input.channel,
+        input.event,
+        input.intentId,
+      ])
+      const previous = unique.get(sourceKey)
+      if (previous) previous.indices.push(index)
+      else unique.set(sourceKey, { input, policy, sourceKey, indices: [index] })
+    }
+    if (!unique.size) return results
+    const entries = [...unique.values()]
+    const recipientKeys = [
+      ...new Set(
+        entries.map((e) => notificationRecipientLock(e.input.tenantId, e.input.recipientId)),
+      ),
+    ].sort()
+    for (const key of recipientKeys) await this.lock(tx, key)
+    // Keep source locking compatible with the existing single-item path and
+    // all deployed writers. A recipient lock precedes every source/scope lock.
+    for (const key of [...unique.keys()].sort()) await this.lock(tx, 'notification-source:' + key)
+
+    const orm = tx.orm.public
+    const known = new Map<string, { batchId: string; itemId: string }>()
+    const sources = [...unique.keys()]
+    // Bound query parameters independently of caller group size.
+    for (let i = 0; i < sources.length; i += 500) {
+      const keys = sources.slice(i, i + 500)
+      const rows = await orm.NotificationItem.where((row) => row.sourceKey.in(keys))
+        .select('sourceKey', 'batchId', 'id')
+        .all()
+      for (const row of rows) known.set(row.sourceKey, { batchId: row.batchId, itemId: row.id })
+      const missing = keys.filter((key) => !known.has(key))
+      if (missing.length) {
+        // Expiry is only eligibility for user-confirmed cleanup, never a reason
+        // to bypass an existing tombstone.
+        const tombstones = await orm.NotificationSourceTombstone.where((row) =>
+          row.sourceKey.in(missing),
+        )
+          .select('sourceKey', 'batchId', 'itemId')
+          .all()
+        for (const row of tombstones)
+          known.set(row.sourceKey, { batchId: row.batchId, itemId: row.itemId })
+      }
+    }
+    const complete = (
+      entry: PendingAppend,
+      ids: { batchId: string; itemId: string },
+      inserted: boolean,
+    ) => {
+      for (const [offset, index] of entry.indices.entries())
+        results[index] = { ...ids, inserted: inserted && offset === 0 }
+    }
+    const pending: PendingAppend[] = []
+    for (const entry of entries) {
+      const existing = known.get(entry.sourceKey)
+      if (existing) complete(entry, existing, false)
+      else pending.push(entry)
+    }
+    if (!pending.length) return results
+
+    // Fresh DB reads once per exact identity in this transaction. Do not
+    // collapse across tenant, member, integration, credential or subject.
+    const tenants = new Map<string, { enterpriseSyncResource: string | null }>()
+    const recipients = new Set<string>()
+    const integrations = new Set<string>()
+    const mappings = new Set<string>()
+    const groups = new Map<string, PendingAppend[]>()
+    for (const entry of pending) {
+      const { input, policy } = entry
+      let tenant = tenants.get(input.tenantId)
+      if (!tenant) {
+        const row = await orm.Tenants.where({ id: input.tenantId, status: 'ACTIVE' })
+          .select('enterpriseSyncResource')
+          .first()
+        if (!row) throw new Error('Notification aggregation tenant unavailable')
+        tenant = row
+        tenants.set(input.tenantId, tenant)
+      }
+      const memberKey = JSON.stringify([input.tenantId, input.recipientId])
+      if (!recipients.has(memberKey)) {
+        const recipient = await orm.Users.where({
+          id: input.recipientId,
+          tenantId: input.tenantId,
+          status: 'ACTIVE',
+        })
+          .select('id')
+          .first()
+        if (!recipient) throw new Error('Notification aggregation recipient unavailable')
+        recipients.add(memberKey)
+      }
+      if (input.channel === 'WECOM') {
+        if (tenant.enterpriseSyncResource !== 'WECOM')
+          throw new Error('Notification aggregation channel unavailable')
+        const integrationKey = JSON.stringify([
+          input.tenantId,
+          input.integrationId,
+          input.credentialVersion,
+        ])
+        if (!integrations.has(integrationKey)) {
+          const integration = await orm.EnterpriseIntegrations.where({
+            id: input.integrationId,
+            tenantId: input.tenantId,
+            provider: 'WECOM',
+            credentialVersion: input.credentialVersion,
+            syncEnabled: true,
+            lastTestSucceeded: true,
+          })
+            .select('id')
+            .first()
+          if (!integration) throw new Error('Notification aggregation channel unavailable')
+          integrations.add(integrationKey)
+        }
+        const mappingKey = JSON.stringify([
+          input.tenantId,
+          input.recipientId,
+          input.externalSubject,
+        ])
+        if (!mappings.has(mappingKey)) {
+          const mapping = await orm.ExternalUserMappings.where({
+            tenantId: input.tenantId,
+            userId: input.recipientId,
+            provider: 'WECOM',
+            active: true,
+            externalId: input.externalSubject,
+          })
+            .select('id')
+            .first()
+          if (!mapping) throw new Error('Notification aggregation channel unavailable')
+          mappings.add(mappingKey)
+        }
+      }
+      // Zero is a grouping placeholder only, never a persisted receive time.
+      const identity = notificationAggregationIdentity({ ...input, receivedAtMs: 0 }, policy)
+      if (!identity) throw new Error('Invalid notification aggregation scope')
+      const group = groups.get(identity.key) ?? []
+      group.push(entry)
+      groups.set(identity.key, group)
+    }
+    for (const group of groups.values()) {
+      let offset = 0
+      let windowRetries = 0
+      const { input, policy } = group[0]!
+      while (offset < group.length) {
+        const identity = notificationAggregationIdentity(
+          { ...input, receivedAtMs: await this.databaseTime(tx) },
+          policy,
+        )
+        if (!identity) throw new Error('Invalid notification aggregation scope')
+        const scopeKey = digest(identity.key)
+        await this.lock(tx, 'notification-scope:' + scopeKey)
+        const latest = await orm.NotificationBatch.where({ scopeKey })
+          .orderBy((row) => row.shard.desc())
+          .first()
+        const receivedAtMs = await this.databaseTime(tx)
+        if (receivedAtMs < identity.windowStartMs || receivedAtMs >= identity.windowEndMs) {
+          if (++windowRetries >= 3)
+            throw new Error('Notification aggregation window advanced; retry durable intent')
+          continue
+        }
+        windowRetries = 0
+        const batch =
+          latest &&
+          !latest.sealedAt &&
+          !latest.sealDeadAt &&
+          latest.sealFailures === 0 &&
+          !latest.detailsArchivedAt &&
+          latest.itemCount < policy.maxItems
+            ? latest
+            : await orm.NotificationBatch.create({
+                scopeKey,
+                shard: latest ? latest.shard + 1 : 0,
+                tenantId: input.tenantId,
+                recipientId: input.recipientId,
+                channel: input.channel,
+                category: policy.category,
+                aggregationGroup: policy.aggregationGroup,
+                aggregationMode: policy.aggregationMode,
+                priority: policy.priority,
+                language: input.language,
+                integrationId: input.channel === 'WECOM' ? input.integrationId : null,
+                credentialVersion: input.channel === 'WECOM' ? input.credentialVersion : null,
+                externalSubject: input.channel === 'WECOM' ? input.externalSubject : null,
+                windowStart: instantFromEpochMilliseconds(identity.windowStartMs),
+                windowEnd: instantFromEpochMilliseconds(identity.windowEndMs),
+                createdAt: instantFromEpochMilliseconds(receivedAtMs),
+              })
+        const take = Math.min(group.length - offset, policy.maxItems - batch.itemCount)
+        if (take <= 0) throw new Error('Notification aggregation invalid shard capacity')
+        const chunk = group.slice(offset, offset + take)
+        const rows = await orm.NotificationItem.createAll(
+          chunk.map(({ input: item, sourceKey }) => ({
+            batchId: batch.id,
+            sourceKey,
+            event: item.event,
+            _type: item.type,
+            title: item.title,
+            content: item.content ?? null,
+            link: item.link ?? null,
+            linkLabel: item.linkLabel ?? null,
+            sourceType: item.sourceType ?? null,
+            sourceId: item.sourceId ?? null,
+            occurredAt: item.occurredAt,
+            createdAt: instantFromEpochMilliseconds(receivedAtMs),
+          })),
+        )
+        if (rows.length !== chunk.length)
+          throw new Error('Notification aggregation item insert mismatch')
+        const bySource = new Map(rows.map((row) => [row.sourceKey, row.id]))
+        const updated = await orm.NotificationBatch.where({
+          id: batch.id,
+          itemCount: batch.itemCount,
+          sealFailures: 0,
+        })
+          .where((row) => row.sealedAt.isNull())
+          .where((row) => row.sealDeadAt.isNull())
+          .updateAndCount({ itemCount: batch.itemCount + take })
+        if (updated !== 1) throw new Error('Notification aggregation batch changed')
+        for (const entry of chunk) {
+          const itemId = bySource.get(entry.sourceKey)
+          if (!itemId) throw new Error('Notification aggregation missing inserted source')
+          complete(entry, { batchId: batch.id, itemId }, true)
+        }
+        offset += take
+      }
+    }
     return results
   }
 
-  private recipientLock(input: AggregationItemInput): string {
-    return 'notification-recipient:' + digest([input.tenantId, input.recipientId])
-  }
-
-  async append(
-    tx: Transaction,
-    input: AggregationItemInput,
-  ): Promise<{
-    batchId: string
-    itemId: string
-    inserted: boolean
-  } | null> {
-    const policy = resolveNotificationAggregationPolicy(input)
-    if (policy.aggregationMode === 'NONE') return null
-    if (!input.intentId) throw new Error('Notification aggregation requires a stable intent id')
-    const sourceKey = digest([
-      input.tenantId,
-      input.recipientId,
-      input.channel,
-      input.event,
-      input.intentId,
-    ])
-    await this.lock(tx, this.recipientLock(input))
-    // Source lock is independent of the window so retries across windows are idempotent.
-    await this.lock(tx, 'notification-source:' + sourceKey)
-    const existing = await tx.orm.public.NotificationItem.where({ sourceKey }).first()
-    if (existing) {
-      return { batchId: existing.batchId, itemId: existing.id, inserted: false }
-    }
-
-    const recipient = await tx.orm.public.Users.where({
-      id: input.recipientId,
-      tenantId: input.tenantId,
-      status: 'ACTIVE',
-    })
-      .select('id')
-      .first()
-    if (!recipient) throw new Error('Notification aggregation recipient unavailable')
-
-    if (input.channel === 'WECOM') {
-      const [integration, mapping, tenant] = await Promise.all([
-        tx.orm.public.EnterpriseIntegrations.where({
-          id: input.integrationId,
-          tenantId: input.tenantId,
-          provider: 'WECOM',
-          credentialVersion: input.credentialVersion,
-          syncEnabled: true,
-          lastTestSucceeded: true,
-        })
-          .select('id')
-          .first(),
-        tx.orm.public.ExternalUserMappings.where({
-          tenantId: input.tenantId,
-          userId: input.recipientId,
-          provider: 'WECOM',
-          active: true,
-          externalId: input.externalSubject,
-        })
-          .select('id')
-          .first(),
-        tx.orm.public.Tenants.where({
-          id: input.tenantId,
-          enterpriseSyncResource: 'WECOM',
-        })
-          .select('id')
-          .first(),
-      ])
-      if (!integration || !mapping || !tenant)
-        throw new Error('Notification aggregation channel unavailable')
-    }
-
-    // If waiting for a contended window lock crossed its deadline, move to the
-    // current database window. Never append to a sealed or already expired batch.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const identity = notificationAggregationIdentity(
-        {
-          ...input,
-          receivedAtMs: await this.databaseTime(tx),
-        },
-        policy,
-      )
-      if (!identity) throw new Error('Invalid notification aggregation scope')
-      const scopeKey = digest(identity.key)
-      await this.lock(tx, 'notification-scope:' + scopeKey)
-      const receivedAtMs = await this.databaseTime(tx)
-      if (receivedAtMs < identity.windowStartMs || receivedAtMs >= identity.windowEndMs) continue
-      const latest = await tx.orm.public.NotificationBatch.where({ scopeKey })
-        .orderBy((row) => row.shard.desc())
-        .first()
-      const batch =
-        latest && !latest.sealedAt && latest.itemCount < policy.maxItems
-          ? latest
-          : await tx.orm.public.NotificationBatch.create({
-              scopeKey,
-              shard: latest ? latest.shard + 1 : 0,
-              tenantId: input.tenantId,
-              recipientId: input.recipientId,
-              channel: input.channel,
-              category: policy.category,
-              aggregationGroup: policy.aggregationGroup,
-              aggregationMode: policy.aggregationMode,
-              priority: policy.priority,
-              language: input.language,
-              integrationId: input.channel === 'WECOM' ? input.integrationId : null,
-              credentialVersion: input.channel === 'WECOM' ? input.credentialVersion : null,
-              externalSubject: input.channel === 'WECOM' ? input.externalSubject : null,
-              windowStart: instantFromEpochMilliseconds(identity.windowStartMs),
-              windowEnd: instantFromEpochMilliseconds(identity.windowEndMs),
-              createdAt: instantFromEpochMilliseconds(receivedAtMs),
-            })
-      const item = await tx.orm.public.NotificationItem.create({
-        batchId: batch.id,
-        sourceKey,
-        event: input.event,
-        _type: input.type,
-        title: input.title,
-        content: input.content ?? null,
-        link: input.link ?? null,
-        linkLabel: input.linkLabel ?? null,
-        sourceType: input.sourceType ?? null,
-        sourceId: input.sourceId ?? null,
-        occurredAt: input.occurredAt,
-        createdAt: instantFromEpochMilliseconds(receivedAtMs),
-      })
-      const updated = await tx.orm.public.NotificationBatch.where({ id: batch.id })
-        .where((row) => row.sealedAt.isNull())
-        .updateAndCount({ itemCount: batch.itemCount + 1 })
-      if (updated !== 1) throw new Error('Notification aggregation batch changed')
-      return { batchId: batch.id, itemId: item.id, inserted: true }
-    }
-    throw new Error('Notification aggregation window advanced; retry durable intent')
+  async append(tx: Transaction, input: AggregationItemInput): Promise<AppendResult> {
+    return (await this.appendMany(tx, [input]))[0]!
   }
 
   /** Bounded candidates, not claims. Competing scanners must call seal(). */
@@ -240,7 +353,9 @@ export class NotificationAggregationStore {
     return this.prisma.client.transaction(async (tx) => {
       const now = instantFromEpochMilliseconds(await this.databaseTime(tx))
       const rows = await tx.orm.public.NotificationBatch.where((row) => row.sealedAt.isNull())
+        .where((row) => row.sealDeadAt.isNull())
         .where((row) => row.windowEnd.lte(now))
+        .where((row) => or(row.nextSealAttemptAt.isNull(), row.nextSealAttemptAt.lte(now)))
         .select('id')
         .orderBy((row) => row.windowEnd.asc())
         .orderBy((row) => row.id.asc())
@@ -260,50 +375,116 @@ export class NotificationAggregationStore {
     writeOutput: SealedOutputWriter,
   ): Promise<{
     batchId: string
-    outputId: string
+    outputId: string | null
     channel: string
     itemCount: number
   } | null> {
-    return this.prisma.client.transaction(async (tx) => {
-      const candidate = await this.findBatch(tx, id)
-      if (!candidate || candidate.sealedAt) return null
-      await this.lock(tx, 'notification-scope:' + candidate.scopeKey)
-      const batch = await this.findBatch(tx, id)
-      const now = await this.databaseTime(tx)
-      if (!batch || batch.sealedAt || batch.windowEnd.epochMilliseconds > now) return null
-      const items = await this.findItems(tx, id)
-      if (!items.length || items.length !== batch.itemCount) {
-        throw new Error('Notification aggregation item count mismatch')
-      }
-      const outputId = await writeOutput(tx, batch, items)
-      // Validate output association against the original tenant/member/channel.
-      const output =
-        batch.channel === 'SYSTEM'
-          ? await tx.orm.public.Notifications.where({
-              id: outputId,
-              tenantId: batch.tenantId,
-              userId: batch.recipientId,
-            })
-              .select('id')
-              .first()
-          : batch.channel === 'WECOM'
-            ? await tx.orm.public.MessageDeliveries.where({
+    let observed: { scopeKey: string; failures: number } | undefined
+    try {
+      return await this.prisma.client.transaction(async (tx) => {
+        const candidate = await this.findBatch(tx, id)
+        if (!candidate || candidate.sealedAt || candidate.sealDeadAt) return null
+        await this.lock(tx, notificationRecipientLock(candidate.tenantId, candidate.recipientId))
+        await this.lock(tx, 'notification-scope:' + candidate.scopeKey)
+        const batch = await this.findBatch(tx, id)
+        const now = await this.databaseTime(tx)
+        if (
+          !batch ||
+          batch.sealedAt ||
+          batch.sealDeadAt ||
+          batch.windowEnd.epochMilliseconds > now ||
+          (batch.nextSealAttemptAt && batch.nextSealAttemptAt.epochMilliseconds > now)
+        )
+          return null
+        observed = { scopeKey: batch.scopeKey, failures: batch.sealFailures }
+        const items = await this.findItems(tx, id)
+        if (!items.length || items.length !== batch.itemCount) {
+          throw new Error('Notification aggregation item count mismatch')
+        }
+        const outputId = await writeOutput(tx, batch, items)
+        // Validate output association against the original tenant/member/channel.
+        const output = !outputId
+          ? null
+          : batch.channel === 'SYSTEM'
+            ? await tx.orm.public.Notifications.where({
                 id: outputId,
                 tenantId: batch.tenantId,
                 userId: batch.recipientId,
-                channel: 'WECOM',
-                integrationId: batch.integrationId,
-                externalSubject: batch.externalSubject,
               })
                 .select('id')
                 .first()
-            : null
-      if (!output) throw new Error('Notification aggregation output scope mismatch')
-      const sealed = await tx.orm.public.NotificationBatch.where({ id })
+            : batch.channel === 'WECOM'
+              ? await tx.orm.public.MessageDeliveries.where({
+                  id: outputId,
+                  tenantId: batch.tenantId,
+                  userId: batch.recipientId,
+                  channel: 'WECOM',
+                  integrationId: batch.integrationId,
+                  externalSubject: batch.externalSubject,
+                })
+                  .select('id')
+                  .first()
+              : null
+        if (outputId && !output) throw new Error('Notification aggregation output scope mismatch')
+        if (!outputId) {
+          const remaining = await tx.orm.public.NotificationItem.where({ batchId: id })
+            .where((row) => row.suppressedAt.isNull())
+            .select('id')
+            .first()
+          if (remaining) throw new Error('Notification aggregation missing output for active items')
+        }
+        const sealed = await tx.orm.public.NotificationBatch.where({ id })
+          .where((row) => row.sealedAt.isNull())
+          .updateAndCount({
+            outputId,
+            sealedAt: instantFromEpochMilliseconds(now),
+            nextSealAttemptAt: null,
+            sealErrorCode: null,
+          })
+        if (sealed !== 1) throw new Error('Notification aggregation seal conflict')
+        return { batchId: id, outputId, channel: batch.channel, itemCount: items.length }
+      })
+    } catch (error) {
+      // The output transaction has rolled back. A separate transaction records
+      // the failure only if no competing worker already sealed/advanced it.
+      if (observed) {
+        try {
+          await this.recordSealFailure(id, observed)
+        } catch {
+          this.logger.warn('聚合封批失败状态未能持久化，等待数据库恢复')
+        }
+      }
+      throw error
+    }
+  }
+
+  private async recordSealFailure(
+    id: string,
+    observed: { scopeKey: string; failures: number },
+  ): Promise<void> {
+    await this.prisma.client.transaction(async (tx) => {
+      await this.lock(tx, 'notification-scope:' + observed.scopeKey)
+      const batch = await this.findBatch(tx, id)
+      if (
+        !batch ||
+        batch.sealedAt ||
+        batch.sealDeadAt ||
+        batch.scopeKey !== observed.scopeKey ||
+        batch.sealFailures !== observed.failures
+      )
+        return
+      const now = await this.databaseTime(tx)
+      const failures = batch.sealFailures + 1
+      const delay = NotificationAggregationStore.SEAL_BACKOFF_MS[failures - 1]
+      await tx.orm.public.NotificationBatch.where({ id, sealFailures: observed.failures })
         .where((row) => row.sealedAt.isNull())
-        .updateAndCount({ outputId, sealedAt: instantFromEpochMilliseconds(now) })
-      if (sealed !== 1) throw new Error('Notification aggregation seal conflict')
-      return { batchId: id, outputId, channel: batch.channel, itemCount: items.length }
+        .where((row) => row.sealDeadAt.isNull())
+        .updateAndCount({
+          sealFailures: failures,
+          nextSealAttemptAt: delay === undefined ? null : instantFromEpochMilliseconds(now + delay),
+          sealDeadAt: delay === undefined ? instantFromEpochMilliseconds(now) : null,
+          sealErrorCode: 'SEAL_TRANSACTION_FAILED',
+        })
     })
   }
 }

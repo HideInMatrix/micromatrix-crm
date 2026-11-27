@@ -7,6 +7,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PrismaModule } from './prisma.module.js'
 import { RedisModule } from './redis/redis.module'
 import { ExportWorkerModule } from './workers/export-worker.module'
+import { NotificationLifecycleWorkerService } from './workers/notification-lifecycle-worker.service'
+import { NotificationLifecycleService } from './modules/notifications/notification-lifecycle.service'
 import { NotificationAggregationWorkerService } from './workers/notification-aggregation-worker.service'
 import { ExternalEventNotificationWorkerService } from './workers/external-event-notification-worker.service'
 import { PoolRecycleWorkerModule } from './workers/pool-recycle-worker.module'
@@ -23,6 +25,11 @@ import { PoolRecycleWorkerModule } from './workers/pool-recycle-worker.module'
     ExportWorkerModule,
     PoolRecycleWorkerModule,
   ],
-  providers: [ExternalEventNotificationWorkerService, NotificationAggregationWorkerService],
+  providers: [
+    ExternalEventNotificationWorkerService,
+    NotificationAggregationWorkerService,
+    NotificationLifecycleService,
+    NotificationLifecycleWorkerService,
+  ],
 })
 export class WorkerAppModule {}

@@ -1,0 +1,41 @@
+[
+  {
+    "id": "index.message_deliveries.message_deliveries_channel_status_due_idx",
+    "label": "Create index \"message_deliveries_channel_status_due_idx\" on \"message_deliveries\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "message_deliveries_channel_status_due_idx",
+        "table": "message_deliveries"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"message_deliveries_channel_status_due_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"message_deliveries_channel_status_due_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"message_deliveries_channel_status_due_idx\"",
+        "sql": "CREATE INDEX \"message_deliveries_channel_status_due_idx\" ON \"public\".\"message_deliveries\" (\"channel\", \"status\", \"nextAttemptAt\", \"createdAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"message_deliveries_channel_status_due_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"message_deliveries_channel_status_due_idx\""
+        ]
+      }
+    ]
+  }
+]

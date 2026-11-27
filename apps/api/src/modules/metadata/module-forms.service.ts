@@ -833,32 +833,35 @@ export class ModuleFormsService {
     if (formKey === 'contact') {
       throw new BadRequestException('联系人模块已移除')
     }
+    // Serialize the bootstrap/repair path across API instances. Healthy
+    // initialized reads bypass ensureForm entirely. A tenant-wide lock (not
+    // one lock per form) also avoids opposite lead/customer lock order when
+    // the same write transaction needs multiple module forms.
+    const lockKey = 'module-form-bootstrap:' + organizationId
+    const lock = this.prisma.client.raw.sql`SELECT 1::int4 AS locked
+      FROM pg_advisory_xact_lock(hashtextextended(${lockKey},0))`.returnsRow({
+      locked: 'pg/int4@1',
+    })
+    for await (const _row of tx.query(lock.build())) break
     const now = BigInt(Date.now())
     let created = false
     let form = await tx.orm.public.SysModuleForm.where({
-      organizationId: organizationId,
-      formKey: formKey,
+      organizationId,
+      formKey,
     }).first()
     if (!form) {
-      try {
-        form = await tx.orm.public.SysModuleForm.create({
-          id: createLegacyId32(),
-          organizationId: organizationId,
-          formKey: formKey,
-          createTime: now,
-          updateTime: now,
-          createUser: actorId,
-          updateUser: actorId,
-        })
-        created = true
-      } catch (error) {
-        if ((error as { sqlState?: string }).sqlState !== '23505') throw error
-        form = await tx.orm.public.SysModuleForm.where({
-          organizationId: organizationId,
-          formKey: formKey,
-        }).first()
-        if (!form) throw error
-      }
+      // Do not catch a unique violation and continue an already aborted
+      // PostgreSQL transaction. Cooperating creators now share the same lock.
+      form = await tx.orm.public.SysModuleForm.create({
+        id: createLegacyId32(),
+        organizationId,
+        formKey,
+        createTime: now,
+        updateTime: now,
+        createUser: actorId,
+        updateUser: actorId,
+      })
+      created = true
     }
     await tx.orm.public.SysModuleFormBlob.upsert({
       create: { id: form.id, prop: '{}' },

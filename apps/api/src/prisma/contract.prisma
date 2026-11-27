@@ -1474,6 +1474,7 @@ namespace public {
     status            pg.enum(MessageDeliveryStatus)  @default("PENDING")
     attempts          Int                             @default(0)
     maxAttempts       Int                             @default(3)
+    claimToken        String?                         @map("claim_token")
     nextAttemptAt     Timestamptz(3)?
     providerMessageId String?
     errorCode         String?
@@ -1488,6 +1489,7 @@ namespace public {
     @@index([tenantId, event, createdAt], map: "message_deliveries_tenantId_event_createdAt_idx")
     @@index([tenantId, status, nextAttemptAt], map: "message_deliveries_tenantId_status_nextAttemptAt_idx")
     @@index([tenantId, userId, createdAt], map: "message_deliveries_tenantId_userId_createdAt_idx")
+    @@index([channel, status, nextAttemptAt, createdAt], map: "message_deliveries_channel_status_due_idx")
     @@map("message_deliveries")
   }
 
@@ -1899,6 +1901,45 @@ namespace public {
 
   // Durable notification intents are written in the same transaction as the external event.
   // One sealed batch produces one visible notification or one actual channel request.
+  model WeComSendReservation {
+    id          String         @id @default(cuid(2))
+    appKey      String         @map("app_key")
+    memberKey   String         @map("member_key")
+    reservedAt  Timestamptz(3) @map("reserved_at")
+
+    @@index([appKey, reservedAt], map: "wecom_send_reservations_app_time_idx")
+    @@index([memberKey, reservedAt], map: "wecom_send_reservations_member_time_idx")
+    @@index([reservedAt, id], map: "wecom_send_reservations_expiry_idx")
+    @@map("wecom_send_reservations")
+  }
+
+  model WeComRateCooldown {
+    appKey        String         @id @map("app_key")
+    blockedUntil  Timestamptz(3) @map("blocked_until")
+
+    @@index([blockedUntil], map: "wecom_rate_cooldowns_expiry_idx")
+    @@map("wecom_rate_cooldowns")
+  }
+
+  model NotificationSourceTombstone {
+    sourceKey String @id @map("source_key")
+    tenantId String? @map("tenant_id")
+    batchId String @map("batch_id")
+    itemId String @map("item_id")
+    expiresAt Timestamptz(3)? @map("expires_at")
+
+    @@index([expiresAt, sourceKey], map: "notification_source_tombstones_expiry_idx")
+    @@index([tenantId, expiresAt, sourceKey], map: "notification_source_tombstones_tenant_expiry_idx")
+    @@map("notification_source_tombstones")
+  }
+
+  model NotificationLifecycleCursor {
+    id String @id
+    lastBatchId String @map("last_batch_id")
+
+    @@map("notification_lifecycle_cursors")
+  }
+
   model NotificationBatch {
     id                String         @id(map: "notification_batches_pkey") @default(cuid(2))
     scopeKey          String         @map("scope_key")
@@ -1920,12 +1961,18 @@ namespace public {
     createdAt         Timestamptz(3) @default(now()) @map("created_at")
     sealedAt          Timestamptz(3)? @map("sealed_at")
     outputId          String?        @map("output_id")
+    sealFailures      Int            @default(0) @map("seal_failures")
+    nextSealAttemptAt Timestamptz(3)? @map("next_seal_attempt_at")
+    sealDeadAt        Timestamptz(3)? @map("seal_dead_at")
+    sealErrorCode     String?        @map("seal_error_code")
+    detailsArchivedAt Timestamptz(3)? @map("details_archived_at")
     items             NotificationItem[]
 
     @@index([scopeKey, shard], map: "notification_batches_scope_shard_key", unique: true)
     @@index([channel, outputId], map: "notification_batches_channel_output_key", unique: true)
     @@index([sealedAt, windowEnd, id], map: "notification_batches_due_idx")
     @@index([tenantId, recipientId, createdAt], map: "notification_batches_recipient_idx")
+    @@index([sealedAt, sealDeadAt, windowEnd, nextSealAttemptAt, id], map: "notification_batches_retry_due_idx")
     @@map("notification_batches")
   }
 
@@ -1943,6 +1990,8 @@ namespace public {
     sourceId        String?           @map("source_id")
     occurredAt      Timestamptz(3)    @map("occurred_at")
     createdAt       Timestamptz(3)    @default(now()) @map("created_at")
+    suppressedAt    Timestamptz(3)?   @map("suppressed_at")
+    suppressionReason String?         @map("suppression_reason")
     batch           NotificationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "notification_items_batch_id_fkey", index: false)
 
     @@index([sourceKey], map: "notification_items_source_key", unique: true)

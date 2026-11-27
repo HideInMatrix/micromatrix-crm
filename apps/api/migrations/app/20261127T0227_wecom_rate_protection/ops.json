@@ -1,0 +1,236 @@
+[
+  {
+    "id": "table.wecom_rate_cooldowns",
+    "label": "Create table \"wecom_rate_cooldowns\"",
+    "summary": "Creates table \"wecom_rate_cooldowns\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "wecom_rate_cooldowns"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"wecom_rate_cooldowns\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_rate_cooldowns\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"wecom_rate_cooldowns\"",
+        "sql": "CREATE TABLE \"public\".\"wecom_rate_cooldowns\" (\n  \"app_key\" text NOT NULL,\n  \"blocked_until\" timestamptz(3) NOT NULL,\n  PRIMARY KEY (\"app_key\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"wecom_rate_cooldowns\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_rate_cooldowns\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.wecom_send_reservations",
+    "label": "Create table \"wecom_send_reservations\"",
+    "summary": "Creates table \"wecom_send_reservations\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "wecom_send_reservations"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"wecom_send_reservations\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"wecom_send_reservations\"",
+        "sql": "CREATE TABLE \"public\".\"wecom_send_reservations\" (\n  \"app_key\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"member_key\" text NOT NULL,\n  \"reserved_at\" timestamptz(3) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"wecom_send_reservations\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.wecom_rate_cooldowns.wecom_rate_cooldowns_expiry_idx",
+    "label": "Create index \"wecom_rate_cooldowns_expiry_idx\" on \"wecom_rate_cooldowns\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "wecom_rate_cooldowns_expiry_idx",
+        "table": "wecom_rate_cooldowns"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"wecom_rate_cooldowns_expiry_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_rate_cooldowns_expiry_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"wecom_rate_cooldowns_expiry_idx\"",
+        "sql": "CREATE INDEX \"wecom_rate_cooldowns_expiry_idx\" ON \"public\".\"wecom_rate_cooldowns\" (\"blocked_until\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"wecom_rate_cooldowns_expiry_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_rate_cooldowns_expiry_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.wecom_send_reservations.wecom_send_reservations_app_time_idx",
+    "label": "Create index \"wecom_send_reservations_app_time_idx\" on \"wecom_send_reservations\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "wecom_send_reservations_app_time_idx",
+        "table": "wecom_send_reservations"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"wecom_send_reservations_app_time_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations_app_time_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"wecom_send_reservations_app_time_idx\"",
+        "sql": "CREATE INDEX \"wecom_send_reservations_app_time_idx\" ON \"public\".\"wecom_send_reservations\" (\"app_key\", \"reserved_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"wecom_send_reservations_app_time_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations_app_time_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.wecom_send_reservations.wecom_send_reservations_expiry_idx",
+    "label": "Create index \"wecom_send_reservations_expiry_idx\" on \"wecom_send_reservations\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "wecom_send_reservations_expiry_idx",
+        "table": "wecom_send_reservations"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"wecom_send_reservations_expiry_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations_expiry_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"wecom_send_reservations_expiry_idx\"",
+        "sql": "CREATE INDEX \"wecom_send_reservations_expiry_idx\" ON \"public\".\"wecom_send_reservations\" (\"reserved_at\", \"id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"wecom_send_reservations_expiry_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations_expiry_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.wecom_send_reservations.wecom_send_reservations_member_time_idx",
+    "label": "Create index \"wecom_send_reservations_member_time_idx\" on \"wecom_send_reservations\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "wecom_send_reservations_member_time_idx",
+        "table": "wecom_send_reservations"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"wecom_send_reservations_member_time_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations_member_time_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"wecom_send_reservations_member_time_idx\"",
+        "sql": "CREATE INDEX \"wecom_send_reservations_member_time_idx\" ON \"public\".\"wecom_send_reservations\" (\"member_key\", \"reserved_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"wecom_send_reservations_member_time_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"wecom_send_reservations_member_time_idx\""
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "table.notification_lifecycle_cursors",
+    "label": "Create table \"notification_lifecycle_cursors\"",
+    "summary": "Creates table \"notification_lifecycle_cursors\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "notification_lifecycle_cursors"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"notification_lifecycle_cursors\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_lifecycle_cursors\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"notification_lifecycle_cursors\"",
+        "sql": "CREATE TABLE \"public\".\"notification_lifecycle_cursors\" (\n  \"id\" text NOT NULL,\n  \"last_batch_id\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"notification_lifecycle_cursors\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_lifecycle_cursors\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.notification_source_tombstones",
+    "label": "Create table \"notification_source_tombstones\"",
+    "summary": "Creates table \"notification_source_tombstones\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "notification_source_tombstones"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"notification_source_tombstones\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_source_tombstones\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"notification_source_tombstones\"",
+        "sql": "CREATE TABLE \"public\".\"notification_source_tombstones\" (\n  \"batch_id\" text NOT NULL,\n  \"item_id\" text NOT NULL,\n  \"source_key\" text NOT NULL,\n  PRIMARY KEY (\"source_key\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"notification_source_tombstones\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_source_tombstones\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.notification_batches.details_archived_at",
+    "label": "Add column \"details_archived_at\" to \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "details_archived_at",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"details_archived_at\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "details_archived_at"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"details_archived_at\"",
+        "sql": "ALTER TABLE \"public\".\"notification_batches\" ADD COLUMN \"details_archived_at\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"details_archived_at\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_batches",
+          "details_archived_at"
+        ]
+      }
+    ]
+  }
+]

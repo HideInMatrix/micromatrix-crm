@@ -66,6 +66,7 @@ const ACTION_LABELS: Record<string, string> = {
   cancel: '取消',
   circulationType: '更新流转类型',
   cleanup: '清理过期日志',
+  cleanupNotificationDedup: '手动清理去重凭据',
   'clear-ui-asset': '清除界面资源',
   collaborationAdd: '添加协作',
   collaborationBatchDelete: '批量删除协作',

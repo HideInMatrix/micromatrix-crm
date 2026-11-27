@@ -1,0 +1,86 @@
+[
+  {
+    "id": "column.public.notification_items.suppressed_at",
+    "label": "Add column \"suppressed_at\" to \"notification_items\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "suppressed_at",
+        "table": "notification_items"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"suppressed_at\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_items",
+          "suppressed_at"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"suppressed_at\"",
+        "sql": "ALTER TABLE \"public\".\"notification_items\" ADD COLUMN \"suppressed_at\" timestamptz(3)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"suppressed_at\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_items",
+          "suppressed_at"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.notification_items.suppression_reason",
+    "label": "Add column \"suppression_reason\" to \"notification_items\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "suppression_reason",
+        "table": "notification_items"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"suppression_reason\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_items",
+          "suppression_reason"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"suppression_reason\"",
+        "sql": "ALTER TABLE \"public\".\"notification_items\" ADD COLUMN \"suppression_reason\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"suppression_reason\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_items",
+          "suppression_reason"
+        ]
+      }
+    ]
+  }
+]

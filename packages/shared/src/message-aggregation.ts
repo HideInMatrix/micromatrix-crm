@@ -197,8 +197,21 @@ export interface NotificationBatchDetailVO {
   title: string
   windowStart: string
   windowEnd: string
+  detailsArchivedAt?: string | null
   total: number
   page: number
   pageSize: number
   items: NotificationBatchItemVO[]
+}
+
+/** Only the current user's preview scope; no source identities returned. */
+export interface NotificationDedupCleanupPreviewVO {
+  count: number
+  hasMore: boolean
+  fingerprint: string
+}
+export interface NotificationDedupCleanupInput {
+  confirm: boolean
+  count: number
+  fingerprint: string
 }

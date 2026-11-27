@@ -1,0 +1,83 @@
+[
+  {
+    "id": "column.public.notification_source_tombstones.tenant_id",
+    "label": "Add column \"tenant_id\" to \"notification_source_tombstones\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "tenant_id",
+        "table": "notification_source_tombstones"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"tenant_id\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_source_tombstones",
+          "tenant_id"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"tenant_id\"",
+        "sql": "ALTER TABLE \"public\".\"notification_source_tombstones\" ADD COLUMN \"tenant_id\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"tenant_id\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "notification_source_tombstones",
+          "tenant_id"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_source_tombstones.notification_source_tombstones_tenant_expiry_idx",
+    "label": "Create index \"notification_source_tombstones_tenant_expiry_idx\" on \"notification_source_tombstones\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_source_tombstones_tenant_expiry_idx",
+        "table": "notification_source_tombstones"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_source_tombstones_tenant_expiry_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_source_tombstones_tenant_expiry_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_source_tombstones_tenant_expiry_idx\"",
+        "sql": "CREATE INDEX \"notification_source_tombstones_tenant_expiry_idx\" ON \"public\".\"notification_source_tombstones\" (\"tenant_id\", \"expires_at\", \"source_key\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_source_tombstones_tenant_expiry_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_source_tombstones_tenant_expiry_idx\""
+        ]
+      }
+    ]
+  }
+]

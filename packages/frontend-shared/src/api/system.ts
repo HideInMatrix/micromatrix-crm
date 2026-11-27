@@ -18,6 +18,8 @@ import type {
   NavigationModuleKey,
   NotificationVO,
   NotificationBatchDetailVO,
+  NotificationDedupCleanupPreviewVO,
+  NotificationDedupCleanupInput,
   OperationLogClearResultVO,
   OperationLogCleanupResultVO,
   OperationLogDetailVO,
@@ -258,6 +260,12 @@ export const messageSettingApi = {
     http.post<MessageTaskGroupVO[]>('/message-settings/batch', data),
   getConfig: (event: string) =>
     http.get<MessageTaskConfig | null>(`/message-settings/${event}/config`),
+}
+
+export const notificationDedupApi = {
+  preview: () => http.get<NotificationDedupCleanupPreviewVO>('/notification-dedup/cleanup-preview'),
+  cleanup: (data: NotificationDedupCleanupInput) =>
+    http.post<{ deleted: number }>('/notification-dedup/cleanup', data),
 }
 
 export const messageDeliveryApi = {
