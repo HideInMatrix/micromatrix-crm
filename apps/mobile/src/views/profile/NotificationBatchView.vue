@@ -116,9 +116,7 @@ onBeforeUnmount(() => {
               >{{ item.linkLabel || '查看业务详情' }}</van-button
             >
           </template>
-          <div v-else class="mt-2 text-sm text-[var(--text-n5)]">
-            当前无法确认该业务的访问权限，明细内容已隐藏。
-          </div>
+          <div v-else class="mt-2 text-sm text-[var(--text-n5)]">通知明细暂不可用。</div>
         </div>
         <van-pagination
           v-model="page"

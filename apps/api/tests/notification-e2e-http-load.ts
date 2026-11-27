@@ -524,7 +524,9 @@ export async function runExternalEventBaseline(input: Inputs) {
               detail.items.length &&
                 detail.items.every(
                   (row: { accessible: boolean; content: unknown; link: string }) =>
-                    row.accessible && row.content === null && row.link.startsWith('/customers?id='),
+                    row.accessible &&
+                    typeof row.content === 'string' &&
+                    row.link.startsWith('/customers?id='),
                 ),
             )
             return detail.items.length

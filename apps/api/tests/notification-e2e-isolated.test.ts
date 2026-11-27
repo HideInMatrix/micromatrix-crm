@@ -384,7 +384,8 @@ async function main() {
   assert.equal(detail.data.total, batch.itemCount)
   assert.ok(
     detail.data.items.every(
-      (i: { accessible: boolean; content: string | null }) => !i.accessible && i.content === null,
+      (i: { accessible: boolean; content: string | null }) =>
+        i.accessible && typeof i.content === 'string' && i.content.includes('PRIVATE-FIXTURE'),
     ),
   )
   assert.equal((await request('/notifications/batches/' + batch.id + '/items')).status, 401)

@@ -234,12 +234,12 @@ export async function runNotificationBrowser(input: BrowserInput) {
     await go('/notifications/batches/' + input.batchId)
     await wait(
       'PC detail',
-      'document.body.innerText.includes("当前无法确认该业务的访问权限") && document.body.innerText.includes("站内通知")',
+      'document.body.innerText.includes("PRIVATE-FIXTURE") && document.body.innerText.includes("站内通知")',
     )
-    assert.equal(await evaluate('document.body.innerText.includes("PRIVATE-FIXTURE")'), false)
+    assert.equal(await evaluate('document.body.innerText.includes("PRIVATE-FIXTURE")'), true)
     await screenshot('pc-batch-detail')
-    await click('刷新权限及明细')
-    await wait('PC refreshed', 'document.body.innerText.includes("当前无法确认该业务的访问权限")')
+    await click('刷新明细')
+    await wait('PC refreshed', 'document.body.innerText.includes("PRIVATE-FIXTURE")')
     await call('Network.setUserAgentOverride', {
       userAgent:
         'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
@@ -254,12 +254,12 @@ export async function runNotificationBrowser(input: BrowserInput) {
     await go('/mobile/mine/message/batch?id=' + encodeURIComponent(input.wecomBatchId))
     await wait(
       'H5 detail',
-      'document.body.innerText.includes("当前无法确认该业务的访问权限") && document.body.innerText.includes("企业微信")',
+      'document.body.innerText.includes("PRIVATE-FIXTURE") && document.body.innerText.includes("企业微信")',
     )
-    assert.equal(await evaluate('document.body.innerText.includes("PRIVATE-FIXTURE")'), false)
+    assert.equal(await evaluate('document.body.innerText.includes("PRIVATE-FIXTURE")'), true)
     await screenshot('h5-batch-detail')
     await click('刷新明细')
-    await wait('H5 refreshed', 'document.body.innerText.includes("当前无法确认该业务的访问权限")')
+    await wait('H5 refreshed', 'document.body.innerText.includes("PRIVATE-FIXTURE")')
     return {
       pcCleanupCancel: 'PASS',
       pcCleanupConfirm: 'PASS',

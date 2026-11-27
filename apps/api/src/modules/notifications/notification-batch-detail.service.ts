@@ -1,18 +1,13 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import {
-  hasPermission,
   type MessageLanguage,
   type NotificationBatchDetailVO,
   type NotificationBatchItemVO,
   type NotificationCategory,
 } from '@micromatrix/shared'
-import { toAuthUser, type AuthUser } from '../../common/auth-user'
-import { DataScopeService } from '../../common/services/data-scope.service'
-import { CustomerAccessService } from '../../customers/customer-access.service'
+import type { AuthUser } from '../../common/auth-user'
 import { PrismaService } from '../../prisma.service'
 import { instantToISOString } from '../../prisma/temporal'
-import { FollowUpPlansService } from '../follow-up-plans/follow-up-plans.service'
-import { FollowUpsService } from '../follow-ups/follow-ups.service'
 import { MESSAGE_TEMPLATE_RESOURCES } from './message-template.resources'
 
 const CATEGORIES: Record<string, [string, string]> = {
@@ -24,46 +19,21 @@ const CATEGORIES: Record<string, [string, string]> = {
 
 @Injectable()
 export class NotificationBatchDetailService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly scope: DataScopeService,
-    private readonly customers: CustomerAccessService,
-    private readonly plans: FollowUpPlansService,
-    private readonly followUps: FollowUpsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // AuthGuard may use its short-lived cache. Rebuild role scope from the DB
-  // before exposing historic notification payloads.
-  private async freshUser(auth: AuthUser): Promise<AuthUser> {
+  // Authentication may be cached. A notification snapshot is readable only
+  // by its active recipient in an active tenant, regardless of current
+  // business-resource roles. The target business API still enforces access.
+  private async assertActiveRecipient(auth: AuthUser): Promise<void> {
     const orm = this.prisma.client.orm.public
     const user = await orm.Users.where({ id: auth.id, tenantId: auth.tenantId, status: 'ACTIVE' })
-      .select('id', 'tenantId', 'email', 'name', 'deptId', 'leaderId')
+      .select('id')
       .first()
     if (!user) throw new NotFoundException('通知批次不存在')
     const tenant = await orm.Tenants.where({ id: auth.tenantId, status: 'ACTIVE' })
       .select('id')
       .first()
     if (!tenant) throw new NotFoundException('通知批次不存在')
-    const links = await orm.UserRoles.where({ tenantId: auth.tenantId, userId: auth.id })
-      .select('roleId')
-      .all()
-    const ids = [...new Set(links.map((row) => row.roleId))]
-    const roles = ids.length
-      ? await orm.Roles.where({ tenantId: auth.tenantId })
-          .where((row) => row.id.in(ids))
-          .select('id', 'name', 'permissions', 'dataScope', 'scopeDeptIds')
-          .all()
-      : []
-    return toAuthUser({
-      ...user,
-      userRoles: roles.map((role) => ({
-        role: {
-          ...role,
-          permissions: [...(role.permissions ?? [])],
-          scopeDeptIds: [...(role.scopeDeptIds ?? [])],
-        },
-      })),
-    })
   }
 
   async list(
@@ -91,22 +61,22 @@ export class NotificationBatchDetailService {
       .first()
     if (!batch || !batch.outputId || (batch.channel !== 'SYSTEM' && batch.channel !== 'WECOM'))
       throw new NotFoundException('通知批次不存在')
-    const user = await this.freshUser(auth)
+    await this.assertActiveRecipient(auth)
     // Channel-specific batch can be opened by its recipient even without a
     // corresponding SYSTEM notification. Reject missing/deleted outputs.
     const output =
       batch.channel === 'SYSTEM'
         ? await orm.Notifications.where({
             id: batch.outputId,
-            tenantId: user.tenantId,
-            userId: user.id,
+            tenantId: auth.tenantId,
+            userId: auth.id,
           })
             .select('id')
             .first()
         : await orm.MessageDeliveries.where({
             id: batch.outputId,
-            tenantId: user.tenantId,
-            userId: user.id,
+            tenantId: auth.tenantId,
+            userId: auth.id,
             channel: 'WECOM',
           })
             .select('id')
@@ -127,8 +97,8 @@ export class NotificationBatchDetailService {
     // Re-read the marker; never expose a partial page for an archived batch.
     const current = await orm.NotificationBatch.where({
       id: batch.id,
-      tenantId: user.tenantId,
-      recipientId: user.id,
+      tenantId: auth.tenantId,
+      recipientId: auth.id,
     })
       .select('detailsArchivedAt')
       .first()
@@ -137,19 +107,10 @@ export class NotificationBatchDetailService {
     const language: MessageLanguage = batch.language === 'en-US' ? 'en-US' : 'zh-CN'
     const resources = MESSAGE_TEMPLATE_RESOURCES[language] as Record<string, { eventName: string }>
     const items: NotificationBatchItemVO[] = []
-    // Limit DB concurrency and reuse only authorization results within this response.
-    const decisions = new Map<string, Promise<string | null>>()
+    // Return the original recipient-scoped notification snapshot, not live
+    // resource data. Navigation is sanitized separately from authorization.
     for (const row of archivedAt ? [] : rows) {
-      let link: string | null = null
-      if (row.link) {
-        const key = JSON.stringify([row.event, row.link])
-        let decision = decisions.get(key)
-        if (!decision) {
-          decision = this.authorizeLink(user, row.event, row.link)
-          decisions.set(key, decision)
-        }
-        link = await decision
-      }
+      const link = row.link ? this.safeLink(row.event, row.link) : null
       const eventName = Object.prototype.hasOwnProperty.call(resources, row.event)
         ? resources[row.event]!.eventName
         : language === 'en-US'
@@ -160,14 +121,13 @@ export class NotificationBatchDetailService {
         event: row.event,
         eventName,
         occurredAt: instantToISOString(row.occurredAt),
-        accessible: link !== null,
-        // A link proves access to its target, not every historical template
-        // variable (e.g. a converted customer's former lead or actor name).
-        // Use only static labels; the live resource UI enforces field access.
-        title: link ? eventName : null,
-        content: null,
+        accessible: true, // compatibility: the notification itself is readable
+        title: row.title,
+        content: row.content,
         link,
-        linkLabel: link ? (language === 'en-US' ? 'View resource' : '查看业务记录') : null,
+        linkLabel: link
+          ? row.linkLabel || (language === 'en-US' ? 'View resource' : '查看业务记录')
+          : null,
       })
     }
     const title = Object.prototype.hasOwnProperty.call(CATEGORIES, batch.category)
@@ -190,10 +150,10 @@ export class NotificationBatchDetailService {
     }
   }
 
-  private async authorizeLink(user: AuthUser, event: string, raw: string): Promise<string | null> {
-    // Only explicit, known resource routes. Bare list URLs do not establish
-    // record-level authorization. Do not return the original untrusted URL.
-    if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return null
+  private safeLink(event: string, raw: string): string | null {
+    // Only known internal, read-oriented routes; never expose arbitrary URLs.
+    // Do not query the destination resource or pre-authorize its data scope.
+    if (!raw.startsWith('/') || raw.startsWith('//') || /[\\\x00-\x20\x7f]/.test(raw)) return null
     let url: URL
     try {
       url = new URL(raw, 'https://notification.invalid')
@@ -202,64 +162,25 @@ export class NotificationBatchDetailService {
     }
     if (url.origin !== 'https://notification.invalid' || url.hash) return null
     const path = url.pathname
-    const id = url.searchParams.get('id')
+    if (path !== '/leads' && path !== '/customers' && path !== '/follow-plans') return null
+    const plan = event.includes('FOLLOW_UP_PLAN')
+    const comment = event.includes('FOLLOW_UP_RECORD_COMMENT')
+    if ((path === '/follow-plans') !== plan) return null
+    const validId = (value: string | null): value is string =>
+      !!value && /^[a-zA-Z0-9_-]{1,128}$/.test(value)
+    const keys = [...url.searchParams.keys()]
+    // Existing notifications may link to the business list rather than a record.
+    if (!keys.length) return comment ? null : path
+    const allowed = comment ? ['id', 'followUpId', 'commentId'] : ['id']
+    if (keys.some((key) => !allowed.includes(key)) || keys.length !== allowed.length) return null
     if (
-      !id ||
-      id.length > 128 ||
-      !/^[a-zA-Z0-9_-]+$/.test(id) ||
-      url.searchParams.getAll('id').length !== 1
+      allowed.some(
+        (key) => url.searchParams.getAll(key).length !== 1 || !validId(url.searchParams.get(key)),
+      )
     )
       return null
-    const orm = this.prisma.client.orm.public
-    try {
-      if (path === '/follow-plans') {
-        if (!event.includes('FOLLOW_UP_PLAN')) return null
-        await this.plans.assertPlanAccess(user, id, false)
-        return '/follow-plans?' + new URLSearchParams({ id })
-      }
-      if (path !== '/leads' && path !== '/customers') return null
-      if (event.includes('FOLLOW_UP_PLAN')) return null
-      const followId = url.searchParams.get('followUpId')
-      const commentId = url.searchParams.get('commentId')
-      const kind = path === '/leads' ? 'lead' : 'customer'
-      if (event.includes('FOLLOW_UP_RECORD_COMMENT')) {
-        if (!followId || !commentId || followId.length > 128 || commentId.length > 128) return null
-        const record = await this.followUps.assertRecordAccess(user, followId, false)
-        if (record.targetType !== kind || record.targetId !== id) return null
-        const comment = await orm.FollowUpRecordComment.where({
-          id: commentId,
-          resourceId: followId,
-          organizationId: user.tenantId,
-        })
-          .select('id')
-          .first()
-        if (!comment) return null
-      } else if (followId || commentId) return null
-      if (path === '/leads') {
-        if (!hasPermission(user.permissions, 'menu:lead')) return null
-        const lead = await orm.Clue.where({
-          id,
-          organizationId: user.tenantId,
-          inSharedPool: false,
-        })
-          .select('owner')
-          .first()
-        if (!lead || !(await this.scope.matchesBusinessOwner(user, lead.owner))) return null
-      } else {
-        if (!hasPermission(user.permissions, 'customer:read')) return null
-        await this.customers.assertRead(user, id)
-      }
-      return (
-        path +
-        '?' +
-        new URLSearchParams({
-          id,
-          ...(followId && commentId ? { followUpId: followId, commentId } : {}),
-        })
-      )
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ForbiddenException) return null
-      throw error // Database errors fail the request rather than leaking data.
-    }
+    const params = new URLSearchParams()
+    for (const key of allowed) params.set(key, url.searchParams.get(key)!)
+    return path + '?' + params
   }
 }

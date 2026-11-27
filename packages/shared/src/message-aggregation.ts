@@ -177,12 +177,13 @@ export function notificationAggregationIdentity(
   }
 }
 
-// Recipient-scoped, freshly authorized projection. Never expose raw items directly.
+// Recipient-scoped historical snapshot; never expose internal item fields.
 export interface NotificationBatchItemVO {
   id: string
   event: string
   eventName: string
   occurredAt: string
+  /** Notification readability, not destination business-resource permission. */
   accessible: boolean
   title: string | null
   content: string | null

@@ -48,7 +48,7 @@ onBeforeUnmount(() => {
   <el-card shadow="never">
     <div class="flex items-center justify-between gap-3 mb-4">
       <el-button @click="router.push('/notifications')">返回消息中心</el-button>
-      <el-button :loading="loading" @click="load">刷新权限及明细</el-button>
+      <el-button :loading="loading" @click="load">刷新明细</el-button>
     </div>
     <div v-loading="loading" class="min-h-40">
       <el-alert
@@ -99,7 +99,7 @@ onBeforeUnmount(() => {
             >
           </template>
           <div v-else class="mt-2 text-sm text-[var(--el-text-color-secondary)]">
-            当前无法确认该业务的访问权限，明细内容已隐藏。
+            通知明细暂不可用。
           </div>
         </div>
         <div class="flex justify-end mt-4">
