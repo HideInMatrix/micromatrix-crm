@@ -1898,6 +1898,58 @@ namespace public {
   }
 
   // Durable notification intents are written in the same transaction as the external event.
+  // One sealed batch produces one visible notification or one actual channel request.
+  model NotificationBatch {
+    id                String         @id(map: "notification_batches_pkey") @default(cuid(2))
+    scopeKey          String         @map("scope_key")
+    shard             Int            @default(0)
+    tenantId          String         @map("tenant_id")
+    recipientId       String         @map("recipient_id")
+    channel           String
+    category          String
+    aggregationGroup  String         @map("aggregation_group")
+    aggregationMode   String         @map("aggregation_mode")
+    priority          String
+    language          String
+    integrationId     String?        @map("integration_id")
+    credentialVersion Int?           @map("credential_version")
+    externalSubject   String?        @map("external_subject")
+    windowStart       Timestamptz(3) @map("window_start")
+    windowEnd         Timestamptz(3) @map("window_end")
+    itemCount         Int            @default(0) @map("item_count")
+    createdAt         Timestamptz(3) @default(now()) @map("created_at")
+    sealedAt          Timestamptz(3)? @map("sealed_at")
+    outputId          String?        @map("output_id")
+    items             NotificationItem[]
+
+    @@index([scopeKey, shard], map: "notification_batches_scope_shard_key", unique: true)
+    @@index([channel, outputId], map: "notification_batches_channel_output_key", unique: true)
+    @@index([sealedAt, windowEnd, id], map: "notification_batches_due_idx")
+    @@index([tenantId, recipientId, createdAt], map: "notification_batches_recipient_idx")
+    @@map("notification_batches")
+  }
+
+  model NotificationItem {
+    id              String            @id(map: "notification_items_pkey") @default(cuid(2))
+    batchId         String            @map("batch_id")
+    sourceKey       String            @map("source_key")
+    event           String
+    _type           String            @map("type")
+    title           String
+    content         String?
+    link            String?
+    linkLabel       String?           @map("link_label")
+    sourceType      String?           @map("source_type")
+    sourceId        String?           @map("source_id")
+    occurredAt      Timestamptz(3)    @map("occurred_at")
+    createdAt       Timestamptz(3)    @default(now()) @map("created_at")
+    batch           NotificationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "notification_items_batch_id_fkey", index: false)
+
+    @@index([sourceKey], map: "notification_items_source_key", unique: true)
+    @@index([batchId, createdAt, id], map: "notification_items_batch_page_idx")
+    @@map("notification_items")
+  }
+
   model ExternalEventNotification {
     id          String          @id(map: "external_event_notification_pkey") @default(cuid(2))
     inboxId     String          @map("inbox_id")

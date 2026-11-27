@@ -1,12 +1,21 @@
 /** 将服务端/PC 通知链接转换为移动端路由，并保留业务深链参数。 */
 export function resolveMobileNotificationPath(link: string): string | null {
-  if (!link.startsWith('/')) return null
+  if (!link.startsWith('/') || link.startsWith('//') || link.includes('\\')) return null
 
   const url = new URL(link, 'https://admissions-crm.invalid')
   let path = url.pathname
 
   // 兼容已带移动端部署前缀的通知链接。
   if (path.startsWith('/mobile/')) path = path.slice('/mobile'.length)
+
+  const batch = path.match(/^\/notifications\/batches\/([a-zA-Z0-9_-]+)$/)
+  if (batch) return '/mine/message/batch?' + new URLSearchParams({ id: batch[1]! })
+  if (path === '/mine/message/batch') {
+    const id = url.searchParams.get('id')
+    return id && /^[a-zA-Z0-9_-]+$/.test(id)
+      ? '/mine/message/batch?' + new URLSearchParams({ id })
+      : null
+  }
 
   // 新格式：/leads?id=xxx、/customers?id=xxx。
   if ((path === '/leads' || path === '/customers') && url.searchParams.has('id')) {
@@ -17,9 +26,10 @@ export function resolveMobileNotificationPath(link: string): string | null {
     const legacyDetail = path.match(/^\/(leads|customers)\/([^/]+)$/)
     if (legacyDetail) {
       const [, resource, rawId] = legacyDetail
-      const reserved = resource === 'leads'
-        ? new Set(['detail', 'create', 'pool-detail'])
-        : new Set(['detail', 'create'])
+      const reserved =
+        resource === 'leads'
+          ? new Set(['detail', 'create', 'pool-detail'])
+          : new Set(['detail', 'create'])
 
       if (!reserved.has(rawId)) {
         if (!url.searchParams.has('id')) {

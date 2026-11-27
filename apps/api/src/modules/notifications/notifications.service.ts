@@ -7,10 +7,17 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common'
-import { type MessageTaskEvent, NotificationBizType, NotificationVO } from '@micromatrix/shared'
+import {
+  type MessageLanguage,
+  type MessageTaskEvent,
+  NotificationBizType,
+  NotificationVO,
+} from '@micromatrix/shared'
 import { finalize, interval, map, merge, Observable, Subject } from 'rxjs'
 import { PrismaService } from '../../prisma.service'
 import { nowInstant, instantToISOString } from '../../prisma/temporal'
+import { NotificationAggregationStore } from './notification-aggregation.store'
+import { aggregationEnabled, isAggregateEvent } from './notification-aggregation-runtime'
 import { RedisService } from '../../redis/redis.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import {
@@ -27,6 +34,7 @@ export interface NotifyInput {
   link?: string
   linkLabel?: string
   event?: MessageTaskEvent
+  language?: MessageLanguage
   sourceType?: string
   sourceId?: string
 }
@@ -62,6 +70,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly messageSettings: MessageSettingsService,
     @Optional() private readonly redis?: RedisService,
+    @Optional() private readonly aggregation?: NotificationAggregationStore,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -119,6 +128,36 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     input: NotifyInput,
   ): Promise<void> {
+    if (
+      this.aggregation &&
+      aggregationEnabled() &&
+      input.event &&
+      isAggregateEvent(input.event, input.type)
+    ) {
+      const store = this.aggregation
+      await this.prisma.client.transaction((tx) =>
+        store.append(tx, {
+          channel: 'SYSTEM',
+          tenantId,
+          recipientId: userId,
+          intentId:
+            input.sourceType && input.sourceId
+              ? JSON.stringify([input.sourceType, input.sourceId])
+              : randomUUID(),
+          event: input.event!,
+          type: input.type,
+          language: input.language ?? 'zh-CN',
+          title: input.title,
+          content: input.content,
+          link: input.link,
+          linkLabel: input.linkLabel,
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          occurredAt: nowInstant(),
+        }),
+      )
+      return
+    }
     const { event: _event, ...data } = input
     const notification = await this.notifications().create({
       tenantId,

@@ -155,6 +155,12 @@ const router = createRouter({
           meta: { title: '消息通知', depth: 2, mobileHeader: { back: true } },
         },
         {
+          path: 'mine/message/batch',
+          name: 'mobile-notification-batch-detail',
+          component: () => import('@/views/profile/NotificationBatchView.vue'),
+          meta: { title: '通知明细', depth: 3, mobileHeader: { back: true } },
+        },
+        {
           path: 'leads/:id/convert',
           name: 'mobile-lead-convert',
           component: () => import('@/views/leads/LeadConvertView.vue'),

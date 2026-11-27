@@ -34,9 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'b98e2e0095b5b2eda78eb91d8c1ae761c47e917e169f38c9f66f583bd250d100'>;
+  StorageHashBase<'4a68c767b49167c5bb54dd466f46873a34b71e93b3fe1e248a8bfd7f84daf50c'>;
 export type ExecutionHash =
-  ExecutionHashBase<'5a74bf6bac8818fcc57dbd4ec51b02f8ad24368740778de4bab1eea7d6c4850c'>;
+  ExecutionHashBase<'70e113a98706e0eb1a5fc96c6c1c7d19dc8c18b331eb1e05534c0fd636d54b1e'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -1002,6 +1002,43 @@ export type FieldOutputTypes = {
       readonly key: CodecTypes['pg/text@1']['output'];
       readonly enabled: CodecTypes['pg/bool@1']['output'];
       readonly sort: CodecTypes['pg/int4@1']['output'];
+    };
+    readonly NotificationBatch: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly scopeKey: CodecTypes['pg/text@1']['output'];
+      readonly shard: CodecTypes['pg/int4@1']['output'];
+      readonly tenantId: CodecTypes['pg/text@1']['output'];
+      readonly recipientId: CodecTypes['pg/text@1']['output'];
+      readonly channel: CodecTypes['pg/text@1']['output'];
+      readonly category: CodecTypes['pg/text@1']['output'];
+      readonly aggregationGroup: CodecTypes['pg/text@1']['output'];
+      readonly aggregationMode: CodecTypes['pg/text@1']['output'];
+      readonly priority: CodecTypes['pg/text@1']['output'];
+      readonly language: CodecTypes['pg/text@1']['output'];
+      readonly integrationId: CodecTypes['pg/text@1']['output'] | null;
+      readonly credentialVersion: CodecTypes['pg/int4@1']['output'] | null;
+      readonly externalSubject: CodecTypes['pg/text@1']['output'] | null;
+      readonly windowStart: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly windowEnd: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly itemCount: CodecTypes['pg/int4@1']['output'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly sealedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly outputId: CodecTypes['pg/text@1']['output'] | null;
+    };
+    readonly NotificationItem: {
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly batchId: CodecTypes['pg/text@1']['output'];
+      readonly sourceKey: CodecTypes['pg/text@1']['output'];
+      readonly event: CodecTypes['pg/text@1']['output'];
+      readonly _type: CodecTypes['pg/text@1']['output'];
+      readonly title: CodecTypes['pg/text@1']['output'];
+      readonly content: CodecTypes['pg/text@1']['output'] | null;
+      readonly link: CodecTypes['pg/text@1']['output'] | null;
+      readonly linkLabel: CodecTypes['pg/text@1']['output'] | null;
+      readonly sourceType: CodecTypes['pg/text@1']['output'] | null;
+      readonly sourceId: CodecTypes['pg/text@1']['output'] | null;
+      readonly occurredAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
     readonly Notifications: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -2059,6 +2096,43 @@ export type FieldInputTypes = {
       readonly enabled: CodecTypes['pg/bool@1']['input'];
       readonly sort: CodecTypes['pg/int4@1']['input'];
     };
+    readonly NotificationBatch: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly scopeKey: CodecTypes['pg/text@1']['input'];
+      readonly shard: CodecTypes['pg/int4@1']['input'];
+      readonly tenantId: CodecTypes['pg/text@1']['input'];
+      readonly recipientId: CodecTypes['pg/text@1']['input'];
+      readonly channel: CodecTypes['pg/text@1']['input'];
+      readonly category: CodecTypes['pg/text@1']['input'];
+      readonly aggregationGroup: CodecTypes['pg/text@1']['input'];
+      readonly aggregationMode: CodecTypes['pg/text@1']['input'];
+      readonly priority: CodecTypes['pg/text@1']['input'];
+      readonly language: CodecTypes['pg/text@1']['input'];
+      readonly integrationId: CodecTypes['pg/text@1']['input'] | null;
+      readonly credentialVersion: CodecTypes['pg/int4@1']['input'] | null;
+      readonly externalSubject: CodecTypes['pg/text@1']['input'] | null;
+      readonly windowStart: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly windowEnd: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly itemCount: CodecTypes['pg/int4@1']['input'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly sealedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly outputId: CodecTypes['pg/text@1']['input'] | null;
+    };
+    readonly NotificationItem: {
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly batchId: CodecTypes['pg/text@1']['input'];
+      readonly sourceKey: CodecTypes['pg/text@1']['input'];
+      readonly event: CodecTypes['pg/text@1']['input'];
+      readonly _type: CodecTypes['pg/text@1']['input'];
+      readonly title: CodecTypes['pg/text@1']['input'];
+      readonly content: CodecTypes['pg/text@1']['input'] | null;
+      readonly link: CodecTypes['pg/text@1']['input'] | null;
+      readonly linkLabel: CodecTypes['pg/text@1']['input'] | null;
+      readonly sourceType: CodecTypes['pg/text@1']['input'] | null;
+      readonly sourceId: CodecTypes['pg/text@1']['input'] | null;
+      readonly occurredAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
     readonly Notifications: {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly tenantId: CodecTypes['pg/text@1']['input'];
@@ -3115,6 +3189,43 @@ export type StorageColumnTypes = {
       readonly sort: CodecTypes['pg/int4@1']['output'];
       readonly tenantId: CodecTypes['pg/text@1']['output'];
     };
+    readonly notification_batches: {
+      readonly aggregation_group: CodecTypes['pg/text@1']['output'];
+      readonly aggregation_mode: CodecTypes['pg/text@1']['output'];
+      readonly category: CodecTypes['pg/text@1']['output'];
+      readonly channel: CodecTypes['pg/text@1']['output'];
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly credential_version: CodecTypes['pg/int4@1']['output'] | null;
+      readonly external_subject: CodecTypes['pg/text@1']['output'] | null;
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly integration_id: CodecTypes['pg/text@1']['output'] | null;
+      readonly item_count: CodecTypes['pg/int4@1']['output'];
+      readonly language: CodecTypes['pg/text@1']['output'];
+      readonly output_id: CodecTypes['pg/text@1']['output'] | null;
+      readonly priority: CodecTypes['pg/text@1']['output'];
+      readonly recipient_id: CodecTypes['pg/text@1']['output'];
+      readonly scope_key: CodecTypes['pg/text@1']['output'];
+      readonly sealed_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+      readonly shard: CodecTypes['pg/int4@1']['output'];
+      readonly tenant_id: CodecTypes['pg/text@1']['output'];
+      readonly window_end: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly window_start: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    };
+    readonly notification_items: {
+      readonly batch_id: CodecTypes['pg/text@1']['output'];
+      readonly content: CodecTypes['pg/text@1']['output'] | null;
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly event: CodecTypes['pg/text@1']['output'];
+      readonly id: CodecTypes['pg/text@1']['output'];
+      readonly link: CodecTypes['pg/text@1']['output'] | null;
+      readonly link_label: CodecTypes['pg/text@1']['output'] | null;
+      readonly occurred_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly source_id: CodecTypes['pg/text@1']['output'] | null;
+      readonly source_key: CodecTypes['pg/text@1']['output'];
+      readonly source_type: CodecTypes['pg/text@1']['output'] | null;
+      readonly title: CodecTypes['pg/text@1']['output'];
+      readonly type: CodecTypes['pg/text@1']['output'];
+    };
     readonly notifications: {
       readonly content: CodecTypes['pg/text@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
@@ -4170,6 +4281,43 @@ export type StorageColumnInputTypes = {
       readonly key: CodecTypes['pg/text@1']['input'];
       readonly sort: CodecTypes['pg/int4@1']['input'];
       readonly tenantId: CodecTypes['pg/text@1']['input'];
+    };
+    readonly notification_batches: {
+      readonly aggregation_group: CodecTypes['pg/text@1']['input'];
+      readonly aggregation_mode: CodecTypes['pg/text@1']['input'];
+      readonly category: CodecTypes['pg/text@1']['input'];
+      readonly channel: CodecTypes['pg/text@1']['input'];
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly credential_version: CodecTypes['pg/int4@1']['input'] | null;
+      readonly external_subject: CodecTypes['pg/text@1']['input'] | null;
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly integration_id: CodecTypes['pg/text@1']['input'] | null;
+      readonly item_count: CodecTypes['pg/int4@1']['input'];
+      readonly language: CodecTypes['pg/text@1']['input'];
+      readonly output_id: CodecTypes['pg/text@1']['input'] | null;
+      readonly priority: CodecTypes['pg/text@1']['input'];
+      readonly recipient_id: CodecTypes['pg/text@1']['input'];
+      readonly scope_key: CodecTypes['pg/text@1']['input'];
+      readonly sealed_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+      readonly shard: CodecTypes['pg/int4@1']['input'];
+      readonly tenant_id: CodecTypes['pg/text@1']['input'];
+      readonly window_end: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly window_start: CodecTypes['pg/timestamptz-temporal@1']['input'];
+    };
+    readonly notification_items: {
+      readonly batch_id: CodecTypes['pg/text@1']['input'];
+      readonly content: CodecTypes['pg/text@1']['input'] | null;
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly event: CodecTypes['pg/text@1']['input'];
+      readonly id: CodecTypes['pg/text@1']['input'];
+      readonly link: CodecTypes['pg/text@1']['input'] | null;
+      readonly link_label: CodecTypes['pg/text@1']['input'] | null;
+      readonly occurred_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly source_id: CodecTypes['pg/text@1']['input'] | null;
+      readonly source_key: CodecTypes['pg/text@1']['input'];
+      readonly source_type: CodecTypes['pg/text@1']['input'] | null;
+      readonly title: CodecTypes['pg/text@1']['input'];
+      readonly type: CodecTypes['pg/text@1']['input'];
     };
     readonly notifications: {
       readonly content: CodecTypes['pg/text@1']['input'] | null;
@@ -5782,6 +5930,47 @@ export namespace Models {
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     readonly [RelationKeys]?: never;
   };
+  export type public_NotificationBatch = {
+    id: CodecTypes['pg/text@1']['output'];
+    scopeKey: CodecTypes['pg/text@1']['output'];
+    shard: CodecTypes['pg/int4@1']['output'];
+    tenantId: CodecTypes['pg/text@1']['output'];
+    recipientId: CodecTypes['pg/text@1']['output'];
+    channel: CodecTypes['pg/text@1']['output'];
+    category: CodecTypes['pg/text@1']['output'];
+    aggregationGroup: CodecTypes['pg/text@1']['output'];
+    aggregationMode: CodecTypes['pg/text@1']['output'];
+    priority: CodecTypes['pg/text@1']['output'];
+    language: CodecTypes['pg/text@1']['output'];
+    integrationId: CodecTypes['pg/text@1']['output'] | null;
+    credentialVersion: CodecTypes['pg/int4@1']['output'] | null;
+    externalSubject: CodecTypes['pg/text@1']['output'] | null;
+    windowStart: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    windowEnd: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    itemCount: CodecTypes['pg/int4@1']['output'];
+    createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    sealedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    outputId: CodecTypes['pg/text@1']['output'] | null;
+    items: public_NotificationItem[];
+    readonly [RelationKeys]?: 'items';
+  };
+  export type public_NotificationItem = {
+    id: CodecTypes['pg/text@1']['output'];
+    batchId: CodecTypes['pg/text@1']['output'];
+    sourceKey: CodecTypes['pg/text@1']['output'];
+    event: CodecTypes['pg/text@1']['output'];
+    _type: CodecTypes['pg/text@1']['output'];
+    title: CodecTypes['pg/text@1']['output'];
+    content: CodecTypes['pg/text@1']['output'] | null;
+    link: CodecTypes['pg/text@1']['output'] | null;
+    linkLabel: CodecTypes['pg/text@1']['output'] | null;
+    sourceType: CodecTypes['pg/text@1']['output'] | null;
+    sourceId: CodecTypes['pg/text@1']['output'] | null;
+    occurredAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    batch: public_NotificationBatch;
+    readonly [RelationKeys]?: 'batch';
+  };
   export type public_ExternalEventNotification = {
     id: CodecTypes['pg/text@1']['output'];
     inboxId: CodecTypes['pg/text@1']['output'];
@@ -5920,6 +6109,8 @@ export declare const models: {
     UserExtensions: Models.public_UserExtensions;
     UserKey: Models.public_UserKey;
     ExternalEventTemplates: Models.public_ExternalEventTemplates;
+    NotificationBatch: Models.public_NotificationBatch;
+    NotificationItem: Models.public_NotificationItem;
     ExternalEventNotification: Models.public_ExternalEventNotification;
     ExternalEventInbox: Models.public_ExternalEventInbox;
     UserRoles: Models.public_UserRoles;
@@ -11971,6 +12162,255 @@ type ContractBase = Omit<
                 },
               ];
             };
+            readonly notification_batches: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly scope_key: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly shard: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly tenant_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly recipient_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly channel: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly category: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly aggregation_group: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly aggregation_mode: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly priority: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly language: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly integration_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly credential_version: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: true;
+                };
+                readonly external_subject: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly window_start: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly window_end: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly item_count: {
+                  readonly nativeType: 'int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
+                  };
+                };
+                readonly created_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly sealed_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly output_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['id'];
+                readonly name: 'notification_batches_pkey';
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'notification_batches_scope_shard_key';
+                  readonly columns: readonly ['scope_key', 'shard'];
+                  readonly unique: true;
+                },
+                {
+                  readonly name: 'notification_batches_channel_output_key';
+                  readonly columns: readonly ['channel', 'output_id'];
+                  readonly unique: true;
+                },
+                {
+                  readonly name: 'notification_batches_due_idx';
+                  readonly columns: readonly ['sealed_at', 'window_end', 'id'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'notification_batches_recipient_idx';
+                  readonly columns: readonly ['tenant_id', 'recipient_id', 'created_at'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [];
+            };
+            readonly notification_items: {
+              columns: {
+                readonly id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly batch_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly source_key: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly event: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly type: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly title: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+                readonly content: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly link: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly link_label: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly source_type: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly source_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly occurred_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly precision: 3 };
+                };
+                readonly created_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['id'];
+                readonly name: 'notification_items_pkey';
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'notification_items_source_key';
+                  readonly columns: readonly ['source_key'];
+                  readonly unique: true;
+                },
+                {
+                  readonly name: 'notification_items_batch_page_idx';
+                  readonly columns: readonly ['batch_id', 'created_at', 'id'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'notification_items';
+                    readonly columns: readonly ['batch_id'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'notification_batches';
+                    readonly columns: readonly ['id'];
+                  };
+                  readonly name: 'notification_items_batch_id_fkey';
+                },
+              ];
+            };
             readonly notifications: {
               columns: {
                 readonly id: {
@@ -14556,6 +14996,14 @@ type ContractBase = Omit<
     readonly external_event_templates: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'ExternalEventTemplates';
+    };
+    readonly notification_batches: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'NotificationBatch';
+    };
+    readonly notification_items: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'NotificationItem';
     };
     readonly external_event_notification: {
       readonly namespace: 'public' & NamespaceId;
@@ -20083,6 +20531,242 @@ type ContractBase = Omit<
               };
             };
           };
+          readonly NotificationBatch: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly scopeKey: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly shard: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly tenantId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly recipientId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly channel: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly category: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly aggregationGroup: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly aggregationMode: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly priority: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly language: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly integrationId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly credentialVersion: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly externalSubject: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly windowStart: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly windowEnd: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly itemCount: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly sealedAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly outputId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+            };
+            readonly relations: {
+              readonly items: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'NotificationItem';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['batchId'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'notification_batches';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly scopeKey: { readonly column: 'scope_key' };
+                readonly shard: { readonly column: 'shard' };
+                readonly tenantId: { readonly column: 'tenant_id' };
+                readonly recipientId: { readonly column: 'recipient_id' };
+                readonly channel: { readonly column: 'channel' };
+                readonly category: { readonly column: 'category' };
+                readonly aggregationGroup: { readonly column: 'aggregation_group' };
+                readonly aggregationMode: { readonly column: 'aggregation_mode' };
+                readonly priority: { readonly column: 'priority' };
+                readonly language: { readonly column: 'language' };
+                readonly integrationId: { readonly column: 'integration_id' };
+                readonly credentialVersion: { readonly column: 'credential_version' };
+                readonly externalSubject: { readonly column: 'external_subject' };
+                readonly windowStart: { readonly column: 'window_start' };
+                readonly windowEnd: { readonly column: 'window_end' };
+                readonly itemCount: { readonly column: 'item_count' };
+                readonly createdAt: { readonly column: 'created_at' };
+                readonly sealedAt: { readonly column: 'sealed_at' };
+                readonly outputId: { readonly column: 'output_id' };
+              };
+            };
+          };
+          readonly NotificationItem: {
+            readonly fields: {
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly batchId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly sourceKey: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly event: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly _type: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly title: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly content: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly link: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly linkLabel: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly sourceType: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly sourceId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly occurredAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+            };
+            readonly relations: {
+              readonly batch: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'NotificationBatch';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['batchId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'notification_items';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly id: { readonly column: 'id' };
+                readonly batchId: { readonly column: 'batch_id' };
+                readonly sourceKey: { readonly column: 'source_key' };
+                readonly event: { readonly column: 'event' };
+                readonly _type: { readonly column: 'type' };
+                readonly title: { readonly column: 'title' };
+                readonly content: { readonly column: 'content' };
+                readonly link: { readonly column: 'link' };
+                readonly linkLabel: { readonly column: 'link_label' };
+                readonly sourceType: { readonly column: 'source_type' };
+                readonly sourceId: { readonly column: 'source_id' };
+                readonly occurredAt: { readonly column: 'occurred_at' };
+                readonly createdAt: { readonly column: 'created_at' };
+              };
+            };
+          };
           readonly Notifications: {
             readonly fields: {
               readonly id: {
@@ -22688,6 +23372,22 @@ type ContractBase = Omit<
           readonly ref: {
             readonly namespace: 'public';
             readonly table: 'module_configs';
+            readonly column: 'id';
+          };
+          readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };
+        },
+        {
+          readonly ref: {
+            readonly namespace: 'public';
+            readonly table: 'notification_batches';
+            readonly column: 'id';
+          };
+          readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };
+        },
+        {
+          readonly ref: {
+            readonly namespace: 'public';
+            readonly table: 'notification_items';
             readonly column: 'id';
           };
           readonly onCreate: { readonly kind: 'generator'; readonly id: 'cuid2' };

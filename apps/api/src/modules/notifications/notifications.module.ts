@@ -8,6 +8,8 @@ import { MessageTemplateService } from './message-template.service'
 import { NotificationsController } from './notifications.controller'
 import { NotificationsService } from './notifications.service'
 import { MessageDeliveriesController } from './message-deliveries.controller'
+import { NotificationAggregationStore } from './notification-aggregation.store'
+import { NotificationAggregationConsumer } from './notification-aggregation.consumer'
 import { MessageDeliveryService } from './message-delivery.service'
 
 /** 全局模块：业务模块（分配、跟进等）都会调用通知服务 */
@@ -21,12 +23,16 @@ import { MessageDeliveryService } from './message-delivery.service'
     MessageTemplateService,
     MessageDeliveryService,
     ExternalEventNotificationOutboxService,
+    NotificationAggregationStore,
+    NotificationAggregationConsumer,
   ],
   exports: [
     NotificationsService,
     BusinessNotificationsService,
     MessageDeliveryService,
     ExternalEventNotificationOutboxService,
+    NotificationAggregationStore,
+    NotificationAggregationConsumer,
     MessageTemplateService,
   ],
 })

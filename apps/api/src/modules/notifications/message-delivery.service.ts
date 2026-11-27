@@ -10,6 +10,8 @@ import { or } from '@prisma/orm-postgres/orm-client'
 import {
   MESSAGE_TASK_DEFINITIONS,
   type MessageDeliveryStatus,
+  type MessageLanguage,
+  type NotificationBizType,
   type MessageDeliveryVO,
   type MessageTaskEvent,
 } from '@micromatrix/shared'
@@ -27,6 +29,9 @@ import { LarkClient } from '../enterprise-integrations/lark.client'
 import { WeComClient } from '../enterprise-integrations/wecom.client'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
 import type { QueryMessageDeliveriesDto } from './dto/message-delivery.dto'
+import { randomUUID } from 'node:crypto'
+import { NotificationAggregationStore } from './notification-aggregation.store'
+import { aggregationEnabled, deliveryAggregationItem } from './notification-aggregation-runtime'
 import { DeliveryExecutor } from './delivery-executor'
 import { DeliveryPerformance, measureDelivery } from './delivery-performance'
 import type { NotificationPreparationReads } from './notification-preparation-reads'
@@ -35,6 +40,8 @@ export interface EnqueueMessageInput {
   tenantId: string
   event: MessageTaskEvent
   recipientIds: string[]
+  language?: MessageLanguage
+  type?: NotificationBizType
   title: string
   content?: string
   link?: string
@@ -70,6 +77,7 @@ type WorkerDelivery = {
   tenantId: string
   integrationId: string | null
   channel: string
+  userId: string | null
   externalSubject: string | null
   title: string
   content: string | null
@@ -104,6 +112,7 @@ export class MessageDeliveryService {
     @Optional() private readonly coordinator?: DistributedCoordinatorService,
     @Optional() private readonly dingTalkClient?: DingTalkClient,
     @Optional() private readonly larkClient?: LarkClient,
+    @Optional() private readonly aggregation?: NotificationAggregationStore,
   ) {}
 
   async enqueue(input: EnqueueMessageInput): Promise<number> {
@@ -129,9 +138,27 @@ export class MessageDeliveryService {
   ): Promise<number> {
     const rows = await this.prepareChannelRecords(channel, input)
     if (!rows.length) return 0
-    const created = await this.prisma.client.transaction((tx) =>
-      tx.orm.public.MessageDeliveries.createAll(rows),
-    )
+    const created = await this.prisma.client.transaction(async (tx) => {
+      const immediate = []
+      const aggregated = []
+      for (const { aggregationCredentialVersion, ...row } of rows) {
+        const item =
+          this.aggregation && aggregationEnabled()
+            ? deliveryAggregationItem(row, aggregationCredentialVersion, {
+                intentId: randomUUID(),
+                event: input.event,
+                type: input.type ?? 'system',
+                language: input.language ?? 'zh-CN',
+                occurredAt: row.updatedAt,
+              })
+            : null
+        if (item)
+          aggregated.push({ ...item, title: input.title, content: input.content, link: input.link })
+        else immediate.push(row)
+      }
+      if (aggregated.length) await this.aggregation!.appendMany(tx, aggregated)
+      return immediate.length ? tx.orm.public.MessageDeliveries.createAll(immediate) : []
+    })
     const pendingIds = created.filter((item) => item.status === 'PENDING').map((item) => item.id)
     if (pendingIds.length > 0) {
       void this.processIds(pendingIds).catch((error) =>
@@ -140,7 +167,7 @@ export class MessageDeliveryService {
         ),
       )
     }
-    return created.length
+    return rows.length
   }
 
   /** Resolve channel settings once per intent; errors propagate to the durable retry worker. */
@@ -181,7 +208,7 @@ export class MessageDeliveryService {
           : await this.messageSettings.isWeComEnabled(input.tenantId, input.event))
     if (!enabled) return []
     const loadGate = () => this.messageSettings.getDeliveryChannelGate(input.tenantId, channel)
-    const { gate, integrationId } = await (reads
+    const { gate, integrationId, credentialVersion } = await (reads
       ? reads.read(['gate', input.tenantId, channel], loadGate)
       : loadGate())
     if (!gate.available || !integrationId) return []
@@ -207,6 +234,7 @@ export class MessageDeliveryService {
       return {
         tenantId: input.tenantId,
         integrationId,
+        aggregationCredentialVersion: credentialVersion,
         channel,
         event: input.event,
         userId,
@@ -454,12 +482,13 @@ export class MessageDeliveryService {
           "nextAttemptAt" IS NULL
           OR "nextAttemptAt" <= ${now}::timestamptz
         )
-      RETURNING id, "tenantId", "integrationId", channel::text AS channel, "externalSubject",
+      RETURNING id, "tenantId", "integrationId", channel::text AS channel, "userId", "externalSubject",
         title, content, link, attempts, "maxAttempts"`.returnsRow({
       id: client.sql.public.message_deliveries.columns.id,
       tenantId: client.sql.public.message_deliveries.columns.tenantId,
       integrationId: client.sql.public.message_deliveries.columns.integrationId,
       channel: 'pg/text@1',
+      userId: client.sql.public.message_deliveries.columns.userId,
       externalSubject: client.sql.public.message_deliveries.columns.externalSubject,
       title: client.sql.public.message_deliveries.columns.title,
       content: client.sql.public.message_deliveries.columns.content,
@@ -540,6 +569,58 @@ export class MessageDeliveryService {
         providerCode: null,
         providerMessageId: null,
         message: '企业微信配置已变化，请手工重试',
+      }
+    }
+    const batch = await this.prisma.client.orm.public.NotificationBatch.where({
+      channel: 'WECOM',
+      outputId: delivery.id,
+      tenantId: delivery.tenantId,
+    }).first()
+    if (batch) {
+      const [member, mapping, items] = await Promise.all([
+        this.prisma.client.orm.public.Users.where({
+          id: batch.recipientId,
+          tenantId: batch.tenantId,
+          status: 'ACTIVE',
+        })
+          .select('id')
+          .first(),
+        this.prisma.client.orm.public.ExternalUserMappings.where({
+          tenantId: batch.tenantId,
+          userId: batch.recipientId,
+          provider: 'WECOM',
+          active: true,
+          externalId: batch.externalSubject!,
+        })
+          .select('id')
+          .first(),
+        this.prisma.client.orm.public.NotificationItem.where({ batchId: batch.id })
+          .select('event')
+          .all(),
+      ])
+      const settings = await Promise.all(
+        [...new Set(items.map((item) => item.event))].map((event) =>
+          this.messageSettings.getFreshEffectiveSetting(batch.tenantId, event),
+        ),
+      )
+      if (
+        !batch.sealedAt ||
+        batch.integrationId !== runtime.integration.id ||
+        batch.credentialVersion !== runtime.integration.credentialVersion ||
+        batch.externalSubject !== delivery.externalSubject ||
+        batch.recipientId !== delivery.userId ||
+        !member ||
+        !mapping ||
+        items.length !== batch.itemCount ||
+        settings.some((setting) => !setting.weComEnabled)
+      ) {
+        return {
+          success: false,
+          transient: false,
+          providerCode: null,
+          providerMessageId: null,
+          message: '聚合通知应用、成员映射或事件开关已变化，保留批次等待人工核查',
+        }
       }
     }
     // 企业微信仅使用卡片跳转支持的移动端页面；其他渠道仍保留原有正文格式。

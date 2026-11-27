@@ -17,6 +17,7 @@ import type {
   ModuleConfigVO,
   NavigationModuleKey,
   NotificationVO,
+  NotificationBatchDetailVO,
   OperationLogClearResultVO,
   OperationLogCleanupResultVO,
   OperationLogDetailVO,
@@ -222,6 +223,10 @@ export const logApi = {
 export const notificationApi = {
   list: (params: PageQuery & { unreadOnly?: boolean }) =>
     http.get<PaginatedResult<NotificationVO>>('/notifications', { params }),
+  batchItems: (id: string, params: PageQuery) =>
+    http.get<NotificationBatchDetailVO>(`/notifications/batches/${encodeURIComponent(id)}/items`, {
+      params,
+    }),
   unreadCount: () => http.get<{ count: number }>('/notifications/unread-count'),
   markRead: (id: string) => http.post(`/notifications/${id}/read`),
   markAllRead: () => http.post('/notifications/read-all'),

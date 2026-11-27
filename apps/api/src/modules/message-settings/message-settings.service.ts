@@ -77,6 +77,11 @@ export class MessageSettingsService {
     return this.loadEffectiveSetting(tenantId, definition)
   }
 
+  /** Send-time security gate must not depend on cached settings. */
+  async getFreshEffectiveSetting(tenantId: string, event: string): Promise<MessageTaskSettingVO> {
+    return this.loadEffectiveSetting(tenantId, this.definition(event))
+  }
+
   private async loadEffectiveSetting(
     tenantId: string,
     definition: MessageTaskDefinition,
@@ -304,7 +309,7 @@ export class MessageSettingsService {
     const name = { WECOM: '企业微信', DINGTALK: '钉钉', LARK: '飞书' }[channel]
     const [integration, tenant] = await Promise.all([
       this.prisma.client.orm.public.EnterpriseIntegrations.where({ tenantId, provider: channel })
-        .select('id', 'lastTestSucceeded', 'syncEnabled')
+        .select('id', 'lastTestSucceeded', 'syncEnabled', 'credentialVersion')
         .first(),
       this.prisma.client.orm.public.Tenants.where({ id: tenantId })
         .select('enterpriseSyncResource')
@@ -328,7 +333,11 @@ export class MessageSettingsService {
       available: reason === null,
       reason,
     }
-    return { gate, integrationId: integration?.id ?? null }
+    return {
+      gate,
+      integrationId: integration?.id ?? null,
+      credentialVersion: integration?.credentialVersion ?? null,
+    }
   }
 
   private definition(event: string): MessageTaskDefinition {

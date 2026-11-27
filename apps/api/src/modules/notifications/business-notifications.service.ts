@@ -51,9 +51,10 @@ export class BusinessNotificationsService {
     try {
       const prepared = await this.prepare(input)
       if (!prepared) return 0
-      const { userIds, title, content } = prepared
+      const { userIds, title, content, language } = prepared
       await this.notifications.notifyMany(input.tenantId, userIds, {
         event: input.event,
+        language,
         type: input.type,
         title,
         content,
@@ -64,6 +65,8 @@ export class BusinessNotificationsService {
           .enqueue({
             tenantId: input.tenantId,
             event: input.event,
+            language,
+            type: input.type,
             recipientIds: userIds,
             title,
             content,
@@ -142,7 +145,16 @@ export class BusinessNotificationsService {
     const supplement = input.appendContent?.trim()
     const content = supplement ? [baseContent, supplement].filter(Boolean).join('\n') : baseContent
     if (!title) throw new Error(`消息事件 ${input.event} 缺少标题模板`)
-    return { userIds, title, content }
+    return {
+      userIds,
+      title,
+      content,
+      language:
+        rendered?.language ??
+        ((input.language === 'en-US' || (!input.language && operator?.language === 'en-US')
+          ? 'en-US'
+          : 'zh-CN') as MessageLanguage),
+    }
   }
 
   async sendConfigured(input: ConfiguredBusinessNotificationInput): Promise<number> {

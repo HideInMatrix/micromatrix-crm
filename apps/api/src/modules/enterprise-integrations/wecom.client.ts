@@ -340,6 +340,9 @@ export class WeComClient {
         const providerCode = typeof data['errcode'] === 'number' ? data['errcode'] : null
         const providerMessageId = this.stringValue(data['msgid'], 256)
         if (providerCode === 0) {
+          if (typeof data['invaliduser'] === 'string' && data['invaliduser'].trim()) {
+            return this.messageFailure(null, '企业微信返回无效接收成员，消息未获完整接受', false)
+          }
           return {
             success: true,
             transient: false,
@@ -400,6 +403,9 @@ export class WeComClient {
       } else if (/^\/customers\/[^/]+$/.test(source.pathname)) {
         mobile.pathname = '/mobile/customers/detail'
         mobile.searchParams.set('id', decodeURIComponent(source.pathname.split('/')[2]!))
+      } else if (/^\/notifications\/batches\/[a-zA-Z0-9_-]+$/.test(source.pathname)) {
+        mobile.pathname = '/mobile/mine/message/batch'
+        mobile.searchParams.set('id', source.pathname.split('/')[3]!)
       } else if (
         source.pathname === '/mobile/leads' ||
         source.pathname === '/mobile/leads/detail' ||

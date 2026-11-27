@@ -1,0 +1,356 @@
+[
+  {
+    "id": "table.notification_batches",
+    "label": "Create table \"notification_batches\"",
+    "summary": "Creates table \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"notification_batches\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"notification_batches\"",
+        "sql": "CREATE TABLE \"public\".\"notification_batches\" (\n  \"aggregation_group\" text NOT NULL,\n  \"aggregation_mode\" text NOT NULL,\n  \"category\" text NOT NULL,\n  \"channel\" text NOT NULL,\n  \"created_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"credential_version\" int4,\n  \"external_subject\" text,\n  \"id\" text NOT NULL,\n  \"integration_id\" text,\n  \"item_count\" int4 DEFAULT 0 NOT NULL,\n  \"language\" text NOT NULL,\n  \"output_id\" text,\n  \"priority\" text NOT NULL,\n  \"recipient_id\" text NOT NULL,\n  \"scope_key\" text NOT NULL,\n  \"sealed_at\" timestamptz(3),\n  \"shard\" int4 DEFAULT 0 NOT NULL,\n  \"tenant_id\" text NOT NULL,\n  \"window_end\" timestamptz(3) NOT NULL,\n  \"window_start\" timestamptz(3) NOT NULL,\n  CONSTRAINT \"notification_batches_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"notification_batches\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.notification_items",
+    "label": "Create table \"notification_items\"",
+    "summary": "Creates table \"notification_items\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "notification_items"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"notification_items\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_items\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"notification_items\"",
+        "sql": "CREATE TABLE \"public\".\"notification_items\" (\n  \"batch_id\" text NOT NULL,\n  \"content\" text,\n  \"created_at\" timestamptz(3) DEFAULT (now()) NOT NULL,\n  \"event\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"link\" text,\n  \"link_label\" text,\n  \"occurred_at\" timestamptz(3) NOT NULL,\n  \"source_id\" text,\n  \"source_key\" text NOT NULL,\n  \"source_type\" text,\n  \"title\" text NOT NULL,\n  \"type\" text NOT NULL,\n  CONSTRAINT \"notification_items_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"notification_items\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_items\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_batches.notification_batches_channel_output_key",
+    "label": "Create index \"notification_batches_channel_output_key\" on \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_batches_channel_output_key",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_batches_channel_output_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_channel_output_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_batches_channel_output_key\"",
+        "sql": "CREATE UNIQUE INDEX \"notification_batches_channel_output_key\" ON \"public\".\"notification_batches\" (\"channel\", \"output_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_batches_channel_output_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_channel_output_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_batches.notification_batches_due_idx",
+    "label": "Create index \"notification_batches_due_idx\" on \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_batches_due_idx",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_batches_due_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_due_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_batches_due_idx\"",
+        "sql": "CREATE INDEX \"notification_batches_due_idx\" ON \"public\".\"notification_batches\" (\"sealed_at\", \"window_end\", \"id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_batches_due_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_due_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_batches.notification_batches_recipient_idx",
+    "label": "Create index \"notification_batches_recipient_idx\" on \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_batches_recipient_idx",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_batches_recipient_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_recipient_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_batches_recipient_idx\"",
+        "sql": "CREATE INDEX \"notification_batches_recipient_idx\" ON \"public\".\"notification_batches\" (\"tenant_id\", \"recipient_id\", \"created_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_batches_recipient_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_recipient_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_batches.notification_batches_scope_shard_key",
+    "label": "Create index \"notification_batches_scope_shard_key\" on \"notification_batches\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_batches_scope_shard_key",
+        "table": "notification_batches"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_batches_scope_shard_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_scope_shard_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_batches_scope_shard_key\"",
+        "sql": "CREATE UNIQUE INDEX \"notification_batches_scope_shard_key\" ON \"public\".\"notification_batches\" (\"scope_key\", \"shard\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_batches_scope_shard_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_batches_scope_shard_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_items.notification_items_batch_page_idx",
+    "label": "Create index \"notification_items_batch_page_idx\" on \"notification_items\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_items_batch_page_idx",
+        "table": "notification_items"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_items_batch_page_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_items_batch_page_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_items_batch_page_idx\"",
+        "sql": "CREATE INDEX \"notification_items_batch_page_idx\" ON \"public\".\"notification_items\" (\"batch_id\", \"created_at\", \"id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_items_batch_page_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_items_batch_page_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.notification_items.notification_items_source_key",
+    "label": "Create index \"notification_items_source_key\" on \"notification_items\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "notification_items_source_key",
+        "table": "notification_items"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"notification_items_source_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_items_source_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"notification_items_source_key\"",
+        "sql": "CREATE UNIQUE INDEX \"notification_items_source_key\" ON \"public\".\"notification_items\" (\"source_key\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"notification_items_source_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"notification_items_source_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.notification_items.notification_items_batch_id_fkey",
+    "label": "Add foreign key \"notification_items_batch_id_fkey\" on \"notification_items\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "notification_items_batch_id_fkey",
+        "table": "notification_items"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"notification_items_batch_id_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "notification_items_batch_id_fkey",
+          "public",
+          "\"public\".\"notification_items\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"notification_items_batch_id_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"notification_items\"\nADD CONSTRAINT \"notification_items_batch_id_fkey\"\nFOREIGN KEY (\"batch_id\")\nREFERENCES \"public\".\"notification_batches\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"notification_items_batch_id_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "notification_items_batch_id_fkey",
+          "public",
+          "\"public\".\"notification_items\""
+        ]
+      }
+    ]
+  }
+]

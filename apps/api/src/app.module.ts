@@ -28,6 +28,7 @@ import { MembersModule } from './modules/members/members.module'
 import { MessageSettingsModule } from './modules/message-settings/message-settings.module'
 import { ModuleFormsModule } from './modules/metadata/module-forms.module'
 import { ModuleConfigsModule } from './modules/module-configs/module-configs.module'
+import { NotificationBatchDetailModule } from './modules/notifications/notification-batch-detail.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
 import { OrganizationSyncModule } from './modules/organization-sync/organization-sync.module'
 import { PoolRulesModule } from './modules/pool-rules/pool-rules.module'
@@ -48,6 +49,7 @@ import { RedisModule } from './redis/redis.module'
     CommonModule,
     AuthModule,
     NotificationsModule,
+    NotificationBatchDetailModule,
     AnnouncementsModule,
     ModuleFormsModule,
     ModuleConfigsModule,

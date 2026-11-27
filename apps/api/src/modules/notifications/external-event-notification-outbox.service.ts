@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { performance } from 'node:perf_hooks'
 import type { PrismaClient } from '../../prisma/db'
 import { PrismaService } from '../../prisma.service'
@@ -7,6 +7,15 @@ import { BusinessNotificationsService } from './business-notifications.service'
 import { MessageDeliveryService } from './message-delivery.service'
 import { NotificationsService } from './notifications.service'
 import { MessageSettingsService } from '../message-settings/message-settings.service'
+import {
+  NotificationAggregationStore,
+  type AggregationItemInput,
+} from './notification-aggregation.store'
+import {
+  aggregationEnabled,
+  deliveryAggregationItem,
+  isAggregateEvent,
+} from './notification-aggregation-runtime'
 import { NotificationPreparationReads } from './notification-preparation-reads'
 import {
   externalEventNotificationInput,
@@ -31,6 +40,7 @@ type DrainMetrics = {
   fallbackGroups: number
   notifications: number
   deliveries: number
+  aggregatedItems: number
   prepareMs: number
   persistMs: number
   publishMs: number
@@ -46,6 +56,7 @@ export class ExternalEventNotificationOutboxService {
     private readonly settings: MessageSettingsService,
     private readonly notifications: NotificationsService,
     private readonly deliveries: MessageDeliveryService,
+    @Optional() private readonly aggregation?: NotificationAggregationStore,
   ) {}
 
   /** The caller owns the business transaction. Failure must roll back the event. */
@@ -71,6 +82,7 @@ export class ExternalEventNotificationOutboxService {
       fallbackGroups: 0,
       notifications: 0,
       deliveries: 0,
+      aggregatedItems: 0,
       prepareMs: 0,
       persistMs: 0,
       publishMs: 0,
@@ -143,7 +155,14 @@ export class ExternalEventNotificationOutboxService {
             sourceId: job.inboxId,
           }))
         : []
-    return { job, notificationRows, deliveryRows }
+    return {
+      job,
+      input,
+      language: prepared?.language ?? ('zh-CN' as const),
+      prepared,
+      notificationRows,
+      deliveryRows,
+    }
   }
 
   private async persistGroup(group: PreparedIntent[]) {
@@ -158,15 +177,62 @@ export class ExternalEventNotificationOutboxService {
         if (count === 1) claimedIds.add(item.job.id)
       }
       const claimed = group.filter((item) => claimedIds.has(item.job.id))
-      const notificationRows = claimed.flatMap((item) => item.notificationRows)
-      const deliveryRows = claimed.flatMap((item) => item.deliveryRows)
+      const notificationRows = []
+      const deliveryRows = []
+      const aggregated: AggregationItemInput[] = []
+      for (const item of claimed) {
+        const { job, input, language } = item
+        const enabled =
+          this.aggregation && aggregationEnabled() && isAggregateEvent(input.event, input.type)
+        const meta = {
+          intentId: job.inboxId,
+          event: input.event,
+          type: input.type,
+          language,
+          occurredAt: job.createdAt,
+          sourceType: 'EXTERNAL_EVENT:' + input.event,
+          sourceId: job.inboxId,
+        }
+        for (const row of item.notificationRows) {
+          if (enabled)
+            aggregated.push({
+              ...meta,
+              channel: 'SYSTEM',
+              tenantId: row.tenantId,
+              recipientId: row.userId,
+              title: row.title,
+              content: row.content,
+              link: row.link,
+            })
+          else notificationRows.push(row)
+        }
+        for (const { aggregationCredentialVersion, ...row } of item.deliveryRows) {
+          const candidate = enabled
+            ? deliveryAggregationItem(row, aggregationCredentialVersion, meta)
+            : null
+          if (candidate)
+            aggregated.push({
+              ...candidate,
+              title: item.prepared!.title,
+              content: item.prepared!.content,
+              link: input.link,
+            })
+          else deliveryRows.push(row)
+        }
+      }
+      if (aggregated.length) await this.aggregation!.appendMany(tx, aggregated)
       const notifications = notificationRows.length
         ? await tx.orm.public.Notifications.createAll(notificationRows)
         : []
       const deliveries = deliveryRows.length
         ? await tx.orm.public.MessageDeliveries.createAll(deliveryRows)
         : []
-      return { claimed: claimed.length, notifications, deliveries }
+      return {
+        claimed: claimed.length,
+        notifications,
+        deliveries,
+        aggregatedItems: aggregated.length,
+      }
     })
   }
 
@@ -177,6 +243,7 @@ export class ExternalEventNotificationOutboxService {
     metrics.claimed += result.claimed
     metrics.notifications += result.notifications.length
     metrics.deliveries += result.deliveries.length
+    metrics.aggregatedItems += result.aggregatedItems
     const start = performance.now()
     // Realtime and provider processing never run inside the durable transaction.
     // Even if a post-commit signal fails, a committed intent must not be retried.

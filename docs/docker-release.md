@@ -111,3 +111,7 @@ PostgreSQL 始终是业务与 `ExportTask` 的事实源。Redis queue metadata �
 Bootstrap Seed 只在空安装时补齐基础数据和初始管理员；检测到已有用户后不会覆盖现有安装。初始账号凭据以当前 Seed 实现为准，不要将明文密码写入仓库文档、Compose 文件或公开问题记录；首次登录后应立即修改初始凭据。
 
 任何 destructive migration 在正式环境发布前都必须针对目标数据库重新执行只读 precheck，不能复用开发库结论。部署完成后检查 Migration 状态、API 健康、Worker 日志以及 PC/Mobile 实际访问。
+
+## 10. v0.2.52 聚合阶段发布保护
+
+v0.2.52 包含新增通知批次/明细表及 PC/H5 明细入口，迁移 `20261126T0958_add_notification_aggregation` 仅新增数据库结构。部署前备份 PostgreSQL，统一 API、Migration、Worker、Web 版本并确认 migration 成功。API 和 Worker 保持 `CRM_NOTIFICATION_AGGREGATION=0`（未设置等同关闭），不得在可靠性、浏览器、真实渠道及性能验收完成前启用。关闭仅停止新明细入窗，已有批次仍恢复消费；不需要删除或重发历史通知。详情见 [Messaging 设计](./specs/messaging/design.md)。

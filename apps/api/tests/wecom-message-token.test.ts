@@ -13,6 +13,7 @@ async function main() {
   let tokenError = false
   let tokenExpiry: number | undefined = 7200
   let sendCode = 0
+  let invalidUser = false
   const seen: Array<{ token: string | null; body: Record<string, unknown> }> = []
   const config = {
     get: (key: string) =>
@@ -38,7 +39,11 @@ async function main() {
     assert.equal(init?.method, 'POST')
     posts++
     seen.push({ token: url.searchParams.get('access_token'), body: JSON.parse(String(init?.body)) })
-    return Response.json({ errcode: sendCode, msgid: 'mock-message' })
+    return Response.json({
+      errcode: sendCode,
+      msgid: 'mock-message',
+      ...(invalidUser ? { invaliduser: 'fixture-user' } : {}),
+    })
   }
   try {
     const client = new WeComClient(config as never)
@@ -140,6 +145,12 @@ async function main() {
     assert.equal(limited.success, false)
     sendCode = 40003
     assert.equal((await client.sendTextMessage(base)).transient, false)
+    sendCode = 0
+    invalidUser = true
+    const rejectedRecipient = await client.sendTextMessage(base)
+    assert.equal(rejectedRecipient.success, false)
+    assert.equal(rejectedRecipient.transient, false)
+    invalidUser = false
     // Same 600-message workload as the short online test, without network calls.
     sendCode = 0
     tokenExpiry = 7200

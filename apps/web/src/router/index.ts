@@ -348,6 +348,12 @@ const router = createRouter({
           component: () => import('@/views/notifications/NotificationsView.vue'),
           meta: { title: '消息中心' },
         },
+        {
+          path: 'notifications/batches/:id',
+          name: 'notification-batch-detail',
+          component: () => import('@/views/notifications/NotificationBatchView.vue'),
+          meta: { title: '通知明细', activeMenu: '/notifications' },
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
