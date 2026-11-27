@@ -26,13 +26,21 @@ function limit(name: string, max: number, fallback?: number): number {
     throw new Error('Invalid WeCom quota configuration')
   return value
 }
+// Daily volume is an optional business policy, not an aggregation prerequisite.
+// Missing, empty or explicit 0 disables only this window. Invalid nonempty
+// configuration remains fail-closed; short windows and cooldown still apply.
+function optionalDailyLimit(name: string): number | null {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '' || raw === '0') return null
+  return limit(name, 1_000_000)
+}
 function limits() {
   return {
     appSecond: limit('CRM_WECOM_APP_PER_SECOND', 10, 10),
-    appDay: limit('CRM_WECOM_APP_DAILY_LIMIT', 1_000_000),
+    appDay: optionalDailyLimit('CRM_WECOM_APP_DAILY_LIMIT'),
     memberMinute: limit('CRM_WECOM_MEMBER_PER_MINUTE', 24, 24),
     memberHour: limit('CRM_WECOM_MEMBER_PER_HOUR', 800, 800),
-    memberDay: limit('CRM_WECOM_MEMBER_PER_DAY', 160, 160),
+    memberDay: optionalDailyLimit('CRM_WECOM_MEMBER_PER_DAY'),
   }
 }
 export function weComQuotaKeys(identity: Identity) {
@@ -143,6 +151,7 @@ export class WeComRateLimitService {
       // Find the cap-th most recent reservation, not all rows. At the limit
       // the earliest useful retry is that reservation's rolling-window expiry.
       for (const window of windows) {
+        if (window.cap === null) continue
         const edge = await orm.WeComSendReservation.where(window.scope)
           .where((row) => row.reservedAt.gt(instantFromEpochMilliseconds(now - window.width)))
           .select('reservedAt')

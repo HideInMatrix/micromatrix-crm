@@ -243,15 +243,70 @@ async function main() {
     )
     process.env.CRM_WECOM_RATE_LIMIT = '1'
 
-    // Missing app budget is fail-closed, without consuming an attempt.
+    // Optional daily caps: unset, blank and 0 all leave daily volume unrestricted,
+    // but the short member window still applies even with historical reservations.
+    for (const [i, value] of [undefined, '', '0'].entries()) {
+      useApp(t, String(140 + i))
+      for (const key of ['CRM_WECOM_APP_DAILY_LIMIT', 'CRM_WECOM_MEMBER_PER_DAY']) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      await seed(t, 'optional-member', 4 * 3600_000, 161)
+      const allowed = await create(t, 'optional-member')
+      await worker.processIds([allowed.id])
+      assert.equal((await get(allowed.id))?.status, 'SUCCEEDED')
+      const next = await create(t, 'optional-member')
+      await worker.processIds([next.id])
+      assert.equal((await get(next.id))?.status, 'SUCCEEDED')
+      const blocked = await create(t, 'optional-member')
+      await worker.processIds([blocked.id])
+      await expectWait(blocked.id)
+    }
+    // Explicit daily caps remain independently enforceable.
+    useApp(t, '143')
+    process.env.CRM_WECOM_APP_DAILY_LIMIT = '0'
+    process.env.CRM_WECOM_MEMBER_PER_DAY = '1'
+    await seed(t, 'member-only', 4 * 3600_000, 1)
+    const memberOnly = await create(t, 'member-only')
+    await worker.processIds([memberOnly.id])
+    await expectWait(memberOnly.id)
+    useApp(t, '144')
+    process.env.CRM_WECOM_APP_DAILY_LIMIT = '1'
+    process.env.CRM_WECOM_MEMBER_PER_DAY = '0'
+    await seed(t, 'old-member', 4 * 3600_000, 1)
+    const appOnly = await create(t, 'app-only')
+    await worker.processIds([appOnly.id])
+    await expectWait(appOnly.id)
+
+    // Explicit malformed daily values still fail closed without a network POST.
     useApp(t, '129')
-    delete process.env.CRM_WECOM_APP_DAILY_LIMIT
-    const invalid = await create(t, 'config-member')
     let before = postRows.length
-    await worker.processIds([invalid.id])
-    await expectWait(invalid.id, 'WECOM_RATE_LIMIT_UNAVAILABLE')
-    assert.equal(postRows.length, before)
-    process.env.CRM_WECOM_APP_DAILY_LIMIT = '100'
+    for (const key of ['CRM_WECOM_APP_DAILY_LIMIT', 'CRM_WECOM_MEMBER_PER_DAY']) {
+      for (const value of ['-1', 'abc', '1.5', '1000001']) {
+        process.env.CRM_WECOM_APP_DAILY_LIMIT = '0'
+        process.env.CRM_WECOM_MEMBER_PER_DAY = '0'
+        process.env[key] = value
+        const invalid = await create(t, 'config-member')
+        await worker.processIds([invalid.id])
+        await expectWait(invalid.id, 'WECOM_RATE_LIMIT_UNAVAILABLE')
+        assert.equal(postRows.length, before)
+      }
+    }
+    // Existing due configuration waits recover after correction; no manual replay.
+    process.env.CRM_WECOM_APP_DAILY_LIMIT = '0'
+    process.env.CRM_WECOM_MEMBER_PER_DAY = '0'
+    const recovery = await create(t, 'config-recovery')
+    process.env.CRM_WECOM_APP_DAILY_LIMIT = 'invalid'
+    await worker.processIds([recovery.id])
+    await expectWait(recovery.id, 'WECOM_RATE_LIMIT_UNAVAILABLE')
+    process.env.CRM_WECOM_APP_DAILY_LIMIT = '0'
+    await orm.MessageDeliveries.where({ id: recovery.id }).update({
+      nextAttemptAt: instantFromEpochMilliseconds(Date.now() - 1000),
+    })
+    await other.scheduledRateWait()
+    assert.equal((await get(recovery.id))?.status, 'SUCCEEDED')
+    assert.equal((await get(recovery.id))?.attempts, 1)
+    before = postRows.length
     const broadcast = await create(t, '@all')
     await worker.processIds([broadcast.id])
     assert.equal((await get(broadcast.id))?.status, 'DEAD')

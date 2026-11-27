@@ -137,3 +137,21 @@ CRM_NOTIFICATION_DEDUP_RETENTION_DAYS=30
 3. 运行正式 Migration 服务，确认退出码为 0、结构验证成功后再启动新版本 API/Worker/Web。
 4. 检查健康状态、Worker 日志、PC/H5 与手动清理预览；先做低负载业务回归和真实企微终端收件核对，禁止未经授权的生产压测或历史任务重放。
 5. 真实企微额度、SSO、生产资源及启用聚合后的表现另行验收。Tag 发布不自动部署；不在故障时盲目回滚数据库或混跑旧 Worker。
+
+## 12. v0.2.54 通知聚合与每日预算解耦
+
+业务通知量不受每日人工预算限制。完成聚合冒烟及真实渠道验收后，API 与 Worker 可统一启用以下配置：
+
+```env
+CRM_NOTIFICATION_AGGREGATION=1
+CRM_WECOM_RATE_LIMIT=1
+CRM_WECOM_APP_DAILY_LIMIT=0
+CRM_WECOM_MEMBER_PER_DAY=0
+CRM_WECOM_APP_PER_SECOND=10
+CRM_WECOM_MEMBER_PER_MINUTE=24
+CRM_WECOM_MEMBER_PER_HOUR=800
+CRM_NOTIFICATION_RETENTION=0
+CRM_NOTIFICATION_DEDUP_RETENTION_DAYS=30
+```
+
+两个每日预算未设置、留空或 0 时不启用本地每日上限；短时频控及平台 45009/HTTP429 冷却保留。明确正整数可恢复日预算，非法值安全延期。此语义仅适用于修订后的版本，旧 v0.2.53 不支持 0。升级时核对 API/Worker 同版本及配置，检查既有 PENDING 消息按原 nextAttemptAt 恢复，无需手工重发。此前若显式设置成员 160 或应用预算，须将其改为 0 才取消日限制。无需新增数据库迁移；不删除历史明细或预约记录。
